@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Context Vault Exporter",
+  "version": "1.0",
+  "description": "Send conversations from ChatGPT and Claude directly to your local Context Vault running on localhost.",
+  "permissions": [],
+  "host_permissions": [
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*"
+      ],
+      "css": ["styles.css"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

@@ -1,0 +1,59 @@
+@echo off
+:: ═══════════════════════════════════════════════════════════════
+:: Context Vault — Bootstrap Launcher
+:: Minimal console setup, then launches the professional GUI installer
+:: ═══════════════════════════════════════════════════════════════
+
+title Context Vault
+cd /d "%~dp0"
+
+:: ─── Check Python ────────────────────────────────────────────────
+python --version >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo  Context Vault requires Python 3.10 or higher.
+    echo.
+    echo  Please install Python from: https://www.python.org/downloads/
+    echo  Make sure to check "Add Python to PATH" during installation.
+    echo.
+    pause
+    exit /b 1
+)
+
+:: ─── Bootstrap virtual environment with pywebview ───────────────
+:: We need pywebview to show the GUI installer
+set "VENV_PYTHON=%~dp0venv\Scripts\python.exe"
+set "VENV_PIP=%~dp0venv\Scripts\pip.exe"
+
+if not exist "%VENV_PYTHON%" (
+    echo  Initializing Context Vault...
+    python -m venv venv >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo  Failed to create virtual environment.
+        pause
+        exit /b 1
+    )
+)
+
+:: Check if pywebview is installed (required for GUI installer)
+"%VENV_PYTHON%" -c "import webview" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo  Preparing installer...
+    "%VENV_PIP%" install pywebview --quiet --disable-pip-version-check >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo  Failed to install required components.
+        pause
+        exit /b 1
+    )
+)
+
+:: ─── Launch the GUI installer ────────────────────────────────────
+:: The professional installer UI takes over from here
+"%VENV_PYTHON%" installer.py
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo  Installer encountered an error.
+    echo.
+    pause
+)
+exit

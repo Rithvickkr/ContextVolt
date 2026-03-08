@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context Vault</title>
+    <meta name="description" content="Paste AI conversations, summarize with local LLM, build continuation prompts.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+
+<body>
+    <!-- Setup Wizard (shown during initialization) -->
+    <div id="setup-wizard" class="setup-wizard">
+        <div class="setup-shell">
+            <!-- Left panel: branding + task list -->
+            <div class="setup-left">
+                <div class="setup-brand">
+                    <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+                        <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
+                        <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z" fill="var(--bg-primary)" />
+                    </svg>
+                    <div>
+                        <h1 class="setup-title">Context Vault</h1>
+                        <span class="setup-badge">Setup</span>
+                    </div>
+                </div>
+                <div class="setup-task-label">Checking Services</div>
+                <div class="setup-steps">
+                    <div class="setup-step" id="step-backend">
+                        <div class="setup-step-line"></div>
+                        <div class="setup-step-dot">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                        </div>
+                        <div class="setup-step-info">
+                            <span class="step-label">Backend Server</span>
+                            <span class="step-status">Connecting...</span>
+                        </div>
+                    </div>
+                    <div class="setup-step" id="step-ollama">
+                        <div class="setup-step-line"></div>
+                        <div class="setup-step-dot">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                        </div>
+                        <div class="setup-step-info">
+                            <span class="step-label">Ollama Service</span>
+                            <span class="step-status">Checking...</span>
+                        </div>
+                    </div>
+                    <div class="setup-step" id="step-model">
+                        <div class="setup-step-line"></div>
+                        <div class="setup-step-dot">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                        </div>
+                        <div class="setup-step-info">
+                            <span class="step-label">AI Model</span>
+                            <span class="step-status">Checking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Right panel: status + action -->
+            <div class="setup-right">
+                <div class="setup-status-area">
+                    <p class="setup-status-text">Verifying your local AI environment...</p>
+                </div>
+                <button class="btn btn-primary setup-skip-btn" id="skip-setup-btn" style="display:none;">
+                    Continue Without AI →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app" class="app-container" style="display:none;">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+                        <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
+                        <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z"
+                            fill="var(--bg-primary)" />
+                    </svg>
+                    <span class="sidebar-brand">Context Vault</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-view="input" id="nav-input">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    </span>
+                    <span class="nav-label">New Chat</span>
+                </button>
+                <button class="nav-item" data-view="library" id="nav-library">
+                    <span class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                    </span>
+                    <span class="nav-label">Library</span>
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator" id="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Offline</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" id="main-content">
+            <!-- Chat Input View -->
+            <div class="view" id="view-input">
+                <div class="view-header">
+                    <h1>Paste a Conversation</h1>
+                    <p class="view-desc">Paste any AI conversation below. It will be summarized with your local LLM and saved to your library.</p>
+                </div>
+                <div class="input-area">
+                    <textarea id="chat-textarea" class="chat-textarea"
+                        placeholder="Paste your AI conversation here..."
+                        spellcheck="false"></textarea>
+                    <div class="input-actions">
+                        <span class="char-count" id="char-count">0 characters</span>
+                        <button class="btn btn-primary" id="summarize-btn" disabled>
+                            <span class="btn-text">Summarize & Save</span>
+                            <span class="btn-loader" style="display:none;">
+                                <span class="spinner"></span> Processing...
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Context Library View -->
+            <div class="view" id="view-library" style="display:none;">
+                <div class="view-header">
+                    <h1>Library</h1>
+                    <p class="view-desc">Browse and manage your saved conversation summaries.</p>
+                </div>
+                <div class="library-controls">
+                    <div class="search-box">
+                        <span class="search-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        </span>
+                        <input type="text" id="search-input" class="search-input"
+                            placeholder="Search contexts...">
+                    </div>
+                </div>
+                <div class="contexts-grid" id="contexts-grid">
+                    <!-- Context cards will be rendered here -->
+                </div>
+                <div class="empty-state" id="empty-state" style="display:none;">
+                    <span class="empty-icon">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                    </span>
+                    <h3>No contexts yet</h3>
+                    <p>Paste a conversation to create your first entry.</p>
+                </div>
+            </div>
+
+            <!-- Context Detail View -->
+            <div class="view" id="view-detail" style="display:none;">
+                <div class="view-header">
+                    <button class="btn btn-ghost" id="back-to-library">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                        Back
+                    </button>
+                    <div class="detail-actions">
+                        <button class="btn btn-secondary" id="edit-btn">Edit</button>
+                        <button class="btn btn-secondary" id="export-btn">Export</button>
+                        <button class="btn btn-danger" id="delete-btn">Delete</button>
+                    </div>
+                </div>
+                <div class="detail-content" id="detail-content">
+                    <!-- Detail will be rendered here -->
+                </div>
+                <!-- Prompt Builder Section -->
+                <div class="prompt-section" id="prompt-section" style="display:none;">
+                    <h2 class="section-title">Generated Prompt</h2>
+                    <pre class="prompt-display" id="prompt-display"></pre>
+                    <div class="prompt-actions">
+                        <button class="btn btn-primary" id="copy-prompt-btn">Copy to Clipboard</button>
+                        <button class="btn btn-ghost" id="close-prompt-btn">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit Modal -->
+            <div class="modal-overlay" id="edit-modal" style="display:none;">
+                <div class="modal">
+                    <h2>Edit Context</h2>
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="edit-title" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Tags (comma-separated)</label>
+                        <input type="text" id="edit-tags" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Main Topic</label>
+                        <input type="text" id="edit-topic" class="form-input">
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-ghost" id="cancel-edit-btn">Cancel</button>
+                        <button class="btn btn-primary" id="save-edit-btn">Save Changes</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast" style="display:none;">
+        <span class="toast-icon"></span>
+        <span class="toast-message"></span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>

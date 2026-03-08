@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+*.db
+*.sqlite3
+node_modules/
+.idea/
+.vscode/
+*.log
+test_out*.txt
+.ollama/

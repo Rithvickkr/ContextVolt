@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context Vault — Setup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/installer.css">
+</head>
+
+<body>
+    <div class="installer">
+        <!-- Split layout container -->
+        <div class="installer-shell">
+
+            <!-- Left panel: branding + task list -->
+            <div class="installer-left">
+                <div class="installer-brand">
+                    <svg class="logo" width="36" height="36" viewBox="0 0 64 64" fill="none">
+                        <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
+                        <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z"
+                            fill="var(--bg-primary)" />
+                    </svg>
+                    <div>
+                        <h1 class="installer-title">Context Vault</h1>
+                        <span class="version-badge">v1.0</span>
+                    </div>
+                </div>
+
+                <div class="task-label">Installation Tasks</div>
+
+                <div class="steps-container" id="steps-container">
+                    <div class="step" data-step="python">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Python Environment</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="venv">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Virtual Environment</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="deps">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Dependencies</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="ollama">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Ollama Service</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="model">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">AI Model</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
+                    <div class="step" data-step="extension">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Browser Extension</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="installer-left-footer">
+                    <span>Setting up your local AI workspace</span>
+                </div>
+            </div>
+
+            <!-- Right panel: progress + log + actions -->
+            <div class="installer-right">
+                <!-- Progress header -->
+                <div class="progress-header">
+                    <div class="progress-info">
+                        <span class="progress-title">Installation Progress</span>
+                        <span class="progress-text" id="progress-text">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+
+                <!-- Log output (always visible) -->
+                <div class="log-panel">
+                    <div class="log-header">
+                        <span class="log-label">Output</span>
+                    </div>
+                    <div class="log-content" id="log-content">
+                        <div class="log-entry log-entry-init">
+                            <span class="log-time">--:--</span>
+                            <span class="log-message">Waiting to start installation...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action buttons -->
+                <div class="installer-actions">
+                    <button class="btn btn-secondary" id="retry-btn" style="display: none;">
+                        <span class="btn-icon">↻</span>
+                        Retry
+                    </button>
+                    <button class="btn btn-primary" id="launch-btn" disabled>
+                        <span class="btn-text">Launch Context Vault</span>
+                        <span class="btn-icon">→</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // ─────────────────────────────────────────────────────────────────
+        // Installer Frontend Logic (Polling-based)
+        // ─────────────────────────────────────────────────────────────────
+
+        const stepIds = ['python', 'venv', 'deps', 'ollama', 'model', 'extension'];
+        const stepElements = {};
+        let installationComplete = false;
+        let pollingInterval = null;
+        let installationStarted = false;
+
+        // Initialize step element references
+        stepIds.forEach(id => {
+            stepElements[id] = document.querySelector(`.step[data-step="${id}"]`);
+        });
+
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const logContent = document.getElementById('log-content');
+        const retryBtn = document.getElementById('retry-btn');
+        const launchBtn = document.getElementById('launch-btn');
+
+        // Retry button handler
+        retryBtn.addEventListener('click', async () => {
+            retryBtn.style.display = 'none';
+            if (window.pywebview && window.pywebview.api) {
+                await window.pywebview.api.retry_from_error();
+            }
+        });
+
+        // Launch button handler
+        launchBtn.addEventListener('click', async () => {
+            if (!launchBtn.disabled && window.pywebview && window.pywebview.api) {
+                launchBtn.disabled = true;
+                launchBtn.querySelector('.btn-text').textContent = 'Launching...';
+                stopPolling();
+                await window.pywebview.api.launch_app();
+            }
+        });
+
+        // Helper to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Append a log entry to the log output
+        let initCleared = false;
+        function appendLog(logEntry) {
+            if (!initCleared) {
+                logContent.innerHTML = '';
+                initCleared = true;
+            }
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">${logEntry.time}</span><span class="log-message">${escapeHtml(logEntry.message)}</span>`;
+            logContent.appendChild(entry);
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // Update UI from state
+        function updateUI(state) {
+            const { steps, newLogs, currentStep, isInstalling, hasError, errorStep, installationComplete: isComplete } = state;
+
+            // Append new logs
+            if (newLogs && newLogs.length > 0) {
+                newLogs.forEach(appendLog);
+            }
+
+            // Update each step's visual state
+            steps.forEach((step, index) => {
+                const el = stepElements[step.id];
+                if (!el) return;
+
+                // Remove all status classes
+                el.classList.remove('pending', 'running', 'completed', 'error');
+
+                // Add current status class
+                el.classList.add(step.status);
+
+                // Update status text
+                const statusEl = el.querySelector('.step-status');
+                switch (step.status) {
+                    case 'pending':
+                        statusEl.textContent = 'Waiting...';
+                        break;
+                    case 'running':
+                        statusEl.textContent = 'In progress...';
+                        break;
+                    case 'completed':
+                        statusEl.textContent = 'Complete';
+                        break;
+                    case 'error':
+                        statusEl.textContent = 'Failed';
+                        break;
+                }
+            });
+
+            // Update progress bar
+            const completedCount = steps.filter(s => s.status === 'completed').length;
+            const progress = Math.round((completedCount / steps.length) * 100);
+            progressFill.style.width = `${progress}%`;
+            progressText.textContent = `${progress}%`;
+
+            // Show/hide retry button
+            retryBtn.style.display = hasError ? 'flex' : 'none';
+
+            // Enable launch button when complete
+            if (isComplete && !installationComplete) {
+                installationComplete = true;
+                launchBtn.disabled = false;
+                launchBtn.classList.add('ready');
+                stopPolling();
+            }
+        }
+
+        // Poll for state updates
+        async function pollState() {
+            if (!window.pywebview || !window.pywebview.api) return;
+
+            try {
+                const state = await window.pywebview.api.get_state();
+                updateUI(state);
+            } catch (err) {
+                console.error('Polling error:', err);
+            }
+        }
+
+        // Start polling
+        function startPolling() {
+            if (pollingInterval) return;
+            pollingInterval = setInterval(pollState, 200);
+        }
+
+        // Stop polling
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        // Initialize and start installation
+        async function initialize() {
+            if (!window.pywebview || !window.pywebview.api) {
+                console.log('Waiting for pywebview...');
+                setTimeout(initialize, 100);
+                return;
+            }
+
+            console.log('Starting installation...');
+            startPolling();
+
+            if (!installationStarted) {
+                installationStarted = true;
+                await window.pywebview.api.start_installation();
+            }
+        }
+
+        // Handle pywebview ready event
+        window.addEventListener('pywebviewready', function () {
+            console.log('pywebview ready');
+            initialize();
+        });
+
+        // Fallback: try to initialize after a delay
+        setTimeout(() => {
+            if (!installationStarted) {
+                initialize();
+            }
+        }, 1000);
+    </script>
+</body>
+
+</html>

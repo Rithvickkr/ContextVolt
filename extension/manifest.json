@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Context Vault Exporter",
-  "version": "1.0",
-  "description": "Send conversations from ChatGPT and Claude directly to your local Context Vault running on localhost.",
+  "version": "1.1",
+  "description": "Send conversations from ChatGPT, Claude, Gemini, Grok, DeepSeek, Perplexity & Copilot to your local Context Vault.",
   "permissions": [],
   "host_permissions": [
     "http://localhost:8000/*"
@@ -14,7 +14,14 @@
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://claude.ai/*"
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://x.com/i/grok*",
+        "https://grok.x.ai/*",
+        "https://grok.com/*",
+        "https://chat.deepseek.com/*",
+        "https://www.perplexity.ai/*",
+        "https://copilot.microsoft.com/*"
       ],
       "css": ["styles.css"],
       "js": ["content.js"]

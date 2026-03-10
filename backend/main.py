@@ -175,6 +175,30 @@ def api_capture(req: CaptureRequest):
         raise HTTPException(status_code=500, detail=f"Capture save failed: {str(e)}")
 
 # ---------------------------------------------------------------------------
+# Lightweight Context List (for extension import panel)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/contexts/list")
+def api_list_contexts_lightweight(q: str = Query(default="", description="Search query")):
+    """Return minimal context data for the extension import picker."""
+    if q:
+        contexts = search_contexts(q)
+    else:
+        contexts = get_all_contexts()
+
+    # Strip heavy fields to keep the payload small
+    return [
+        {
+            "id": ctx["id"],
+            "title": ctx["title"],
+            "tags": ctx.get("tags", []),
+            "created_at": ctx["created_at"],
+        }
+        for ctx in contexts
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Contexts CRUD
 # ---------------------------------------------------------------------------
 

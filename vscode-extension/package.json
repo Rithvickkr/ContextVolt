@@ -1,0 +1,47 @@
+{
+  "name": "convx-context-vault",
+  "displayName": "Context Vault",
+  "description": "Browse and inject AI conversation contexts from your local Context Vault directly in VS Code.",
+  "version": "1.0.0",
+  "publisher": "convx",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "convx-vault",
+          "title": "Context Vault",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "convx-vault": [
+        {
+          "type": "webview",
+          "id": "convx.sidebarView",
+          "name": "Contexts"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "convx.refreshContexts",
+        "title": "Context Vault: Refresh Contexts",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "convx.openDashboard",
+        "title": "Context Vault: Open Dashboard"
+      }
+    ]
+  },
+  "scripts": {
+    "lint": "echo 'no lint configured'"
+  }
+}

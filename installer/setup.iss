@@ -12,7 +12,7 @@
 #define MyAppName "ContextVolt"
 #define MyAppVersion "1.1"
 #define MyAppPublisher "ContextVolt"
-#define MyAppURL "https://github.com/Rithvickkr/ConVX"
+#define MyAppURL "https://github.com/Rithvickkr/ContextVolt"
 #define MyAppExeName "ContextVolt.bat"
 
 [Setup]

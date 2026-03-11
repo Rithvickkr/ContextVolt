@@ -37,7 +37,7 @@
 
 **Option A — Installer**
 
-Download [`ContextVolt-Setup.exe`](https://github.com/Rithvickkr/ConVX/releases) from the Releases page → run it → launch from Desktop shortcut.
+Download [`ContextVolt-Setup.exe`](https://github.com/Rithvickkr/ContextVolt/releases) from the Releases page → run it → launch from Desktop shortcut.
 
 **Option B — From source**
 ```
@@ -49,7 +49,7 @@ start.bat
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ConVX/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
 ```
 
 This clones the project to `~/.contextvolt` and creates a `contextvolt` command. To launch anytime:

@@ -24,7 +24,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 INSTALL_DIR="$HOME/.contextvolt"
-REPO_URL="https://github.com/Rithvickkr/ConVX.git"
+REPO_URL="https://github.com/Rithvickkr/ContextVolt.git"
 
 echo ""
 echo -e "${CYAN}  ╔══════════════════════════════════════════╗${NC}"

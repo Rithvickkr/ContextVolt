@@ -1,5 +1,5 @@
 """
-Context Vault — SQLite database layer.
+ContextVolt — SQLite database layer.
 
 Manages the 'contexts' table for storing conversation summaries.
 """
@@ -9,7 +9,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "context_vault.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "context_volt.db")
 
 
 def _get_conn():

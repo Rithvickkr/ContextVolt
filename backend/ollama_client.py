@@ -1,5 +1,5 @@
 """
-Context Vault — Ollama integration for local LLM summarization.
+ContextVolt — Ollama integration for local LLM summarization.
 
 Communicates with Ollama's REST API at localhost:11434.
 """

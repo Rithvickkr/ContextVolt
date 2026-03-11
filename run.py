@@ -1,5 +1,5 @@
 """
-Context Vault — Application Entry Point.
+ContextVolt — Application Entry Point.
 
 Starts the FastAPI backend on a background thread, then opens a native
 window via pywebview.
@@ -45,7 +45,7 @@ def main():
 
     # Open native window
     window = webview.create_window(
-        title="Context Vault",
+        title="ContextVolt",
         url="http://127.0.0.1:8000",
         width=1200,
         height=800,

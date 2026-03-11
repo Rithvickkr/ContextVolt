@@ -1,9 +1,9 @@
 {
-  "name": "convx-context-vault",
-  "displayName": "Context Vault",
-  "description": "Browse and inject AI conversation contexts from your local Context Vault directly in VS Code.",
+  "name": "ContextVolt-context-vault",
+  "displayName": "ContextVolt",
+  "description": "Browse and inject AI conversation contexts from your local ContextVolt directly in VS Code.",
   "version": "1.0.0",
-  "publisher": "convx",
+  "publisher": "ContextVolt",
   "engines": {
     "vscode": "^1.80.0"
   },
@@ -14,30 +14,30 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "convx-vault",
-          "title": "Context Vault",
+          "id": "ContextVolt-vault",
+          "title": "ContextVolt",
           "icon": "$(book)"
         }
       ]
     },
     "views": {
-      "convx-vault": [
+      "ContextVolt-vault": [
         {
           "type": "webview",
-          "id": "convx.sidebarView",
+          "id": "ContextVolt.sidebarView",
           "name": "Contexts"
         }
       ]
     },
     "commands": [
       {
-        "command": "convx.refreshContexts",
-        "title": "Context Vault: Refresh Contexts",
+        "command": "ContextVolt.refreshContexts",
+        "title": "ContextVolt: Refresh Contexts",
         "icon": "$(refresh)"
       },
       {
-        "command": "convx.openDashboard",
-        "title": "Context Vault: Open Dashboard"
+        "command": "ContextVolt.openDashboard",
+        "title": "ContextVolt: Open Dashboard"
       }
     ]
   },

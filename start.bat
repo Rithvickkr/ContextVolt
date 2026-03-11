@@ -1,17 +1,17 @@
 @echo off
 :: ═══════════════════════════════════════════════════════════════
-:: Context Vault — Bootstrap Launcher
+:: ContextVolt — Bootstrap Launcher
 :: Minimal console setup, then launches the professional GUI installer
 :: ═══════════════════════════════════════════════════════════════
 
-title Context Vault
+title ContextVolt
 cd /d "%~dp0"
 
 :: ─── Check Python ────────────────────────────────────────────────
 python --version >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo  Context Vault requires Python 3.10 or higher.
+    echo  ContextVolt requires Python 3.10 or higher.
     echo.
     echo  Please install Python from: https://www.python.org/downloads/
     echo  Make sure to check "Add Python to PATH" during installation.
@@ -26,7 +26,7 @@ set "VENV_PYTHON=%~dp0venv\Scripts\python.exe"
 set "VENV_PIP=%~dp0venv\Scripts\pip.exe"
 
 if not exist "%VENV_PYTHON%" (
-    echo  Initializing Context Vault...
+    echo  Initializing ContextVolt...
     python -m venv venv >nul 2>&1
     if %ERRORLEVEL% NEQ 0 (
         echo  Failed to create virtual environment.

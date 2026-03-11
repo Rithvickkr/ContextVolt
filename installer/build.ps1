@@ -1,6 +1,6 @@
 <# 
 .SYNOPSIS
-    ConVX Build Script — Prepares the project for Inno Setup compilation.
+    ContextVolt Build Script — Prepares the project for Inno Setup compilation.
     Downloads embedded Python, pre-installs ALL dependencies, copies project files.
 
 .USAGE
@@ -9,7 +9,7 @@
 #>
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot   # e:\ConVX
+$ProjectRoot = Split-Path -Parent $PSScriptRoot   # e:\ContextVolt
 $BuildDir = "$PSScriptRoot\build"
 $PythonVersion = "3.12.3"
 $PythonUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
@@ -17,7 +17,7 @@ $GetPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║     ConVX Installer Build Script         ║" -ForegroundColor Cyan
+Write-Host "  ║     ContextVolt Installer Build Script         ║" -ForegroundColor Cyan
 Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 
@@ -114,12 +114,12 @@ Write-Host "  [6/6] Creating launcher..." -ForegroundColor Yellow
 # The launcher just calls the existing start.bat which already handles everything
 $launcherContent = @'
 @echo off
-title Context Vault
+title ContextVolt
 cd /d "%~dp0app"
 call start.bat
 '@
 
-Set-Content -Path "$BuildDir\ConVX.bat" -Value $launcherContent -Encoding ASCII
+Set-Content -Path "$BuildDir\ContextVolt.bat" -Value $launcherContent -Encoding ASCII
 
 Write-Host ""
 Write-Host "  ═══════════════════════════════════════════" -ForegroundColor Green
@@ -129,6 +129,6 @@ Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Open setup.iss in Inno Setup" -ForegroundColor Cyan
 Write-Host "  2. Press Ctrl+F9 to compile" -ForegroundColor Cyan
-Write-Host "  3. Output: installer\output\ConVX-Setup.exe" -ForegroundColor Cyan
+Write-Host "  3. Output: installer\output\ContextVolt-Setup.exe" -ForegroundColor Cyan
 Write-Host "  ═══════════════════════════════════════════" -ForegroundColor Green
 Write-Host ""

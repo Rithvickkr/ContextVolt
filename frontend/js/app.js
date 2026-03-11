@@ -1,5 +1,5 @@
 /**
- * Context Vault — Frontend SPA
+ * ContextVolt — Frontend SPA
  *
  * Vanilla JS single-page application.
  * Handles: Setup Wizard, Chat Input, Context Library, Detail View, Prompt Builder.

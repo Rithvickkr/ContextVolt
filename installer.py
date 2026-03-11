@@ -1,5 +1,5 @@
 """
-Context Vault — Professional Installer
+ContextVolt — Professional Installer
 
 A GUI-based installer that replaces the console setup experience.
 Shows a sleek, step-by-step installation UI using pywebview.
@@ -169,7 +169,7 @@ def run_installation():
                     content = profile.read_text()
                     if "OLLAMA_MODELS" not in content:
                         with open(profile, "a") as f:
-                            f.write(f"\n# ConVX Ollama models path\n{export_line}\n")
+                            f.write(f"\n# ContextVolt Ollama models path\n{export_line}\n")
                         state.log(f"  Added OLLAMA_MODELS to {profile.name}")
                     else:
                         state.log(f"  OLLAMA_MODELS already in {profile.name}")
@@ -546,7 +546,7 @@ class Api:
     
     def launch_app(self):
         """Launch the main application."""
-        state.log("Launching Context Vault...")
+        state.log("Launching ContextVolt...")
         python_exe = sys.executable if EMBEDDED_MODE else str(VENV_PYTHON)
         popen_kwargs = {"cwd": str(PROJECT_ROOT)}
         if IS_WINDOWS:
@@ -567,7 +567,7 @@ def main():
     html_path = str(PROJECT_ROOT / "frontend" / "installer.html")
     
     window = webview.create_window(
-        title="Context Vault — Setup",
+        title="ContextVolt — Setup",
         url=html_path,
         width=880,
         height=600,

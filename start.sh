@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-# Context Vault — macOS/Linux Launcher
+# ContextVolt — macOS/Linux Launcher
 # Equivalent of start.bat for Unix systems
 # ═══════════════════════════════════════════════════════════
 
@@ -9,13 +9,13 @@ cd "$(dirname "$0")"
 
 echo ""
 echo "  ╔══════════════════════════════════════════╗"
-echo "  ║         Context Vault                    ║"
+echo "  ║         ContextVolt                    ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo ""
 
 # ─── Check Python ────────────────────────────────────────────────
 if ! command -v python3 &> /dev/null; then
-    echo "  Context Vault requires Python 3.10 or higher."
+    echo "  ContextVolt requires Python 3.10 or higher."
     echo ""
     if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "  Install with Homebrew:  brew install python"
@@ -35,7 +35,7 @@ VENV_PYTHON="./venv/bin/python3"
 VENV_PIP="./venv/bin/pip3"
 
 if [ ! -f "$VENV_PYTHON" ]; then
-    echo "  Initializing Context Vault..."
+    echo "  Initializing ContextVolt..."
     python3 -m venv venv
     if [ $? -ne 0 ]; then
         echo "  Failed to create virtual environment."
@@ -74,7 +74,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # ─── Launch the GUI installer ────────────────────────────────────
-echo "  Launching Context Vault..."
+echo "  Launching ContextVolt..."
 "$VENV_PYTHON" installer.py
 EXIT_CODE=$?
 

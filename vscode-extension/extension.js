@@ -11,20 +11,20 @@ function activate(context) {
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
-      "convx.sidebarView",
+      "ContextVolt.sidebarView",
       provider,
       { webviewOptions: { retainContextWhenHidden: true } }
     )
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("convx.refreshContexts", () => {
+    vscode.commands.registerCommand("ContextVolt.refreshContexts", () => {
       provider.refresh();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("convx.openDashboard", () => {
+    vscode.commands.registerCommand("ContextVolt.openDashboard", () => {
       vscode.env.openExternal(vscode.Uri.parse("http://localhost:8000"));
     })
   );
@@ -315,7 +315,7 @@ class ContextVaultSidebarProvider {
 </head>
 <body>
   <div class="header">
-    <span class="header-title">Context Vault</span>
+    <span class="header-title">ContextVolt</span>
     <div class="header-actions">
       <button class="icon-btn" id="refresh-btn" title="Refresh">⟳</button>
     </div>

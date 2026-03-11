@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="icon.png" width="80" alt="ConVX Logo" />
+  <img src="icon.png" width="80" alt="ContextVolt Logo" />
 </p>
 
-<h1 align="center">ConVX — Context Vault</h1>
+<h1 align="center">ContextVolt</h1>
 
 <p align="center">
   <strong>Save, summarize, and continue AI conversations across any LLM.</strong><br/>
@@ -37,12 +37,12 @@
 
 **Option A — Installer**
 
-Download [`ConVX-Setup.exe`](https://github.com/Rithvickkr/ConVX/releases) from the Releases page → run it → launch from Desktop shortcut.
+Download [`ContextVolt-Setup.exe`](https://github.com/Rithvickkr/ConVX/releases) from the Releases page → run it → launch from Desktop shortcut.
 
 **Option B — From source**
 ```
-git clone https://github.com/Rithvickkr/ConVX.git
-cd ConVX
+git clone https://github.com/Rithvickkr/ContextVolt.git
+cd ContextVolt
 start.bat
 ```
 
@@ -52,16 +52,16 @@ start.bat
 curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ConVX/main/install.sh | bash
 ```
 
-This clones the project to `~/.convx` and creates a `convx` command. To launch anytime:
+This clones the project to `~/.contextvolt` and creates a `contextvolt` command. To launch anytime:
 
 ```bash
-convx
+contextvolt
 ```
 
 To update:
 
 ```bash
-cd ~/.convx && git pull
+cd ~/.contextvolt && git pull
 ```
 
 ### Prerequisites
@@ -86,7 +86,7 @@ The browser extension lets you capture full conversations from **ChatGPT** and *
 1. Open `chrome://extensions` (or `edge://extensions`)
 2. Enable **Developer Mode** (toggle in top-right)
 3. Click **Load unpacked**
-4. Select the `extension/` folder from your ConVX directory
+4. Select the `extension/` folder from your ContextVolt directory
 
 > **macOS users:** Safari is not supported. Use Chrome or any Chromium browser — most Mac developers already have one installed.
 
@@ -118,7 +118,7 @@ Use your saved contexts directly in VS Code.
 
 ## API
 
-ConVX runs a local FastAPI server on `http://127.0.0.1:8000`.
+ContextVolt runs a local FastAPI server on `http://127.0.0.1:8000`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -149,7 +149,7 @@ OLLAMA_MODEL = "mistral"   # or "llama3", "gemma2", "phi3", etc.
 ## Project Structure
 
 ```
-ConVX/
+ContextVolt/
 ├── start.bat              # Windows launcher
 ├── start.sh               # macOS / Linux launcher
 ├── install.sh             # One-line Mac/Linux installer (curl | bash)

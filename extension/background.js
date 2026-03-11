@@ -31,7 +31,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })
         .catch(err => {
             clearTimeout(timeout);
-            console.error("Context Vault Error:", err);
+            console.error("ContextVolt Error:", err);
             let msg = err.message || String(err);
             if (err.name === "AbortError") {
                 msg = "Request timed out — is the backend running?";
@@ -59,7 +59,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .then(data => sendResponse({ success: true, contexts: data }))
             .catch(err => {
-                console.error("Context Vault — fetch contexts error:", err);
+                console.error("ContextVolt — fetch contexts error:", err);
                 let msg = err.message || String(err);
                 if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
                     msg = "Cannot reach backend at localhost:8000";
@@ -81,7 +81,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .then(data => sendResponse({ success: true, prompt: data.prompt }))
             .catch(err => {
-                console.error("Context Vault — fetch prompt error:", err);
+                console.error("ContextVolt — fetch prompt error:", err);
                 sendResponse({ success: false, error: err.message || String(err) });
             });
 

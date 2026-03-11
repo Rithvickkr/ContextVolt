@@ -1,5 +1,5 @@
 """
-Context Vault — FastAPI application.
+ContextVolt — FastAPI application.
 
 Serves the REST API and static frontend files.
 """
@@ -33,7 +33,7 @@ from backend.ollama_client import (
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Context Vault", version="1.0.0")
+app = FastAPI(title="ContextVolt", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,7 +61,7 @@ def serve_frontend():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"message": "Context Vault API is running. Frontend not found."}
+    return {"message": "ContextVolt API is running. Frontend not found."}
 
 
 # ---------------------------------------------------------------------------

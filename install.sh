@@ -1,15 +1,15 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# ConVX — One-line installer for macOS / Linux
+# ContextVolt — One-line installer for macOS / Linux
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ConVX/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
 #
 # What it does:
 #   1. Checks prerequisites (Python 3, git)
-#   2. Clones the repo to ~/.convx
+#   2. Clones the repo to ~/.contextvolt
 #   3. Runs start.sh (creates venv, installs deps, sets up Ollama)
-#   4. Creates a 'convx' command so you can launch anytime
+#   4. Creates a 'contextvolt' command so you can launch anytime
 # ═══════════════════════════════════════════════════════════════
 
 set -e
@@ -23,12 +23,12 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-INSTALL_DIR="$HOME/.convx"
+INSTALL_DIR="$HOME/.contextvolt"
 REPO_URL="https://github.com/Rithvickkr/ConVX.git"
 
 echo ""
 echo -e "${CYAN}  ╔══════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}  ║     ${BOLD}ConVX — Context Vault Installer${NC}${CYAN}      ║${NC}"
+echo -e "${CYAN}  ║     ${BOLD}ContextVolt Installer${NC}${CYAN}                  ║${NC}"
 echo -e "${CYAN}  ╚══════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -68,7 +68,7 @@ echo -e "${GREEN}  ✓ git$(git --version | sed 's/git version/ /')${NC}"
 
 # ─── Step 2: Clone or update repo ────────────────────────────────
 echo ""
-echo -e "${YELLOW}  [2/4] Setting up ConVX...${NC}"
+echo -e "${YELLOW}  [2/4] Setting up ContextVolt...${NC}"
 
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "  Found existing installation at ${BOLD}$INSTALL_DIR${NC}"
@@ -81,20 +81,20 @@ else
     cd "$INSTALL_DIR"
 fi
 
-echo -e "${GREEN}  ✓ ConVX files ready${NC}"
+echo -e "${GREEN}  ✓ ContextVolt files ready${NC}"
 
-# ─── Step 3: Create the 'convx' command ─────────────────────────
+# ─── Step 3: Create the 'contextvolt' command ─────────────────────────
 echo ""
 echo -e "${YELLOW}  [3/4] Creating launch command...${NC}"
 
 # Create a launcher script in a standard bin location
-LAUNCHER_SCRIPT="$HOME/.local/bin/convx"
+LAUNCHER_SCRIPT="$HOME/.local/bin/contextvolt"
 mkdir -p "$HOME/.local/bin"
 
 cat > "$LAUNCHER_SCRIPT" << 'LAUNCHER'
 #!/bin/bash
-# ConVX Launcher — starts the Context Vault app
-cd "$HOME/.convx"
+# ContextVolt Launcher
+cd "$HOME/.contextvolt"
 bash start.sh
 LAUNCHER
 
@@ -114,7 +114,7 @@ fi
 if [ -n "$SHELL_PROFILE" ]; then
     if ! grep -q '\.local/bin' "$SHELL_PROFILE" 2>/dev/null; then
         echo '' >> "$SHELL_PROFILE"
-        echo '# ConVX' >> "$SHELL_PROFILE"
+        echo '# ContextVolt' >> "$SHELL_PROFILE"
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_PROFILE"
         echo -e "${GREEN}  ✓ Added ~/.local/bin to PATH in $(basename $SHELL_PROFILE)${NC}"
     else
@@ -122,7 +122,7 @@ if [ -n "$SHELL_PROFILE" ]; then
     fi
 fi
 
-echo -e "${GREEN}  ✓ 'convx' command created${NC}"
+echo -e "${GREEN}  ✓ 'contextvolt' command created${NC}"
 
 # ─── Step 4: Run first-time setup ────────────────────────────────
 echo ""
@@ -134,7 +134,7 @@ echo -e "  • Install dependencies (fastapi, pywebview, etc.)"
 echo -e "  • Check/install Ollama"
 echo -e "  • Download the AI model (~600MB)"
 echo ""
-echo -e "  ${CYAN}Starting in 3 seconds... (Ctrl+C to skip, run 'convx' later)${NC}"
+echo -e "  ${CYAN}Starting in 3 seconds... (Ctrl+C to skip, run 'contextvolt' later)${NC}"
 sleep 3
 
 cd "$INSTALL_DIR"
@@ -143,15 +143,15 @@ bash start.sh
 # ─── Done ────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}  ═══════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ✅ ConVX installed successfully!${NC}"
+echo -e "${GREEN}  ✅ ContextVolt installed successfully!${NC}"
 echo ""
 echo -e "  ${BOLD}To launch anytime:${NC}"
-echo -e "    ${CYAN}convx${NC}"
+echo -e "    ${CYAN}contextvolt${NC}"
 echo ""
 echo -e "  ${BOLD}Or manually:${NC}"
-echo -e "    ${CYAN}cd ~/.convx && bash start.sh${NC}"
+echo -e "    ${CYAN}cd ~/.contextvolt && bash start.sh${NC}"
 echo ""
 echo -e "  ${BOLD}To update:${NC}"
-echo -e "    ${CYAN}cd ~/.convx && git pull${NC}"
+echo -e "    ${CYAN}cd ~/.contextvolt && git pull${NC}"
 echo -e "${GREEN}  ═══════════════════════════════════════════${NC}"
 echo ""

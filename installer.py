@@ -25,8 +25,8 @@ IS_MAC = sys.platform == "darwin"
 
 PROJECT_ROOT = Path(__file__).parent.absolute()
 VENV_PATH = PROJECT_ROOT / "venv"
-VENV_PYTHON = VENV_PATH / ("Scripts" / "python.exe" if IS_WINDOWS else "bin" / "python3")
-VENV_PIP = VENV_PATH / ("Scripts" / "pip.exe" if IS_WINDOWS else "bin" / "pip3")
+VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3")
+VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
 REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
 OLLAMA_MODEL = "phi3"  # Better summarization quality, ~2.2GB
 

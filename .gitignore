@@ -9,6 +9,7 @@ dist/
 
 # ─── App data (generated at runtime) ─────────────
 context_vault.db
+context_volt.db
 *.sqlite3
 .ollama/
 .installed

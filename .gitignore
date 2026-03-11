@@ -1,13 +1,36 @@
+# ─── Python ──────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 venv/
-.env
-*.db
+.venv/
+*.egg-info/
+dist/
+
+# ─── App data (generated at runtime) ─────────────
+context_vault.db
 *.sqlite3
-node_modules/
-.idea/
-.vscode/
+.ollama/
+.installed
+.env
+
+# ─── Windows installer build artifacts ───────────
+installer/build/
+installer/output/
+
+# ─── Logs & test files ──────────────────────────
 *.log
 test_out*.txt
-.ollama/
+test_prompt.py
+
+# ─── OS junk ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── IDE / Editors ───────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+node_modules/

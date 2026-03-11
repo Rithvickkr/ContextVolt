@@ -20,16 +20,29 @@ import webview
 # Configuration
 # ─────────────────────────────────────────────────────────────────
 
+IS_WINDOWS = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+
 PROJECT_ROOT = Path(__file__).parent.absolute()
 VENV_PATH = PROJECT_ROOT / "venv"
-VENV_PYTHON = VENV_PATH / "Scripts" / "python.exe"
-VENV_PIP = VENV_PATH / "Scripts" / "pip.exe"
+VENV_PYTHON = VENV_PATH / ("Scripts" / "python.exe" if IS_WINDOWS else "bin" / "python3")
+VENV_PIP = VENV_PATH / ("Scripts" / "pip.exe" if IS_WINDOWS else "bin" / "pip3")
 REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
 OLLAMA_MODEL = "phi3"  # Better summarization quality, ~2.2GB
 
-# Store Ollama models on E: drive within the project folder
+# Store Ollama models within the project folder
 OLLAMA_DIR = PROJECT_ROOT / ".ollama"
 OLLAMA_MODELS_DIR = OLLAMA_DIR / "models"
+
+# Detect if running from embedded/bundled Python (no venv module)
+def is_embedded_python():
+    try:
+        import venv  # noqa: F401
+        return False
+    except ImportError:
+        return True
+
+EMBEDDED_MODE = is_embedded_python()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -74,6 +87,9 @@ def run_installation():
         return True
 
     def step_create_venv():
+        if EMBEDDED_MODE:
+            state.log("Using bundled Python — skipping venv")
+            return True
         state.log("Setting up virtual environment...")
         if VENV_PYTHON.exists():
             state.log("  Virtual environment already exists")
@@ -90,15 +106,31 @@ def run_installation():
         return True
 
     def step_install_deps():
-        state.log("Installing dependencies...")
+        if EMBEDDED_MODE:
+            state.log("Dependencies pre-installed — verifying...")
+            try:
+                import fastapi, uvicorn, webview  # noqa: F401
+                state.log("  All dependencies verified ✓")
+                return True
+            except ImportError as e:
+                state.log(f"  Missing: {e.name} — installing...")
+                # Fall through to pip install below
+        else:
+            state.log("Installing dependencies...")
         if not REQUIREMENTS_FILE.exists():
             state.log("  requirements.txt not found")
             return False
         with open(REQUIREMENTS_FILE, "r") as f:
             deps = [l.strip() for l in f if l.strip() and not l.startswith("#")]
         state.log(f"  Installing {len(deps)} packages...")
+        pip_exe = str(VENV_PIP) if not EMBEDDED_MODE else sys.executable
+        pip_args = (
+            [pip_exe, "install", "-r", str(REQUIREMENTS_FILE), "--quiet", "--disable-pip-version-check"]
+            if not EMBEDDED_MODE else
+            [pip_exe, "-m", "pip", "install", "-r", str(REQUIREMENTS_FILE), "--quiet", "--disable-pip-version-check"]
+        )
         result = subprocess.run(
-            [str(VENV_PIP), "install", "-r", str(REQUIREMENTS_FILE), "--quiet", "--disable-pip-version-check"],
+            pip_args,
             capture_output=True, text=True, cwd=str(PROJECT_ROOT)
         )
         if result.returncode != 0:
@@ -110,141 +142,167 @@ def run_installation():
     def step_check_ollama():
         state.log("Checking Ollama...")
         
-        # Configure Ollama to store models on E: drive
+        # Configure Ollama models path
         state.log(f"  Setting models path: {OLLAMA_MODELS_DIR}")
         OLLAMA_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Set environment variable for this process
         os.environ["OLLAMA_MODELS"] = str(OLLAMA_MODELS_DIR)
         
-        # Set environment variable permanently in Windows registry
-        try:
-            import winreg
-            env_key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Environment",
-                0, winreg.KEY_ALL_ACCESS
-            )
-            winreg.SetValueEx(env_key, "OLLAMA_MODELS", 0, winreg.REG_SZ, str(OLLAMA_MODELS_DIR))
-            winreg.CloseKey(env_key)
-            state.log("  Configured models storage on E: drive")
-        except Exception as e:
-            state.log(f"  Note: Could not persist env var: {str(e)[:30]}")
+        # Persist env var (Windows: registry, Mac: shell profile)
+        if IS_WINDOWS:
+            try:
+                import winreg
+                env_key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER, r"Environment",
+                    0, winreg.KEY_ALL_ACCESS
+                )
+                winreg.SetValueEx(env_key, "OLLAMA_MODELS", 0, winreg.REG_SZ, str(OLLAMA_MODELS_DIR))
+                winreg.CloseKey(env_key)
+                state.log("  Configured models storage path")
+            except Exception as e:
+                state.log(f"  Note: Could not persist env var: {str(e)[:30]}")
+        else:
+            # macOS/Linux: add to shell profile
+            try:
+                profile = Path.home() / (".zshrc" if IS_MAC else ".bashrc")
+                export_line = f'export OLLAMA_MODELS="{OLLAMA_MODELS_DIR}"'
+                if profile.exists():
+                    content = profile.read_text()
+                    if "OLLAMA_MODELS" not in content:
+                        with open(profile, "a") as f:
+                            f.write(f"\n# ConVX Ollama models path\n{export_line}\n")
+                        state.log(f"  Added OLLAMA_MODELS to {profile.name}")
+                    else:
+                        state.log(f"  OLLAMA_MODELS already in {profile.name}")
+                else:
+                    state.log("  Shell profile not found, env var set for this session")
+            except Exception:
+                pass
         
         # Find Ollama executable
         ollama_path = shutil.which("ollama")
-        if not ollama_path:
+        if not ollama_path and IS_WINDOWS:
             local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
             if local.exists():
                 ollama_path = str(local)
+        if not ollama_path and IS_MAC:
+            # Common Homebrew / manual install paths on macOS
+            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
+                if Path(p).exists():
+                    ollama_path = p
+                    break
         
         if not ollama_path:
-            state.log("  Ollama not found, downloading installer...")
+            state.log("  Ollama not found, downloading...")
             try:
                 import urllib.request
                 import tempfile
                 
-                # Download Ollama installer
-                installer_url = "https://ollama.com/download/OllamaSetup.exe"
-                installer_path = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
-                
-                state.log("  Downloading from ollama.com...")
-                urllib.request.urlretrieve(installer_url, str(installer_path))
-                
-                if installer_path.exists():
-                    state.log("  Installing Ollama silently...")
-                    
-                    # Set env var before running installer
-                    install_env = os.environ.copy()
-                    install_env["OLLAMA_MODELS"] = str(OLLAMA_MODELS_DIR)
-                    
-                    # Run installer silently (/S flag for NSIS installers)
-                    result = subprocess.run(
-                        [str(installer_path), "/S"],
-                        capture_output=True,
-                        timeout=120,
-                        env=install_env,
-                    )
-                    
-                    # Wait for installation to complete
-                    time.sleep(3)
-                    
-                    # Clean up installer
-                    try:
-                        installer_path.unlink()
-                    except Exception:
-                        pass
-                    
-                    # Check if Ollama was installed
-                    local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-                    if local.exists():
-                        ollama_path = str(local)
-                        state.log("  Ollama installed successfully")
+                if IS_WINDOWS:
+                    installer_url = "https://ollama.com/download/OllamaSetup.exe"
+                    installer_path = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
+                    state.log("  Downloading from ollama.com...")
+                    urllib.request.urlretrieve(installer_url, str(installer_path))
+                    if installer_path.exists():
+                        state.log("  Installing Ollama silently...")
+                        install_env = os.environ.copy()
+                        install_env["OLLAMA_MODELS"] = str(OLLAMA_MODELS_DIR)
+                        subprocess.run(
+                            [str(installer_path), "/S"],
+                            capture_output=True, timeout=120, env=install_env,
+                        )
+                        time.sleep(3)
+                        try:
+                            installer_path.unlink()
+                        except Exception:
+                            pass
+                        local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+                        if local.exists():
+                            ollama_path = str(local)
+                            state.log("  Ollama installed successfully")
+                        else:
+                            state.log("  Please install manually from ollama.com")
+                            return True
                     else:
-                        state.log("  Ollama installation may have failed")
-                        state.log("  Please install manually from ollama.com")
+                        state.log("  Download failed. Install from ollama.com")
                         return True
                 else:
-                    state.log("  Failed to download Ollama installer")
-                    state.log("  Please install manually from ollama.com")
-                    return True
+                    # macOS / Linux: use the official install script
+                    state.log("  Running Ollama install script...")
+                    result = subprocess.run(
+                        ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
+                        capture_output=True, text=True, timeout=180,
+                    )
+                    if result.returncode == 0:
+                        ollama_path = shutil.which("ollama")
+                        if ollama_path:
+                            state.log("  Ollama installed successfully")
+                        else:
+                            state.log("  Install completed but ollama not found in PATH")
+                            state.log("  Try: brew install ollama")
+                            return True
+                    else:
+                        state.log("  Install script failed")
+                        state.log("  Try: brew install ollama")
+                        return True
                     
             except subprocess.TimeoutExpired:
                 state.log("  Installation timed out")
                 state.log("  Please install manually from ollama.com")
                 return True
             except Exception as e:
-                state.log(f"  Could not download Ollama: {str(e)[:50]}")
+                state.log(f"  Could not install Ollama: {str(e)[:50]}")
                 state.log("  Please install manually from ollama.com")
                 return True
         
         if ollama_path:
             state.log(f"  Ollama found")
             
-            # Disable Ollama auto-start tray icon (remove from Windows startup)
-            try:
-                import winreg
-                startup_key = winreg.OpenKey(
-                    winreg.HKEY_CURRENT_USER,
-                    r"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                    0, winreg.KEY_ALL_ACCESS
-                )
+            # Windows-only: disable auto-start and kill tray process
+            if IS_WINDOWS:
                 try:
-                    winreg.DeleteValue(startup_key, "Ollama")
-                    state.log("  Disabled Ollama auto-start")
-                except FileNotFoundError:
-                    pass  # Not in startup, that's fine
-                winreg.CloseKey(startup_key)
-            except Exception:
-                pass  # Registry access failed, continue anyway
+                    import winreg
+                    startup_key = winreg.OpenKey(
+                        winreg.HKEY_CURRENT_USER,
+                        r"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                        0, winreg.KEY_ALL_ACCESS
+                    )
+                    try:
+                        winreg.DeleteValue(startup_key, "Ollama")
+                        state.log("  Disabled Ollama auto-start")
+                    except FileNotFoundError:
+                        pass
+                    winreg.CloseKey(startup_key)
+                except Exception:
+                    pass
+                
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/IM", "Ollama.exe"],
+                        capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                except Exception:
+                    pass
             
-            # Kill any existing Ollama UI/tray processes
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "Ollama.exe"],
-                    capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW
-                )
-            except Exception:
-                pass
-            
-            # Prepare environment with E: drive models path
+            # Prepare environment
             ollama_env = os.environ.copy()
             ollama_env["OLLAMA_MODELS"] = str(OLLAMA_MODELS_DIR)
             
-            # Start Ollama as headless background service (CLI only)
+            # Start Ollama service if not running
             try:
                 import urllib.request
                 urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
                 state.log("  Ollama API is running")
             except Exception:
-                state.log("  Starting Ollama service (headless)...")
-                subprocess.Popen(
-                    [ollama_path, "serve"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    env=ollama_env,
-                    creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0
-                )
+                state.log("  Starting Ollama service...")
+                popen_kwargs = {
+                    "stdout": subprocess.DEVNULL,
+                    "stderr": subprocess.DEVNULL,
+                    "stdin": subprocess.DEVNULL,
+                    "env": ollama_env,
+                }
+                if IS_WINDOWS:
+                    popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+                subprocess.Popen([ollama_path, "serve"], **popen_kwargs)
                 time.sleep(3)
                 state.log("  Ollama API started")
         return True
@@ -252,10 +310,15 @@ def run_installation():
     def step_pull_model():
         state.log(f"Checking AI model ({OLLAMA_MODEL})...")
         ollama_path = shutil.which("ollama")
-        if not ollama_path:
+        if not ollama_path and IS_WINDOWS:
             local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
             if local.exists():
                 ollama_path = str(local)
+        if not ollama_path and IS_MAC:
+            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
+                if Path(p).exists():
+                    ollama_path = p
+                    break
         if not ollama_path:
             state.log("  Ollama not available, skipping model pull")
             state.log(f"  You can pull the model later with: ollama pull {OLLAMA_MODEL}")
@@ -276,12 +339,14 @@ def run_installation():
             except Exception:
                 if attempt == 0:
                     state.log("  Starting Ollama service...")
-                    subprocess.Popen(
-                        [ollama_path, "serve"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        env=ollama_env,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                    )
+                    serve_kwargs = {
+                        "stdout": subprocess.DEVNULL,
+                        "stderr": subprocess.DEVNULL,
+                        "env": ollama_env,
+                    }
+                    if IS_WINDOWS:
+                        serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
                 time.sleep(2)
         
         if not service_running:
@@ -309,7 +374,7 @@ def run_installation():
                 [ollama_path, "pull", OLLAMA_MODEL],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                 env=ollama_env,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                **(dict(creationflags=subprocess.CREATE_NO_WINDOW) if IS_WINDOWS else {})
             )
             
             last_log = ""
@@ -346,55 +411,51 @@ def run_installation():
             return True
 
         ext_path = str(ext_dir.resolve()).replace("\\", "/")
-
-        # Try to register via Windows Registry for Chrome/Edge
         installed = False
-        try:
-            import winreg
 
-            # Read the extension's manifest to get a stable key
-            manifest_path = ext_dir / "manifest.json"
-            with open(manifest_path, "r") as f:
-                manifest = json.load(f)
-
-            # Use a deterministic ID based on the path
-            import hashlib
-            ext_id = hashlib.sha256(ext_path.lower().encode()).hexdigest()[:32]
-            # Chrome external extension IDs use a-p (first 16 letters)
-            ext_id = ''.join(chr(ord('a') + int(c, 16)) for c in ext_id)
-
-            # Register for Chrome
-            chrome_key_path = "Software\\Google\\Chrome\\Extensions\\" + ext_id
+        # Windows: try to register via Registry for Chrome/Edge
+        if IS_WINDOWS:
             try:
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, chrome_key_path)
-                winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
-                winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
-                winreg.CloseKey(key)
-                state.log("  Registered for Chrome")
-                installed = True
+                import winreg
+                import hashlib
+
+                manifest_path = ext_dir / "manifest.json"
+                with open(manifest_path, "r") as f:
+                    manifest = json.load(f)
+
+                ext_id = hashlib.sha256(ext_path.lower().encode()).hexdigest()[:32]
+                ext_id = ''.join(chr(ord('a') + int(c, 16)) for c in ext_id)
+
+                # Register for Chrome
+                chrome_key_path = "Software\\Google\\Chrome\\Extensions\\" + ext_id
+                try:
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, chrome_key_path)
+                    winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
+                    winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
+                    winreg.CloseKey(key)
+                    state.log("  Registered for Chrome")
+                    installed = True
+                except Exception as e:
+                    state.log(f"  Chrome registry: {str(e)[:50]}")
+
+                # Register for Edge
+                edge_key_path = "Software\\Microsoft\\Edge\\Extensions\\" + ext_id
+                try:
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, edge_key_path)
+                    winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
+                    winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
+                    winreg.CloseKey(key)
+                    state.log("  Registered for Edge")
+                    installed = True
+                except Exception:
+                    pass
             except Exception as e:
-                state.log(f"  Chrome registry: {str(e)[:50]}")
-
-            # Also register for Edge
-            edge_key_path = "Software\\Microsoft\\Edge\\Extensions\\" + ext_id
-            try:
-                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, edge_key_path)
-                winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
-                winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
-                winreg.CloseKey(key)
-                state.log("  Registered for Edge")
-                installed = True
-            except Exception:
-                pass
-
-        except Exception as e:
-            state.log(f"  Registry method failed: {str(e)[:50]}")
+                state.log(f"  Registry method failed: {str(e)[:50]}")
 
         if installed:
             state.log("  Extension will appear on next browser restart")
             state.log("  You may need to enable it in chrome://extensions")
         else:
-            state.log(f"  Auto-install not available")
             state.log(f"  To install manually:")
             state.log(f"  1. Open chrome://extensions")
             state.log(f"  2. Enable Developer Mode")
@@ -430,6 +491,11 @@ def run_installation():
         state.is_installing = False
         state.installation_complete = True
         state.log("Installation complete!")
+        # Create marker file so launcher knows to run app directly next time
+        try:
+            (PROJECT_ROOT / ".installed").write_text("ok")
+        except Exception:
+            pass
     except Exception as e:
         state.log(f"Installation failed: {e}")
         state.has_error = True
@@ -481,11 +547,11 @@ class Api:
     def launch_app(self):
         """Launch the main application."""
         state.log("Launching Context Vault...")
-        subprocess.Popen(
-            [str(VENV_PYTHON), str(PROJECT_ROOT / "run.py")],
-            cwd=str(PROJECT_ROOT),
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-        )
+        python_exe = sys.executable if EMBEDDED_MODE else str(VENV_PYTHON)
+        popen_kwargs = {"cwd": str(PROJECT_ROOT)}
+        if IS_WINDOWS:
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
         if state.window:
             state.window.destroy()
         return {"success": True}
@@ -516,3 +582,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

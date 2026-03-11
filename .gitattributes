@@ -1,0 +1,7 @@
+# Force LF line endings for shell scripts (critical for macOS/Linux)
+*.sh text eol=lf
+
+# Windows files stay CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf

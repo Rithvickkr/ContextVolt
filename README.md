@@ -2,61 +2,62 @@
 
 A desktop application for saving, summarizing, and repurposing AI conversations using a self-hosted local LLM.
 
-**Double-click `start.bat` and everything sets up automatically.**
+Everything runs 100% locally on your machine. No cloud APIs, no data leaves your device.
 
 ---
 
 ## What It Does
 
-1. **Paste** any AI conversation (ChatGPT, Claude, Gemini, etc.)
+1. **Save** conversations from ChatGPT, Claude, and more via browser extension
 2. **Summarize** automatically using a local LLM via Ollama
 3. **Store** summaries in a local context library (SQLite)
 4. **Generate** structured continuation prompts
-5. **Copy** the prompt and continue the conversation in any other LLM
-
-Everything runs 100% locally on your machine. No cloud APIs, no data leaves your device.
+5. **Continue** the conversation in any other LLM
 
 ---
 
-## Quick Start
+## Install
+
+### Windows
+
+**Option A — Installer (.exe)**
+Download `ConVX-Setup.exe` from the [Releases](https://github.com/Rithvickkr/ConVX/releases) page.
+
+**Option B — From source**
+```
+git clone https://github.com/Rithvickkr/ConVX.git
+cd ConVX
+start.bat
+```
+
+### macOS / Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ConVX/main/install.sh | bash
+```
+
+This installs to `~/.convx` and creates a `convx` command. To launch anytime:
+```bash
+convx
+```
 
 ### Prerequisites
 
-- **Python 3.10+** — [Download](https://www.python.org/downloads/) (check "Add to PATH" during install)
+- **Python 3.10+** — [python.org](https://www.python.org/downloads/) or `brew install python`
+- **Git** — pre-installed on macOS (`xcode-select --install` if missing)
 
-That's it. **Ollama and the AI model are installed automatically.**
-
-### Run
-
-```
-Double-click:  start.bat
-```
-
-The script will:
-1. ✅ Check Python
-2. ✅ Install Python dependencies (`fastapi`, `pywebview`, etc.)
-3. ✅ Check/install Ollama (downloads installer if needed)
-4. ✅ Start Ollama service
-5. ✅ Begin pulling the AI model (phi3) in background
-6. 🚀 Launch Context Vault in a native window
-
-A **Setup Wizard** inside the app shows real-time progress while the model downloads.
+Ollama and the AI model are installed automatically during setup.
 
 ---
 
-## Manual Run (Alternative)
+## Browser Extension
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+The browser extension captures conversations from **ChatGPT** and **Claude** with one click.
 
-# Make sure Ollama is running with phi3
-ollama serve          # (in one terminal)
-ollama pull phi3      # (in another terminal)
-
-# Launch the app
-python run.py
-```
+After running the installer, load it manually:
+1. Open `chrome://extensions` (or `edge://extensions`)
+2. Enable **Developer Mode**
+3. Click **Load unpacked** → select the `extension/` folder
 
 ---
 
@@ -64,18 +65,25 @@ python run.py
 
 ```
 ConVX/
-├── start.bat              # One-click launcher
+├── start.bat              # Windows launcher
+├── start.sh               # macOS/Linux launcher
+├── install.sh             # One-line installer for Mac/Linux
 ├── run.py                 # Entry point (FastAPI + pywebview)
+├── installer.py           # GUI setup wizard
 ├── requirements.txt       # Python dependencies
 ├── backend/
 │   ├── main.py            # FastAPI server + all API routes
 │   ├── database.py        # SQLite CRUD operations
 │   ├── ollama_client.py   # Ollama REST API client
 │   └── models.py          # Pydantic schemas
-└── frontend/
-    ├── index.html         # App shell
-    ├── css/styles.css     # Dark theme + glassmorphism
-    └── js/app.js          # SPA logic
+├── frontend/
+│   ├── index.html         # App shell
+│   ├── installer.html     # Setup wizard UI
+│   ├── css/               # Dark theme + glassmorphism
+│   └── js/app.js          # SPA logic
+├── extension/             # Chrome/Edge browser extension
+├── vscode-extension/      # VS Code sidebar extension
+└── installer/             # Windows .exe build scripts
 ```
 
 ---

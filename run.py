@@ -2,7 +2,7 @@
 Context Vault — Application Entry Point.
 
 Starts the FastAPI backend on a background thread, then opens a native
-window via pywebview. This is the file that start.bat calls.
+window via pywebview.
 """
 
 import sys
@@ -14,7 +14,7 @@ import time
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
-# Configure Ollama to use E: drive for models
+# Configure Ollama models path
 OLLAMA_MODELS_DIR = os.path.join(PROJECT_ROOT, ".ollama", "models")
 os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_DIR
 

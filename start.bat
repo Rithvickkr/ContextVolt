@@ -39,11 +39,18 @@ if not exist "%VENV_PYTHON%" (
 "%VENV_PYTHON%" -c "import webview" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo  Preparing installer...
-    "%VENV_PIP%" install pywebview --quiet --disable-pip-version-check >nul 2>&1
+    "%VENV_PIP%" install pywebview --disable-pip-version-check
     if %ERRORLEVEL% NEQ 0 (
-        echo  Failed to install required components.
-        pause
-        exit /b 1
+        echo.
+        echo  Failed to install pywebview. Trying alternative...
+        "%VENV_PYTHON%" -m pip install pywebview --disable-pip-version-check
+        if %ERRORLEVEL% NEQ 0 (
+            echo.
+            echo  Could not install required components.
+            echo  Try running manually: pip install pywebview
+            pause
+            exit /b 1
+        )
     )
 )
 

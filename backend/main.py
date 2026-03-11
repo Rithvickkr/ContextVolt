@@ -187,15 +187,26 @@ def api_list_contexts_lightweight(q: str = Query(default="", description="Search
         contexts = get_all_contexts()
 
     # Strip heavy fields to keep the payload small
-    return [
-        {
+    result = []
+    for ctx in contexts:
+        # Extract a short summary text
+        summary = ctx.get("summary", "")
+        if isinstance(summary, dict):
+            summary = summary.get("summary", summary.get("main_topics", ""))
+            if isinstance(summary, list):
+                summary = ", ".join(summary[:3])
+        if isinstance(summary, str) and len(summary) > 120:
+            summary = summary[:120]
+
+        result.append({
             "id": ctx["id"],
             "title": ctx["title"],
+            "summary": summary,
+            "source": ctx.get("source", ""),
             "tags": ctx.get("tags", []),
             "created_at": ctx["created_at"],
-        }
-        for ctx in contexts
-    ]
+        })
+    return result
 
 
 # ---------------------------------------------------------------------------

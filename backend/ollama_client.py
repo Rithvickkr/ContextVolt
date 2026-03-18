@@ -5,6 +5,7 @@ Communicates with Ollama's REST API at localhost:11434.
 """
 
 import json
+import re
 import requests
 
 OLLAMA_BASE = "http://localhost:11434"
@@ -129,7 +130,6 @@ def _extract_json_from_response(response_text: str) -> dict:
     
     # Remove markdown code blocks if present
     if "```" in cleaned:
-        import re
         # Extract content between ```json and ``` or just ``` and ```
         match = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned)
         if match:
@@ -166,7 +166,6 @@ def _extract_json_from_response(response_text: str) -> dict:
         "unresolved_questions": [],
     }
     
-    import re
     # Try to find main_topic
     topic_match = re.search(r'"main_topic"\s*:\s*"([^"]*)"', cleaned)
     if topic_match:
@@ -182,24 +181,32 @@ def _extract_json_from_response(response_text: str) -> dict:
     return result
 
 
-def _split_by_messages(text: str, chunk_char_limit: int = 10000, overlap: int = 1) -> list:
+_MSG_BOUNDARY = re.compile(r'(?=(?:USER|ASSISTANT|Human|Assistant):\s)', re.IGNORECASE)
+
+
+def _parse_messages(text: str) -> list[str]:
+    """Split conversation text into individual messages.
+
+    Splits on USER:/ASSISTANT:/Human:/Assistant: turn markers.
+    Falls back to paragraph splitting when no markers are present.
+    """
+    messages = [m.strip() for m in _MSG_BOUNDARY.split(text) if m.strip()]
+    if len(messages) <= 1:
+        messages = [p.strip() for p in text.split('\n\n') if p.strip()] or [text]
+    return messages
+
+
+def _split_by_messages(text: str, chunk_char_limit: int = 10000, overlap: int = 1) -> list[str]:
     """
     Split conversation text at message boundaries (USER:/ASSISTANT: turns).
     Adds `overlap` messages of shared context between consecutive chunks so
     the LLM sees conversational continuity across chunk boundaries.
     Falls back to paragraph-splitting if no message markers are found.
     """
-    import re
-
-    pattern = re.compile(r'(?=(?:USER|ASSISTANT|Human|Assistant):\s)', re.IGNORECASE)
-    messages = [m.strip() for m in pattern.split(text) if m.strip()]
-
-    if len(messages) <= 1:
-        # No recognizable turn markers — fall back to paragraph splitting
-        messages = [p.strip() for p in text.split('\n\n') if p.strip()] or [text]
+    messages = _parse_messages(text)
 
     chunks = []
-    current = []
+    current: list[str] = []
     current_len = 0
 
     for msg in messages:
@@ -218,7 +225,7 @@ def _split_by_messages(text: str, chunk_char_limit: int = 10000, overlap: int = 
     return chunks
 
 
-def _anchor_text(messages: list, anchor_count: int = 2) -> tuple:
+def _anchor_text(messages: list[str], anchor_count: int = 2) -> tuple[str, str]:
     """
     Return (opening_block, closing_block) containing the first and last
     `anchor_count` messages.  These are always included verbatim so the LLM
@@ -238,25 +245,20 @@ def summarize_conversation(text: str, model: str = DEFAULT_MODEL) -> dict:
       - Progressive rolling summarization (avoids naive merge of N summaries)
     Returns a dict with main_topic, key_ideas, conclusions, unresolved_questions.
     """
-    import re
-
     char_limit = 16000
 
     if len(text) <= char_limit:
         return _summarize_single(text, model)
 
     # --- Split at message boundaries, not raw char offsets ---
-    pattern = re.compile(r'(?=(?:USER|ASSISTANT|Human|Assistant):\s)', re.IGNORECASE)
-    messages = [m.strip() for m in pattern.split(text) if m.strip()]
-    if len(messages) <= 1:
-        messages = [p.strip() for p in text.split('\n\n') if p.strip()] or [text]
+    messages = _parse_messages(text)
 
     # --- Always anchor on the first 2 and last 2 messages ---
     anchor_count = 2
     opening, closing = _anchor_text(messages, anchor_count)
 
     # Chunk the middle section (exclude anchored messages at both ends)
-    middle_messages = messages[anchor_count: len(messages) - anchor_count] if len(messages) > anchor_count * 2 else []
+    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
     middle_text = '\n\n'.join(middle_messages)
 
     # Build middle chunks with 1-message overlap for continuity

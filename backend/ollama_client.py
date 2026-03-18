@@ -5,6 +5,7 @@ Communicates with Ollama's REST API at localhost:11434.
 """
 
 import json
+import re
 import requests
 
 OLLAMA_BASE = "http://localhost:11434"
@@ -129,7 +130,6 @@ def _extract_json_from_response(response_text: str) -> dict:
     
     # Remove markdown code blocks if present
     if "```" in cleaned:
-        import re
         # Extract content between ```json and ``` or just ``` and ```
         match = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned)
         if match:
@@ -166,7 +166,6 @@ def _extract_json_from_response(response_text: str) -> dict:
         "unresolved_questions": [],
     }
     
-    import re
     # Try to find main_topic
     topic_match = re.search(r'"main_topic"\s*:\s*"([^"]*)"', cleaned)
     if topic_match:
@@ -182,70 +181,149 @@ def _extract_json_from_response(response_text: str) -> dict:
     return result
 
 
+_MSG_BOUNDARY = re.compile(r'(?=(?:USER|ASSISTANT|Human|Assistant):\s)', re.IGNORECASE)
+
+
+def _parse_messages(text: str) -> list[str]:
+    """Split conversation text into individual messages.
+
+    Splits on USER:/ASSISTANT:/Human:/Assistant: turn markers.
+    Falls back to paragraph splitting when no markers are present.
+    """
+    messages = [m.strip() for m in _MSG_BOUNDARY.split(text) if m.strip()]
+    if len(messages) <= 1:
+        messages = [p.strip() for p in text.split('\n\n') if p.strip()] or [text]
+    return messages
+
+
+def _split_by_messages(text: str, chunk_char_limit: int = 10000, overlap: int = 1) -> list[str]:
+    """
+    Split conversation text at message boundaries (USER:/ASSISTANT: turns).
+    Adds `overlap` messages of shared context between consecutive chunks so
+    the LLM sees conversational continuity across chunk boundaries.
+    Falls back to paragraph-splitting if no message markers are found.
+    """
+    messages = _parse_messages(text)
+
+    chunks = []
+    current: list[str] = []
+    current_len = 0
+
+    for msg in messages:
+        msg_len = len(msg)
+        if current_len + msg_len > chunk_char_limit and current:
+            chunks.append('\n\n'.join(current))
+            # Carry the last `overlap` messages into the next chunk for continuity
+            current = current[-overlap:] if overlap else []
+            current_len = sum(len(m) for m in current)
+        current.append(msg)
+        current_len += msg_len
+
+    if current:
+        chunks.append('\n\n'.join(current))
+
+    return chunks
+
+
+def _anchor_text(messages: list[str], anchor_count: int = 2) -> tuple[str, str]:
+    """
+    Return (opening_block, closing_block) containing the first and last
+    `anchor_count` messages.  These are always included verbatim so the LLM
+    knows the original goal and the most recent state of the conversation.
+    """
+    opening = '\n\n'.join(messages[:anchor_count])
+    closing = '\n\n'.join(messages[-anchor_count:]) if len(messages) > anchor_count else ''
+    return opening, closing
+
+
 def summarize_conversation(text: str, model: str = DEFAULT_MODEL) -> dict:
     """
     Send the conversation text to Ollama and get a structured summary.
-    For long conversations, splits into chunks and merges summaries.
+    For long conversations uses message-boundary chunking with:
+      - First/last message anchoring (opening goal + most-recent state)
+      - 1-message overlap between chunks (preserves conversational flow)
+      - Progressive rolling summarization (avoids naive merge of N summaries)
     Returns a dict with main_topic, key_ideas, conclusions, unresolved_questions.
     """
-    # phi3 handles ~4K tokens by default; request more context for longer input
-    # ~4 chars per token as rough estimate
     char_limit = 16000
-    chunk_size = 12000
 
     if len(text) <= char_limit:
         return _summarize_single(text, model)
 
-    # Long conversation: chunk, summarize each, then merge
-    chunks = []
-    for i in range(0, len(text), chunk_size):
-        chunks.append(text[i:i + chunk_size])
+    # --- Split at message boundaries, not raw char offsets ---
+    messages = _parse_messages(text)
 
-    partial_summaries = []
-    for idx, chunk in enumerate(chunks):
-        result = _summarize_single(chunk, model, label=f"Part {idx+1}/{len(chunks)}")
-        topic = result.get("main_topic", "")
-        points = "; ".join(result.get("key_ideas", []))
-        decided = "; ".join(result.get("conclusions", []))
-        opens = "; ".join(result.get("unresolved_questions", []))
-        partial_summaries.append(
-            f"Part {idx+1}: Topic: {topic}. Points: {points}. Decided: {decided}. Open: {opens}"
+    # --- Always anchor on the first 2 and last 2 messages ---
+    anchor_count = 2
+    opening, closing = _anchor_text(messages, anchor_count)
+
+    # Chunk the middle section (exclude anchored messages at both ends)
+    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
+    middle_text = '\n\n'.join(middle_messages)
+
+    # Build middle chunks with 1-message overlap for continuity
+    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=10000, overlap=1) if middle_text else []
+
+    # --- Progressive (rolling) summarization of the middle ---
+    # Start with the opening anchor as the running context
+    running_summary = _summarize_single(opening, model, label="Opening")
+
+    for idx, chunk in enumerate(middle_chunks):
+        # Feed current rolling summary + new chunk to the model
+        running_topic = running_summary.get("main_topic", "")
+        running_points = "; ".join(running_summary.get("key_ideas", []))
+        rolling_context = (
+            f"[So far — Topic: {running_topic}. Key points: {running_points}]\n\n"
+            f"NEXT SECTION:\n{chunk}"
+        )
+        running_summary = _summarize_single(rolling_context, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
+
+    # --- Final pass: merge rolling summary + closing anchor ---
+    if closing:
+        running_topic = running_summary.get("main_topic", "")
+        running_points = "; ".join(running_summary.get("key_ideas", []))
+        running_decided = "; ".join(running_summary.get("conclusions", []))
+        running_open = "; ".join(running_summary.get("unresolved_questions", []))
+
+        final_prompt = (
+            "You are a precise summarization assistant. "
+            "Below is a running summary of a long conversation followed by the final messages.\n\n"
+            f"RUNNING SUMMARY:\n"
+            f"Topic: {running_topic}\n"
+            f"Points: {running_points}\n"
+            f"Decided: {running_decided}\n"
+            f"Open: {running_open}\n\n"
+            f"FINAL MESSAGES (most recent — highest priority):\n{closing}\n\n"
+            "Produce the final unified summary. Prioritise the conclusions and open questions "
+            "from the final messages.\n\n"
+            "Respond in EXACTLY this format (no extra text):\n"
+            "TOPIC: [one sentence describing the overall main topic]\n"
+            "POINTS: [3-6 key points covering the whole conversation, separated by semicolons]\n"
+            "DECIDED: [what was concluded or decided overall, or \"nothing yet\"]\n"
+            "OPEN: [any unanswered questions remaining, or \"none\"]\n"
         )
 
-    # Merge pass: summarize the summaries
-    merged_text = "\n".join(partial_summaries)
-    merge_prompt = (
-        "You are a precise summarization assistant. Below are partial summaries of a long conversation. "
-        "Combine them into one unified summary.\n\n"
-        f"PARTIAL SUMMARIES:\n{merged_text}\n\n"
-        "Respond in EXACTLY this format (no extra text):\n"
-        "TOPIC: [one sentence describing the overall main topic]\n"
-        "POINTS: [list 3-6 key points covering the whole conversation, separated by semicolons]\n"
-        "DECIDED: [what was concluded or decided overall, or \"nothing yet\"]\n"
-        "OPEN: [any unanswered questions remaining, or \"none\"]\n"
-    )
-
-    try:
-        r = requests.post(
-            f"{OLLAMA_BASE}/api/generate",
-            json={
-                "model": model,
-                "prompt": merge_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 1000,
-                    "num_ctx": 4096,
+        try:
+            r = requests.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": final_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.2,
+                        "num_predict": 1000,
+                        "num_ctx": 8192,
+                    },
                 },
-            },
-            timeout=180,
-        )
-        r.raise_for_status()
-        response_text = r.json().get("response", "")
-        return _parse_text_summary(response_text)
-    except Exception:
-        # If merge fails, return the first chunk's summary
-        return _summarize_single(text[:char_limit], model)
+                timeout=180,
+            )
+            r.raise_for_status()
+            return _parse_text_summary(r.json().get("response", ""))
+        except Exception:
+            pass  # Fall through to return the rolling summary as-is
+
+    return running_summary
 
 
 def _summarize_single(text: str, model: str = DEFAULT_MODEL, label: str = "") -> dict:

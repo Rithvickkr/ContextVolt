@@ -13,20 +13,26 @@ function extractChatContent() {
             const role = msg.getAttribute('data-message-author-role');
             if (role !== 'user' && role !== 'assistant') return;
             const prose = msg.querySelector('.markdown, .whitespace-pre-wrap, .text-message');
-            if (!prose) return;
-            const text = prose.innerText.trim();
+            const text = prose ? prose.innerText.trim() : msg.innerText.trim();
             if (!text) return;
             chatLog += (role === 'user' ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
         });
 
     } else if (domain.includes("claude.ai")) {
-        const humanTurns = document.querySelectorAll('[data-testid="human-turn"]');
-        const aiTurns = document.querySelectorAll('[data-testid="ai-turn"]');
+        // Claude uses data-testid="user-message" for user, and .font-claude-response divs for assistant
+        const userMsgs = document.querySelectorAll('[data-testid="user-message"]');
+        const aiMsgs = document.querySelectorAll('div.font-claude-response');
 
-        if (humanTurns.length > 0 || aiTurns.length > 0) {
+        // Filter assistant messages to top-level response containers only (not inner paragraphs)
+        const topLevelAiMsgs = Array.from(aiMsgs).filter(el =>
+            !el.classList.contains('font-claude-response-body') && el.tagName === 'DIV' &&
+            el.closest('.group')
+        );
+
+        if (userMsgs.length > 0 || topLevelAiMsgs.length > 0) {
             const allTurns = [];
-            humanTurns.forEach(el => allTurns.push({ el, role: 'USER' }));
-            aiTurns.forEach(el => allTurns.push({ el, role: 'ASSISTANT' }));
+            userMsgs.forEach(el => allTurns.push({ el, role: 'USER' }));
+            topLevelAiMsgs.forEach(el => allTurns.push({ el, role: 'ASSISTANT' }));
 
             allTurns.sort((a, b) => {
                 const pos = a.el.compareDocumentPosition(b.el);
@@ -39,18 +45,124 @@ function extractChatContent() {
                 chatLog += role + ':\n' + text + '\n\n';
             });
         } else {
-            const messages = document.querySelectorAll('.prose, [class*="Message"]');
-            if (messages.length === 0) return null;
-            messages.forEach((msg, i) => {
-                const text = msg.innerText.trim();
-                if (!text) return;
-                const role = i % 2 === 0 ? 'USER' : 'ASSISTANT';
-                chatLog += role + ':\n' + text + '\n\n';
-            });
-            if (!chatLog) {
-                return null;
+            // Fallback: try old selectors or generic approach
+            const humanTurns = document.querySelectorAll('[data-testid="human-turn"]');
+            const aiTurns = document.querySelectorAll('[data-testid="ai-turn"]');
+            if (humanTurns.length > 0 || aiTurns.length > 0) {
+                const allTurns = [];
+                humanTurns.forEach(el => allTurns.push({ el, role: 'USER' }));
+                aiTurns.forEach(el => allTurns.push({ el, role: 'ASSISTANT' }));
+                allTurns.sort((a, b) => {
+                    const pos = a.el.compareDocumentPosition(b.el);
+                    return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+                });
+                allTurns.forEach(({ el, role }) => {
+                    const text = el.innerText.trim();
+                    if (!text) return;
+                    chatLog += role + ':\n' + text + '\n\n';
+                });
             }
+            if (!chatLog) return null;
         }
+    } else if (domain.includes("gemini.google.com")) {
+        // Gemini: user-query for user messages, model-response for assistant messages
+        const userQueries = document.querySelectorAll('user-query');
+        const modelResponses = document.querySelectorAll('model-response');
+        if (userQueries.length === 0 && modelResponses.length === 0) return null;
+
+        const allTurns = [];
+        userQueries.forEach(el => allTurns.push({ el, role: 'USER' }));
+        modelResponses.forEach(el => allTurns.push({ el, role: 'ASSISTANT' }));
+
+        allTurns.sort((a, b) => {
+            const pos = a.el.compareDocumentPosition(b.el);
+            return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+        });
+
+        allTurns.forEach(({ el, role }) => {
+            let text = el.innerText.trim();
+            if (!text) return;
+            // Strip "You said" / "Gemini said" prefixes added by the UI
+            text = text.replace(/^You said\s*\n+/i, '').replace(/^Gemini said\s*\n+/i, '');
+            chatLog += role + ':\n' + text + '\n\n';
+        });
+    } else if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai")) {
+        // Grok: .message-bubble for all messages
+        // User bubbles have parent with class 'items-end', assistant with 'items-start'
+        const messages = document.querySelectorAll('.message-bubble');
+        if (messages.length === 0) return null;
+        messages.forEach((msg) => {
+            const text = msg.innerText.trim();
+            if (!text) return;
+
+            // Detect role from parent container alignment
+            const parent = msg.closest('[class*="items-end"], [class*="items-start"]');
+            const isUser = parent && parent.className.includes('items-end');
+
+            chatLog += (isUser ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
+        });
+    } else if (domain.includes("deepseek.com")) {
+        // DeepSeek
+        // DeepSeek wraps messages in .ds-message-row or similar.
+        const allTurns = document.querySelectorAll('.ds-message-row, .chat-message-content, .d887a0b3'); // d887a0b3 is a common class for user/bot rows
+        if (allTurns.length === 0) return null;
+        
+        allTurns.forEach((msg) => {
+            const contentEl = msg.querySelector('.ds-markdown') || msg;
+            const text = contentEl.innerText.trim();
+            if (!text) return;
+
+            // User messages usually have different classes than assistant
+            const isUser = msg.classList.contains('ds-user-message') || 
+                           msg.querySelector('.ds-user-avatar') != null ||
+                           msg.innerHTML.includes('User');
+                           
+            chatLog += (isUser ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
+        });
+    } else if (domain.includes("perplexity.ai")) {
+        // Perplexity
+        const userQueries = document.querySelectorAll('[dir="auto"]');
+        const aiAnswers = document.querySelectorAll('.prose'); // Markdown rendering
+        
+        const allTurns = [];
+        userQueries.forEach(el => {
+            if (el.closest('.prose') === null && el.innerText.trim()) { // Avoid picking up inner text
+                allTurns.push({ el, role: 'USER' });
+            }
+        });
+        aiAnswers.forEach(el => {
+            if (el.innerText.trim()) {
+                allTurns.push({ el, role: 'ASSISTANT' });
+            }
+        });
+
+        allTurns.sort((a, b) => {
+            const pos = a.el.compareDocumentPosition(b.el);
+            return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+        });
+
+        if (allTurns.length === 0) return null;
+        allTurns.forEach(({ el, role }) => {
+            chatLog += role + ':\n' + el.innerText.trim() + '\n\n';
+        });
+    } else if (domain.includes("copilot.microsoft.com")) {
+        // Copilot
+        // Copilot uses Shadow DOM heavily. We try to grab surface elements if available, 
+        // or Fallback to cib-message.
+        const messages = document.querySelectorAll('cib-message, .cib-message');
+        if (messages.length === 0) return null;
+        
+        messages.forEach((msg) => {
+             const text = msg.innerText.trim();
+             if (!text) return;
+             
+             // Copilot messages usually have a type attribute like type="text" or source="user"
+             const isUser = msg.getAttribute('type') === 'text' || 
+                            msg.getAttribute('source') === 'user' ||
+                            msg.classList.contains('user-message');
+                            
+             chatLog += (isUser ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
+        });
     }
 
     return chatLog.trim() || null;
@@ -78,6 +190,56 @@ function pasteIntoInput(text) {
         if (input) {
             input.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
             input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+            input.focus();
+            return true;
+        }
+    } else if (domain.includes("gemini.google.com")) {
+        const input = document.querySelector('rich-textarea div[contenteditable="true"]');
+        if (input) {
+            input.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+            input.focus();
+            return true;
+        }
+    } else if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai")) {
+        const input = document.querySelector('textarea, [contenteditable="true"]');
+        if (input) {
+            if (input.tagName === 'TEXTAREA') {
+                input.value = text;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                input.innerText = text;
+                input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+            }
+            input.focus();
+            return true;
+        }
+    } else if (domain.includes("deepseek.com")) {
+        const input = document.querySelector('textarea, #chat-input');
+        if (input) {
+            input.value = text;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            return true;
+        }
+    } else if (domain.includes("perplexity.ai")) {
+        const input = document.querySelector('textarea, [contenteditable="true"]');
+        if (input) {
+            if (input.tagName === 'TEXTAREA') {
+                input.value = text;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                input.innerText = text;
+                input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+            }
+            input.focus();
+            return true;
+        }
+    } else if (domain.includes("copilot.microsoft.com")) {
+        const input = document.querySelector('textarea, #searchbox');
+        if (input) {
+            input.value = text;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
             input.focus();
             return true;
         }
@@ -118,7 +280,15 @@ function injectButton() {
                 exportBtn.innerHTML = `<span class="cv-spinner"></span> Summarizing…`;
             }, 2500);
 
-            const source = window.location.hostname.includes("chatgpt.com") ? "ChatGPT" : "Claude";
+            let source = "Unknown";
+            const h = window.location.hostname;
+            if (h.includes("chatgpt.com")) source = "ChatGPT";
+            else if (h.includes("claude.ai")) source = "Claude";
+            else if (h.includes("gemini.google.com")) source = "Gemini";
+            else if (h.includes("grok.com") || h.includes("x.com") || h.includes("x.ai")) source = "Grok";
+            else if (h.includes("deepseek.com")) source = "DeepSeek";
+            else if (h.includes("perplexity.ai")) source = "Perplexity";
+            else if (h.includes("copilot.microsoft.com")) source = "Copilot";
 
             chrome.runtime.sendMessage({
                 action: "save_chat",

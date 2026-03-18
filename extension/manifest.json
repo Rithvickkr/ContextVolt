@@ -3,7 +3,7 @@
   "name": "ContextVolt Exporter",
   "version": "1.1",
   "description": "Send conversations from ChatGPT, Claude, Gemini, Grok, DeepSeek, Perplexity & Copilot to your local ContextVolt.",
-  "permissions": [],
+  "permissions": ["clipboardWrite"],
   "host_permissions": [
     "http://localhost:8000/*"
   ],

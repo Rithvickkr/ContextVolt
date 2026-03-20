@@ -10,7 +10,7 @@ import sys
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from backend.database import (
     init_db,
@@ -20,10 +20,14 @@ from backend.database import (
     update_context,
     delete_context,
     search_contexts,
+    search_contexts_semantic,
+    set_context_embedding,
 )
 from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest
 from backend.ollama_client import (
     summarize_conversation,
+    generate_continuation_prompt,
+    embed_text,
     check_ollama_running,
     check_model_available,
     DEFAULT_MODEL,
@@ -45,6 +49,21 @@ app.add_middleware(
 
 # Initialize database on startup
 init_db()
+
+
+def _try_embed_context(context_id: int | None, summary: dict) -> None:
+    """Generate and store an embedding for a context (best-effort, never raises)."""
+    if not context_id or not isinstance(summary, dict):
+        return
+    try:
+        topic = summary.get("main_topic", "")
+        ideas = " ".join(summary.get("key_ideas", []))
+        vec = embed_text(f"{topic} {ideas}".strip())
+        if vec:
+            set_context_embedding(context_id, vec)
+    except Exception:
+        pass
+
 
 # Mount static frontend files
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
@@ -143,11 +162,10 @@ def api_capture(req: CaptureRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     # Build a default/fallback summary
-    default_summary = {
+    default_summary: dict = {
         "main_topic": "No topic extracted",
-        "key_ideas": [],
-        "conclusions": [],
-        "unresolved_questions": [],
+        "key_ideas": [], "snapshot": "", "vitals": [],
+        "conclusions": [], "unresolved_questions": [],
     }
     title = f"Captured from {req.source}"
     summary = default_summary
@@ -155,7 +173,10 @@ def api_capture(req: CaptureRequest):
     # Attempt Ollama summarization, but don't block save on it
     if check_ollama_running() and check_model_available():
         try:
-            summary = summarize_conversation(req.text)
+            summary = summarize_conversation(
+                req.text,
+                important_snippets=req.important_snippets or [],
+            )
             if summary and summary.get("main_topic") and summary["main_topic"] != "No topic extracted":
                 topic = summary["main_topic"]
                 title = topic if len(topic) < 50 else topic[:47] + "..."
@@ -169,7 +190,10 @@ def api_capture(req: CaptureRequest):
             summary=summary,
             tags=[req.source, "Extension"],
             original_chat=req.text,
+            important_notes=req.important_snippets or [],
         )
+        # Best-effort embedding for semantic search (don't fail the capture if unavailable)
+        _try_embed_context(result.get("id"), summary)
         return {"success": True, "id": result.get("id")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Capture save failed: {str(e)}")
@@ -182,7 +206,11 @@ def api_capture(req: CaptureRequest):
 def api_list_contexts_lightweight(q: str = Query(default="", description="Search query")):
     """Return minimal context data for the extension import picker."""
     if q:
-        contexts = search_contexts(q)
+        vec = embed_text(q)
+        if vec:
+            contexts = search_contexts_semantic(vec) or search_contexts(q)
+        else:
+            contexts = search_contexts(q)
     else:
         contexts = get_all_contexts()
 
@@ -216,19 +244,26 @@ def api_list_contexts_lightweight(q: str = Query(default="", description="Search
 @app.post("/api/contexts")
 def api_create_context(ctx: ContextCreate):
     """Save a new context entry."""
+    summary_dict = ctx.summary.model_dump()
     result = create_context(
         title=ctx.title,
-        summary=ctx.summary.model_dump(),
+        summary=summary_dict,
         tags=ctx.tags,
         original_chat=ctx.original_chat,
     )
+    _try_embed_context(result.get("id"), summary_dict)
     return result
 
 
 @app.get("/api/contexts")
 def api_list_contexts(q: str = Query(default="", description="Search query")):
-    """List all contexts. Supports optional search via ?q="""
+    """List all contexts. Uses semantic search when embedding model is available, else keyword."""
     if q:
+        vec = embed_text(q)
+        if vec:
+            results = search_contexts_semantic(vec)
+            if results:
+                return results
         return search_contexts(q)
     return get_all_contexts()
 
@@ -270,39 +305,86 @@ def api_delete_context(context_id: int):
     return {"status": "deleted", "id": context_id}
 
 
+@app.post("/api/contexts/embed-all")
+def api_embed_all():
+    """Backfill embeddings for all contexts, streaming progress as NDJSON lines.
+
+    Each line: {"done": N, "total": N, "updated": N, "skipped": N, "title": "..."}
+    Final line adds "finished": true
+    """
+    import json as _json
+
+    contexts = get_all_contexts()
+    total = len(contexts)
+
+    def _stream():
+        updated = 0
+        skipped = 0
+        for i, ctx in enumerate(contexts, start=1):
+            if ctx.get("embedding"):
+                skipped += 1
+            else:
+                _try_embed_context(ctx.get("id"), ctx.get("summary", {}))
+                updated += 1
+            payload = {
+                "done": i,
+                "total": total,
+                "updated": updated,
+                "skipped": skipped,
+                "title": ctx.get("title", ""),
+            }
+            yield _json.dumps(payload) + "\n"
+        # Final sentinel
+        yield _json.dumps({"done": total, "total": total, "updated": updated,
+                            "skipped": skipped, "finished": True}) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
 # ---------------------------------------------------------------------------
 # Prompt Builder
 # ---------------------------------------------------------------------------
 
 @app.post("/api/contexts/{context_id}/prompt")
 def api_generate_prompt(context_id: int):
-    """Generate a structured continuation prompt for a context."""
+    """Generate a structured continuation prompt for a context using the local LLM."""
     ctx = get_context(context_id)
     if not ctx:
         raise HTTPException(status_code=404, detail="Context not found")
 
     summary = ctx["summary"]
+    important_notes: list = ctx.get("important_notes") or []
+
+    # Try LLM-generated prompt first (richer context brief)
+    if isinstance(summary, dict) and check_ollama_running() and check_model_available():
+        llm_prompt = generate_continuation_prompt(
+            summary,
+            ctx.get("original_chat", ""),
+            important_snippets=important_notes,
+        )
+        if llm_prompt:
+            return {"prompt": llm_prompt, "context_id": context_id, "title": ctx["title"]}
+
+    # Fallback: structured template from summary fields
     if isinstance(summary, str):
-        # Fallback if summary is still a raw string
         prompt = f"Context:\n{summary}\n\nContinue the discussion from this point."
     else:
-        key_ideas = "\n".join(f"- {idea}" for idea in summary.get("key_ideas", []))
+        key_ideas   = "\n".join(f"- {idea}" for idea in summary.get("key_ideas", []))
+        snapshot    = summary.get("snapshot", "")
+        vitals      = "\n".join(f"- {v}" for v in summary.get("vitals", []))
         conclusions = "\n".join(f"- {c}" for c in summary.get("conclusions", []))
-        unresolved = "\n".join(f"- {q}" for q in summary.get("unresolved_questions", []))
-
-        prompt = f"""Context:
-{summary.get('main_topic', 'N/A')}
-
-Key Points:
-{key_ideas or '- None noted'}
-
-Conclusions Reached:
-{conclusions or '- None yet'}
-
-Unresolved Questions:
-{unresolved or '- None'}
-
-Continue the discussion from this point. Address any unresolved questions and build upon the conclusions reached so far."""
+        unresolved  = "\n".join(f"- {q}" for q in summary.get("unresolved_questions", []))
+        marked      = "\n".join(f"- {n}" for n in important_notes)
+        prompt = (
+            f"Context: {summary.get('main_topic', 'N/A')}\n\n"
+            f"Key Points:\n{key_ideas or '- None noted'}\n\n"
+            + (f"Active State:\n{snapshot}\n\n" if snapshot and snapshot != "n/a" else "")
+            + (f"Technical Vitals:\n{vitals}\n\n" if vitals else "")
+            + (f"Marked Important:\n{marked}\n\n" if marked else "")
+            + f"Conclusions Reached:\n{conclusions or '- None yet'}\n\n"
+            f"Unresolved Questions:\n{unresolved or '- None'}\n\n"
+            "Continue the discussion from this point."
+        )
 
     return {"prompt": prompt, "context_id": context_id, "title": ctx["title"]}
 
@@ -380,3 +462,30 @@ def api_export_markdown_download(context_id: int):
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Debug
+# ---------------------------------------------------------------------------
+
+@app.get("/api/debug/ollama")
+def api_debug_ollama():
+    """Show installed models and the model name ContextVolt is configured to use."""
+    import requests as _req
+    try:
+        r = _req.get("http://localhost:11434/api/tags", timeout=5)
+        models = [m.get("name") for m in r.json().get("models", [])]
+    except Exception as e:
+        models = [f"ERROR: {e}"]
+    return {"configured_model": DEFAULT_MODEL, "installed_models": models}
+
+
+@app.get("/api/debug/logs")
+def api_debug_logs(lines: int = 100):
+    """Return the last N lines of contextvolt.log for in-app debugging."""
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contextvolt.log")
+    if not os.path.exists(log_path):
+        return {"lines": [], "path": log_path, "exists": False}
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        all_lines = f.readlines()
+    return {"lines": all_lines[-lines:], "path": log_path, "exists": True}  # type: ignore[index]

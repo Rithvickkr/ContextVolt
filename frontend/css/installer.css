@@ -440,5 +440,115 @@ body {
 }
 
 /* ================================================================
+   Setup Panel — model selection (shown before install)
+   ================================================================ */
+.setup-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.setup-heading {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.setup-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin-bottom: 18px;
+}
+
+.model-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.model-card {
+    padding: 13px 15px;
+    background: var(--bg-primary);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    user-select: none;
+}
+
+.model-card:hover {
+    border-color: var(--border-accent);
+    background: var(--bg-tertiary);
+}
+
+.model-card.selected {
+    border-color: rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.model-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.model-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.model-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background: rgba(52, 211, 153, 0.12);
+    color: var(--success);
+    border: 1px solid rgba(52, 211, 153, 0.28);
+    border-radius: 100px;
+    letter-spacing: 0.02em;
+}
+
+.model-size {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+.model-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.setup-actions {
+    padding-top: 16px;
+    display: flex;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   Progress Panel — hidden until install starts
+   ================================================================ */
+.progress-panel {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.progress-panel.active {
+    display: flex;
+}
+
+/* ================================================================
    Responsive
    ================================================================ */

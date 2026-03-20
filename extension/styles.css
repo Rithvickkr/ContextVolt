@@ -287,3 +287,46 @@
     color: #52525b;
     margin-top: 6px;
 }
+
+/* ─── Per-message Star Buttons ──────────────────────────────────── */
+.cv-star-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.2);
+    padding: 2px 4px;
+    border-radius: 4px;
+    line-height: 1;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+/* Reveal on parent hover */
+*:hover > .cv-star-btn,
+*:focus-within > .cv-star-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.cv-star-btn:hover {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+    transform: scale(1.2);
+}
+
+.cv-star-btn.cv-star-active {
+    color: #fbbf24;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.cv-star-btn.cv-star-active:hover {
+    color: #f59e0b;
+    background: rgba(251, 191, 36, 0.18);
+}

@@ -14,12 +14,15 @@ class CaptureRequest(BaseModel):
     """Request body for the /api/capture endpoint from the browser extension."""
     text: str
     source: str = "Extension"
+    important_snippets: list[str] = []
 
 
 class SummaryData(BaseModel):
     """Structured summary returned by the LLM."""
     main_topic: str = ""
     key_ideas: list[str] = []
+    snapshot: str = ""
+    vitals: list[str] = []
     conclusions: list[str] = []
     unresolved_questions: list[str] = []
 

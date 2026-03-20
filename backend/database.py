@@ -19,8 +19,14 @@ def _get_conn():
     return conn
 
 
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    mag = (sum(x ** 2 for x in a) ** 0.5) * (sum(x ** 2 for x in b) ** 0.5)
+    return dot / mag if mag else 0.0
+
+
 def init_db():
-    """Create the contexts table if it doesn't exist."""
+    """Create the contexts table if it doesn't exist, and run migrations."""
     conn = _get_conn()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS contexts (
@@ -34,6 +40,18 @@ def init_db():
         )
     """)
     conn.commit()
+    # Migration: add embedding column for semantic search (safe to run every startup)
+    try:
+        conn.execute("ALTER TABLE contexts ADD COLUMN embedding TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+    # Migration: add important_notes column for user-marked snippets
+    try:
+        conn.execute("ALTER TABLE contexts ADD COLUMN important_notes TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
     conn.close()
 
 
@@ -49,25 +67,53 @@ def _row_to_dict(row):
         pass
     # Parse tags from comma-separated string to list
     if d.get("tags"):
-        d["tags"] = [t.strip() for t in d["tags"].split(",") if t.strip()]
+        d["tags"] = [t.strip() for t in d["tags"].split(",") if t.strip()]  # type: ignore[assignment]
     else:
-        d["tags"] = []
-    return d
+        d["tags"] = []  # type: ignore[assignment]
+    # Parse important_notes JSON array
+    if d.get("important_notes"):
+        try:
+            d["important_notes"] = json.loads(d["important_notes"])
+        except Exception:
+            d["important_notes"] = []
+    else:
+        d["important_notes"] = []
+    return d  # type: ignore[return-value]
 
 
-def create_context(title: str, summary: dict, tags: list[str], original_chat: str) -> dict:
+def create_context(
+    title: str,
+    summary: dict,
+    tags: list[str],
+    original_chat: str,
+    embedding: list[float] | None = None,
+    important_notes: list[str] | None = None,
+) -> dict:
     """Insert a new context and return it."""
     now = datetime.now(timezone.utc).isoformat()
+    embedding_json = json.dumps(embedding) if embedding is not None else None
+    notes_json = json.dumps(important_notes) if important_notes else None
     conn = _get_conn()
     cursor = conn.execute(
-        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (title, json.dumps(summary), ",".join(tags), original_chat, now, now),
+        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at, embedding, important_notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
-    return _row_to_dict(row)
+    return _row_to_dict(row)  # type: ignore[return-value]
+
+
+def set_context_embedding(context_id: int, embedding: list[float]) -> None:
+    """Store an embedding vector for an existing context."""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE contexts SET embedding = ? WHERE id = ?",
+        (json.dumps(embedding), context_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_all_contexts() -> list[dict]:
@@ -75,7 +121,7 @@ def get_all_contexts() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM contexts ORDER BY created_at DESC").fetchall()
     conn.close()
-    return [_row_to_dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
 
 
 def get_context(context_id: int) -> dict | None:
@@ -141,4 +187,37 @@ def search_contexts(query: str) -> list[dict]:
         (like, like, like, like),
     ).fetchall()
     conn.close()
-    return [_row_to_dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
+
+
+def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[dict]:
+    """Return up to top_k contexts ranked by cosine similarity to query_vec.
+
+    Only considers contexts that have a stored embedding. Falls back gracefully
+    to an empty list if none exist (caller should then use keyword search).
+    """
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM contexts WHERE embedding IS NOT NULL ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    scored = []
+    for row in rows:
+        ctx = _row_to_dict(row)
+        try:
+            vec: list[float] = json.loads(ctx.get("embedding") or "null")  # type: ignore[union-attr]
+            if vec:
+                ctx["_score"] = _cosine_similarity(query_vec, vec)  # type: ignore[index]
+                scored.append(ctx)
+        except Exception:
+            continue
+
+    scored.sort(key=lambda x: x.get("_score", 0.0), reverse=True)  # type: ignore[union-attr]
+    # Remove internal scoring field before returning
+    for ctx in scored:
+        ctx.pop("_score", None)  # type: ignore[union-attr]
+    return scored[:top_k]  # type: ignore[index]

@@ -21,7 +21,8 @@
         "https://grok.com/*",
         "https://chat.deepseek.com/*",
         "https://www.perplexity.ai/*",
-        "https://copilot.microsoft.com/*"
+        "https://copilot.microsoft.com/*",
+        "https://copilot.cloud.microsoft/*"
       ],
       "css": ["styles.css"],
       "js": ["content.js"]

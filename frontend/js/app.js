@@ -342,6 +342,9 @@ function renderDetail(ctx) {
     const unresolved = (summary.unresolved_questions || []).map(q =>
         `<li>${escapeHtml(q)}</li>`
     ).join('');
+    const importantNotes = (ctx.important_notes || []);
+    const vitals = (summary.vitals || []);
+    const snapshot = summary.snapshot && summary.snapshot.toLowerCase() !== 'n/a' ? summary.snapshot : '';
 
     container.innerHTML = `
         <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
@@ -354,6 +357,28 @@ function renderDetail(ctx) {
             <h3 class="section-title">Main Topic</h3>
             <div class="topic-text">${escapeHtml(summary.main_topic || 'No topic')}</div>
         </div>
+
+        ${importantNotes.length ? `
+        <div class="summary-section important-notes-section">
+            <h3 class="section-title">⭐ Marked Important</h3>
+            <ul class="summary-list important-notes-list">
+                ${importantNotes.map(n => `<li class="important-note-item">${escapeHtml(n)}</li>`).join('')}
+            </ul>
+        </div>` : ''}
+
+        ${snapshot ? `
+        <div class="summary-section">
+            <h3 class="section-title">Active State</h3>
+            <div class="snapshot-text">${escapeHtml(snapshot)}</div>
+        </div>` : ''}
+
+        ${vitals.length ? `
+        <div class="summary-section">
+            <h3 class="section-title">Technical Vitals</h3>
+            <ul class="vitals-list">
+                ${vitals.map(v => `<li class="vitals-item"><code>${escapeHtml(v)}</code></li>`).join('')}
+            </ul>
+        </div>` : ''}
 
         ${keyIdeas ? `
         <div class="summary-section">
@@ -380,7 +405,7 @@ function renderDetail(ctx) {
             <div class="original-chat-content" id="original-chat-box" style="display:none;">${escapeHtml(ctx.original_chat)}</div>
         </div>
 
-        <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id})">
+        <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id}, this)">
             Generate Continuation Prompt
         </button>
     `;
@@ -401,7 +426,11 @@ function toggleOriginalChat() {
     }
 }
 
-async function generatePrompt(id) {
+async function generatePrompt(id, btn) {
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Generating…';
+    }
     try {
         const res = await fetch(`${API}/api/contexts/${id}/prompt`, { method: 'POST' });
         if (!res.ok) throw new Error('Failed to generate prompt');
@@ -414,6 +443,11 @@ async function generatePrompt(id) {
         section.scrollIntoView({ behavior: 'smooth' });
     } catch (err) {
         showToast('Failed to generate prompt', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Generate Continuation Prompt';
+        }
     }
 }
 
@@ -540,6 +574,57 @@ function updateStatusIndicator(online) {
     }
 }
 
+// ─── Backfill Embeddings ─────────────────────────────────────────
+async function embedAll() {
+    const btn = $('#btn-embed-all');
+    const original = btn.textContent;
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API}/api/contexts/embed-all`, { method: 'POST' });
+        if (!res.ok) throw new Error('Request failed');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let lastData = null;
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete last line
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    lastData = data;
+                    if (data.total > 0) {
+                        btn.textContent = `Backfilling… ${data.done} / ${data.total}`;
+                    } else {
+                        btn.textContent = 'No contexts found';
+                    }
+                } catch { /* ignore malformed line */ }
+            }
+        }
+
+        if (lastData) {
+            const msg = lastData.total === 0
+                ? 'No contexts to embed'
+                : `Embedded ${lastData.updated} contexts (${lastData.skipped} already done)`;
+            showToast(msg, 'success');
+        }
+    } catch {
+        showToast('Backfill failed — is nomic-embed-text installed?', 'error');
+    } finally {
+        btn.textContent = original;
+        btn.disabled = false;
+    }
+}
+
 // ─── Utilities ───────────────────────────────────────────────────
 function escapeHtml(str) {
     if (!str) return '';
@@ -582,6 +667,9 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#close-prompt-btn').addEventListener('click', () => {
         $('#prompt-section').style.display = 'none';
     });
+
+    // Backfill embeddings
+    $('#btn-embed-all').addEventListener('click', embedAll);
 
     // Edit modal
     $('#cancel-edit-btn').addEventListener('click', closeEditModal);

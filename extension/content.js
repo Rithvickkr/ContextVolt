@@ -1,5 +1,122 @@
 // Content script for ChatGPT and Claude
 
+// ─── Marked snippets state ────────────────────────────────────────
+// key: first 100 chars of text (dedup key), value: full message text
+const _markedSnippets = new Map();
+
+// ─── Get message elements for star button injection ───────────────
+function getMessageElements() {
+    const domain = window.location.hostname;
+    const elements = [];
+
+    if (domain.includes("chatgpt.com")) {
+        document.querySelectorAll('[data-message-author-role]').forEach(msg => {
+            const role = msg.getAttribute('data-message-author-role');
+            if (role !== 'user' && role !== 'assistant') return;
+            const prose = msg.querySelector('.markdown, .whitespace-pre-wrap, .text-message') || msg;
+            elements.push({ text: prose, container: msg });
+        });
+    } else if (domain.includes("claude.ai")) {
+        document.querySelectorAll('[data-testid="user-message"]').forEach(el =>
+            elements.push({ text: el, container: el }));
+        Array.from(document.querySelectorAll('div.font-claude-response'))
+            .filter(el => !el.classList.contains('font-claude-response-body') && el.tagName === 'DIV' && el.closest('.group'))
+            .forEach(el => elements.push({ text: el, container: el.closest('.group') || el }));
+    } else if (domain.includes("gemini.google.com")) {
+        // user-query / model-response are Gemini's custom elements; extract inner text element when available
+        document.querySelectorAll('user-query, model-response').forEach(el => {
+            const textEl = el.querySelector(
+                '.user-query-text-with-attachments, .user-query-text, ' +
+                'message-content, .model-response-text, .response-content, ' +
+                '[class*="response-text"], [class*="markdown"]'
+            ) || el;
+            elements.push({ text: textEl, container: el });
+        });
+    } else if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai")) {
+        // Grok's DOM has changed across versions — try known selectors in order
+        let msgs = document.querySelectorAll('[data-message-author-role]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[class*="MessageBubble"], [class*="message-bubble"], .message-bubble');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[class*="UserMessage"], [class*="BotMessage"], [class*="AssistantMessage"]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[data-testid*="message"], [data-testid*="Message"]');
+        msgs.forEach(el => elements.push({ text: el, container: el.parentElement || el }));
+    } else if (domain.includes("deepseek.com")) {
+        // Try stable selectors first, then fall back to class-fragment matching
+        let msgs = document.querySelectorAll('.ds-message-row');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[class*="user-message"], [class*="UserMessage"]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[class*="assistant"], [class*="AssistantMessage"]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('[class*="chat-message"], .chat-message-content');
+        msgs.forEach(el => elements.push({ text: el, container: el }));
+    } else if (domain.includes("perplexity.ai")) {
+        // Prefer data-testid attributes; fall back to .prose only inside a message wrapper
+        let msgs = document.querySelectorAll('[data-testid*="user-message"], [data-testid*="answer"]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('.message-block, [class*="ConversationTurn"], [class*="MessageBlock"]');
+        if (msgs.length > 0) {
+            msgs.forEach(el => elements.push({ text: el, container: el }));
+        } else {
+            // Last-resort: .prose blocks that sit inside a recognisable message wrapper
+            document.querySelectorAll('.prose').forEach(el => {
+                const wrap = el.closest('[class*="message"], [class*="Message"], [class*="answer"], [class*="Answer"]');
+                if (wrap) elements.push({ text: el, container: wrap });
+            });
+        }
+    } else if (domain.includes("copilot.microsoft.com") || domain.includes("copilot.cloud.microsoft")) {
+        // New Copilot dropped cib-message; try modern selectors first
+        let msgs = document.querySelectorAll('[data-testid*="message"], [class*="UserMessage"], [class*="BotMessage"]');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('.user-message, .bot-message, .ai-message');
+        if (msgs.length === 0)
+            msgs = document.querySelectorAll('cib-message, .cib-message');
+        msgs.forEach(el => elements.push({ text: el, container: el }));
+    }
+
+    return elements;
+}
+
+// ─── Inject per-message star buttons ─────────────────────────────
+function injectStarButtons() {
+    getMessageElements().forEach(({ text: textEl, container }) => {
+        if (container.querySelector('.cv-star-btn')) return; // already injected
+
+        const existingPos = window.getComputedStyle(container).position;
+        if (existingPos === 'static') container.style.position = 'relative';
+
+        const btn = document.createElement('button');
+        btn.className = 'cv-star-btn';
+        btn.title = 'Mark as important for ContextVolt';
+        btn.textContent = '☆';
+        btn.setAttribute('data-cv-starred', 'false');
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const fullText = textEl.innerText.trim();
+            if (!fullText) return;
+            const key = fullText.substring(0, 100);
+            const isStarred = btn.getAttribute('data-cv-starred') === 'true';
+            if (isStarred) {
+                _markedSnippets.delete(key);
+                btn.setAttribute('data-cv-starred', 'false');
+                btn.textContent = '☆';
+                btn.classList.remove('cv-star-active');
+            } else {
+                _markedSnippets.set(key, fullText);
+                btn.setAttribute('data-cv-starred', 'true');
+                btn.textContent = '★';
+                btn.classList.add('cv-star-active');
+            }
+        });
+
+        container.appendChild(btn);
+    });
+}
+
 // Utility to extract text based on domain
 function extractChatContent() {
     const domain = window.location.hostname;
@@ -292,19 +409,27 @@ function injectButton() {
 
             chrome.runtime.sendMessage({
                 action: "save_chat",
-                payload: { text: chatText, source: source }
+                payload: {
+                    text: chatText,
+                    source: source,
+                    important_snippets: Array.from(_markedSnippets.values()),
+                }
             }, (response) => {
                 clearTimeout(stateTimer);
                 exportBtn.classList.remove("cv-sending");
 
                 if (chrome.runtime.lastError) {
-                    exportBtn.innerHTML = `❌ Extension error`;
+                    const msg = chrome.runtime.lastError.message || "Extension error";
+                    exportBtn.title = msg;
+                    exportBtn.innerHTML = `❌ ${msg.length > 30 ? msg.substring(0, 30) + "…" : msg}`;
                     exportBtn.classList.add("cv-error");
                 } else if (response && response.success) {
                     exportBtn.innerHTML = `✅ Saved!`;
                     exportBtn.classList.add("cv-success");
                 } else {
-                    exportBtn.innerHTML = `❌ Failed!`;
+                    const errMsg = (response && response.error) || "Unknown error";
+                    exportBtn.title = errMsg;
+                    exportBtn.innerHTML = `❌ ${errMsg.length > 30 ? errMsg.substring(0, 30) + "…" : errMsg}`;
                     exportBtn.classList.add("cv-error");
                 }
 
@@ -473,4 +598,7 @@ function escapeHtml(str) {
 }
 
 // Run injection periodically since SPAs re-render the DOM
-setInterval(injectButton, 2000);
+setInterval(() => {
+    injectButton();
+    injectStarButtons();
+}, 2000);

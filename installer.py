@@ -28,7 +28,31 @@ VENV_PATH = PROJECT_ROOT / "venv"
 VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3")
 VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
 REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
-OLLAMA_MODEL = "phi3"  # Better summarization quality, ~2.2GB
+OLLAMA_MODEL = "qwen2.5:3b"  # Default; user selects during setup. Options: 1.5b/3b/7b
+
+AVAILABLE_MODELS = [
+    {
+        "id": "qwen2.5:3b",
+        "name": "Qwen 2.5 3B",
+        "size": "~2 GB",
+        "description": "Recommended — fast, great summaries, runs on most hardware",
+        "recommended": True,
+    },
+    {
+        "id": "qwen2.5:7b",
+        "name": "Qwen 2.5 7B",
+        "size": "~5 GB",
+        "description": "Best quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM",
+        "recommended": False,
+    },
+    {
+        "id": "qwen2.5:1.5b",
+        "name": "Qwen 2.5 1.5B",
+        "size": "~1 GB",
+        "description": "Lightweight — minimal hardware needed, basic summary quality",
+        "recommended": False,
+    },
+]
 
 # Store Ollama models within the project folder
 OLLAMA_DIR = PROJECT_ROOT / ".ollama"
@@ -358,49 +382,88 @@ def run_installation():
         try:
             with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
                 data = json.loads(r.read().decode())
-                models = [m.get("name", "").split(":")[0] for m in data.get("models", [])]
-                if OLLAMA_MODEL in models:
+                installed_names = [m.get("name", "") for m in data.get("models", [])]
+                # Match full name ("qwen2.5:7b") OR base name ("phi3" matching "phi3:latest")
+                already_installed = any(
+                    name == OLLAMA_MODEL
+                    or name.startswith(OLLAMA_MODEL + ":")
+                    or name.split(":")[0] == OLLAMA_MODEL
+                    for name in installed_names
+                )
+                if already_installed:
                     state.log(f"  Model {OLLAMA_MODEL} already installed")
                     state.log(f"  Models stored at: {OLLAMA_MODELS_DIR}")
                     return True
         except Exception as e:
             state.log(f"  Could not check models: {str(e)[:30]}")
-        
+
         # Pull the model
-        state.log(f"  Pulling {OLLAMA_MODEL} model to E: drive...")
-        state.log(f"  This may take several minutes (~600MB download)")
+        size_hint = next((m["size"] for m in AVAILABLE_MODELS if m["id"] == OLLAMA_MODEL), "?")
+        state.log(f"  Pulling {OLLAMA_MODEL} ({size_hint}, this may take a few minutes)...")
         try:
             process = subprocess.Popen(
                 [ollama_path, "pull", OLLAMA_MODEL],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                encoding='utf-8', errors='replace',  # type: ignore[call-overload]
                 env=ollama_env,
                 **(dict(creationflags=subprocess.CREATE_NO_WINDOW) if IS_WINDOWS else {})
             )
-            
-            last_log = ""
-            while True:
-                line = process.stdout.readline()
-                if not line and process.poll() is not None:
-                    break
-                if line:
-                    line = line.strip()
-                    # Log progress updates
-                    if any(kw in line.lower() for kw in ["pulling", "downloading", "verifying", "writing", "success", "%"]):
-                        # Avoid duplicate logs
-                        if line != last_log:
-                            state.log(f"  {line[:60]}")
+
+            # Ollama uses \r for in-place progress updates — read char-by-char
+            last_log: str = ""
+            buf: str = ""
+            stdout = process.stdout
+            if stdout is not None:
+                while True:
+                    ch: str = str(stdout.read(1))
+                    if not ch:
+                        if process.poll() is not None:
+                            break
+                        continue
+                    if ch in ('\n', '\r'):
+                        line: str = str(buf).strip()
+                        buf = ""
+                        if line and line != last_log:
+                            state.log("  " + line[0:80])  # type: ignore[index]
                             last_log = line
-            
+                    else:
+                        buf = buf + ch
+                # Flush any remaining buffer
+                flushed: str = str(buf).strip()
+                if flushed and flushed != last_log:
+                    state.log("  " + flushed[0:80])  # type: ignore[index]
+
             if process.returncode == 0:
                 state.log(f"  Model {OLLAMA_MODEL} ready!")
                 state.log(f"  Stored at: {OLLAMA_MODELS_DIR}")
             else:
-                state.log(f"  Model pull may have failed (exit code: {process.returncode})")
+                state.log(f"  Model pull failed (exit code: {process.returncode})")
                 state.log(f"  You can retry with: ollama pull {OLLAMA_MODEL}")
         except Exception as e:
-            state.log(f"  Error pulling model: {str(e)[:40]}")
+            state.log(f"  Error pulling model: {str(e)[:80]}")
             state.log(f"  You can retry manually with: ollama pull {OLLAMA_MODEL}")
-        
+
+        # Pull embedding model for semantic search (small, ~270MB, best-effort)
+        EMBED_MODEL = "nomic-embed-text"
+        state.log(f"  Pulling {EMBED_MODEL} (~270MB) for semantic search...")
+        try:
+            embed_process = subprocess.Popen(
+                [ollama_path, "pull", EMBED_MODEL],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                encoding='utf-8', errors='replace',  # type: ignore[call-overload,arg-type]
+                env=ollama_env,
+                **(dict(creationflags=subprocess.CREATE_NO_WINDOW) if IS_WINDOWS else {})  # type: ignore[call-overload,arg-type]
+            )
+            embed_process.wait(timeout=300)
+            if embed_process.returncode == 0:
+                state.log(f"  {EMBED_MODEL} ready!")
+            else:
+                state.log(f"  {EMBED_MODEL} pull failed — semantic search unavailable")
+                state.log(f"  You can retry with: ollama pull {EMBED_MODEL}")
+        except Exception as e:
+            state.log(f"  Could not pull {EMBED_MODEL}: {str(e)[0:60]}")  # type: ignore[index]
+            state.log("  Semantic search will be unavailable until you run: ollama pull nomic-embed-text")
+
         return True
 
     def step_install_extension():
@@ -511,7 +574,7 @@ class Api:
     
     def get_state(self):
         """Get current installation state."""
-        new_logs = state.logs[state.log_cursor:]
+        new_logs = state.logs[state.log_cursor:]  # type: ignore[index]
         state.log_cursor = len(state.logs)
         return {
             "steps": state.steps,
@@ -523,6 +586,31 @@ class Api:
             "installationComplete": state.installation_complete,
         }
     
+    def get_available_models(self):
+        """Return list of available model options."""
+        return AVAILABLE_MODELS
+
+    def set_selected_model(self, model_id: str):
+        """Set the model to install and persist to config.json."""
+        global OLLAMA_MODEL
+        valid_ids = [m["id"] for m in AVAILABLE_MODELS]
+        if model_id not in valid_ids:
+            return {"success": False, "error": "Unknown model"}
+        OLLAMA_MODEL = model_id
+        # Persist to config.json so the backend picks it up at runtime
+        try:
+            config_path = PROJECT_ROOT / "config.json"
+            config = {}
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            config["model"] = model_id  # type: ignore[index]
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass
+        return {"success": True}
+
     def start_installation(self):
         """Start installation in background thread."""
         if state.is_installing:

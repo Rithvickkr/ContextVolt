@@ -125,43 +125,65 @@
                 </div>
             </div>
 
-            <!-- Right panel: progress + log + actions -->
+            <!-- Right panel: setup (pre-install) then progress (during/after) -->
             <div class="installer-right">
-                <!-- Progress header -->
-                <div class="progress-header">
-                    <div class="progress-info">
-                        <span class="progress-title">Installation Progress</span>
-                        <span class="progress-text" id="progress-text">0%</span>
+
+                <!-- ── Setup panel: model selection ── -->
+                <div class="setup-panel" id="setup-panel">
+                    <div class="setup-heading">Choose Your AI Model</div>
+                    <div class="setup-subtitle">
+                        Powers conversation summarization. Pick based on your hardware — you can change this later.
                     </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill"></div>
+                    <div class="model-cards" id="model-cards">
+                        <!-- populated by JS once pywebview is ready -->
+                    </div>
+                    <div class="setup-actions">
+                        <button class="btn btn-primary" id="start-install-btn" disabled>
+                            <span class="btn-text">Start Installation</span>
+                            <span class="btn-icon">→</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Log output (always visible) -->
-                <div class="log-panel">
-                    <div class="log-header">
-                        <span class="log-label">Output</span>
-                    </div>
-                    <div class="log-content" id="log-content">
-                        <div class="log-entry log-entry-init">
-                            <span class="log-time">--:--</span>
-                            <span class="log-message">Waiting to start installation...</span>
+                <!-- ── Progress panel: shown after user clicks Start ── -->
+                <div class="progress-panel" id="progress-panel">
+                    <!-- Progress header -->
+                    <div class="progress-header">
+                        <div class="progress-info">
+                            <span class="progress-title">Installation Progress</span>
+                            <span class="progress-text" id="progress-text">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
                         </div>
                     </div>
+
+                    <!-- Log output -->
+                    <div class="log-panel">
+                        <div class="log-header">
+                            <span class="log-label">Output</span>
+                        </div>
+                        <div class="log-content" id="log-content">
+                            <div class="log-entry log-entry-init">
+                                <span class="log-time">--:--</span>
+                                <span class="log-message">Waiting to start installation...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action buttons -->
+                    <div class="installer-actions">
+                        <button class="btn btn-secondary" id="retry-btn" style="display: none;">
+                            <span class="btn-icon">↻</span>
+                            Retry
+                        </button>
+                        <button class="btn btn-primary" id="launch-btn" disabled>
+                            <span class="btn-text">Launch ContextVolt</span>
+                            <span class="btn-icon">→</span>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Action buttons -->
-                <div class="installer-actions">
-                    <button class="btn btn-secondary" id="retry-btn" style="display: none;">
-                        <span class="btn-icon">↻</span>
-                        Retry
-                    </button>
-                    <button class="btn btn-primary" id="launch-btn" disabled>
-                        <span class="btn-text">Launch ContextVolt</span>
-                        <span class="btn-icon">→</span>
-                    </button>
-                </div>
             </div>
 
         </div>
@@ -169,7 +191,7 @@
 
     <script>
         // ─────────────────────────────────────────────────────────────────
-        // Installer Frontend Logic (Polling-based)
+        // Installer Frontend Logic
         // ─────────────────────────────────────────────────────────────────
 
         const stepIds = ['python', 'venv', 'deps', 'ollama', 'model', 'extension'];
@@ -177,29 +199,70 @@
         let installationComplete = false;
         let pollingInterval = null;
         let installationStarted = false;
+        let selectedModel = 'qwen2.5:3b';
 
-        // Initialize step element references
         stepIds.forEach(id => {
             stepElements[id] = document.querySelector(`.step[data-step="${id}"]`);
         });
 
-        const progressFill = document.getElementById('progress-fill');
-        const progressText = document.getElementById('progress-text');
-        const logContent = document.getElementById('log-content');
-        const retryBtn = document.getElementById('retry-btn');
-        const launchBtn = document.getElementById('launch-btn');
+        const progressFill  = document.getElementById('progress-fill');
+        const progressText  = document.getElementById('progress-text');
+        const logContent    = document.getElementById('log-content');
+        const retryBtn      = document.getElementById('retry-btn');
+        const launchBtn     = document.getElementById('launch-btn');
+        const startInstBtn  = document.getElementById('start-install-btn');
+        const setupPanel    = document.getElementById('setup-panel');
+        const progressPanel = document.getElementById('progress-panel');
 
-        // Retry button handler
-        retryBtn.addEventListener('click', async () => {
-            retryBtn.style.display = 'none';
-            if (window.pywebview && window.pywebview.api) {
-                await window.pywebview.api.retry_from_error();
-            }
+        // ── Model card rendering ──────────────────────────────────────────
+
+        function renderModelCards(models) {
+            const container = document.getElementById('model-cards');
+            container.innerHTML = '';
+            models.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'model-card' + (m.id === selectedModel ? ' selected' : '');
+                card.dataset.modelId = m.id;
+                card.innerHTML = `
+                    <div class="model-card-header">
+                        <span class="model-name">${m.name}</span>
+                        ${m.recommended ? '<span class="model-badge">Recommended</span>' : ''}
+                        <span class="model-size">${m.size}</span>
+                    </div>
+                    <div class="model-desc">${m.description}</div>`;
+                card.addEventListener('click', () => {
+                    selectedModel = m.id;
+                    document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                    card.classList.add('selected');
+                });
+                container.appendChild(card);
+            });
+            startInstBtn.disabled = false;
+        }
+
+        // ── Start Installation button ─────────────────────────────────────
+
+        startInstBtn.addEventListener('click', async () => {
+            if (startInstBtn.disabled || !window.pywebview?.api) return;
+            startInstBtn.disabled = true;
+            await window.pywebview.api.set_selected_model(selectedModel);
+            // Swap panels
+            setupPanel.style.display = 'none';
+            progressPanel.classList.add('active');
+            startPolling();
+            installationStarted = true;
+            await window.pywebview.api.start_installation();
         });
 
-        // Launch button handler
+        // ── Progress / log helpers ────────────────────────────────────────
+
+        retryBtn.addEventListener('click', async () => {
+            retryBtn.style.display = 'none';
+            if (window.pywebview?.api) await window.pywebview.api.retry_from_error();
+        });
+
         launchBtn.addEventListener('click', async () => {
-            if (!launchBtn.disabled && window.pywebview && window.pywebview.api) {
+            if (!launchBtn.disabled && window.pywebview?.api) {
                 launchBtn.disabled = true;
                 launchBtn.querySelector('.btn-text').textContent = 'Launching...';
                 stopPolling();
@@ -207,20 +270,15 @@
             }
         });
 
-        // Helper to escape HTML
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Append a log entry to the log output
         let initCleared = false;
         function appendLog(logEntry) {
-            if (!initCleared) {
-                logContent.innerHTML = '';
-                initCleared = true;
-            }
+            if (!initCleared) { logContent.innerHTML = ''; initCleared = true; }
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             entry.innerHTML = `<span class="log-time">${logEntry.time}</span><span class="log-message">${escapeHtml(logEntry.message)}</span>`;
@@ -228,54 +286,26 @@
             logContent.scrollTop = logContent.scrollHeight;
         }
 
-        // Update UI from state
-        function updateUI(state) {
-            const { steps, newLogs, currentStep, isInstalling, hasError, errorStep, installationComplete: isComplete } = state;
+        function updateUI(s) {
+            const { steps, newLogs, hasError, installationComplete: isComplete } = s;
+            if (newLogs?.length) newLogs.forEach(appendLog);
 
-            // Append new logs
-            if (newLogs && newLogs.length > 0) {
-                newLogs.forEach(appendLog);
-            }
-
-            // Update each step's visual state
-            steps.forEach((step, index) => {
+            steps.forEach(step => {
                 const el = stepElements[step.id];
                 if (!el) return;
-
-                // Remove all status classes
                 el.classList.remove('pending', 'running', 'completed', 'error');
-
-                // Add current status class
                 el.classList.add(step.status);
-
-                // Update status text
                 const statusEl = el.querySelector('.step-status');
-                switch (step.status) {
-                    case 'pending':
-                        statusEl.textContent = 'Waiting...';
-                        break;
-                    case 'running':
-                        statusEl.textContent = 'In progress...';
-                        break;
-                    case 'completed':
-                        statusEl.textContent = 'Complete';
-                        break;
-                    case 'error':
-                        statusEl.textContent = 'Failed';
-                        break;
-                }
+                const labels = { pending: 'Waiting...', running: 'In progress...', completed: 'Complete', error: 'Failed' };
+                statusEl.textContent = labels[step.status] || '';
             });
 
-            // Update progress bar
-            const completedCount = steps.filter(s => s.status === 'completed').length;
-            const progress = Math.round((completedCount / steps.length) * 100);
-            progressFill.style.width = `${progress}%`;
-            progressText.textContent = `${progress}%`;
-
-            // Show/hide retry button
+            const done = steps.filter(s => s.status === 'completed').length;
+            const pct  = Math.round((done / steps.length) * 100);
+            progressFill.style.width = `${pct}%`;
+            progressText.textContent = `${pct}%`;
             retryBtn.style.display = hasError ? 'flex' : 'none';
 
-            // Enable launch button when complete
             if (isComplete && !installationComplete) {
                 installationComplete = true;
                 launchBtn.disabled = false;
@@ -284,61 +314,44 @@
             }
         }
 
-        // Poll for state updates
         async function pollState() {
-            if (!window.pywebview || !window.pywebview.api) return;
-
-            try {
-                const state = await window.pywebview.api.get_state();
-                updateUI(state);
-            } catch (err) {
-                console.error('Polling error:', err);
-            }
+            if (!window.pywebview?.api) return;
+            try { updateUI(await window.pywebview.api.get_state()); }
+            catch (err) { console.error('Polling error:', err); }
         }
 
-        // Start polling
         function startPolling() {
             if (pollingInterval) return;
             pollingInterval = setInterval(pollState, 200);
         }
 
-        // Stop polling
         function stopPolling() {
-            if (pollingInterval) {
-                clearInterval(pollingInterval);
-                pollingInterval = null;
-            }
+            if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
         }
 
-        // Initialize and start installation
+        // ── Initialization ────────────────────────────────────────────────
+
         async function initialize() {
-            if (!window.pywebview || !window.pywebview.api) {
-                console.log('Waiting for pywebview...');
+            if (!window.pywebview?.api) {
                 setTimeout(initialize, 100);
                 return;
             }
-
-            console.log('Starting installation...');
-            startPolling();
-
-            if (!installationStarted) {
-                installationStarted = true;
-                await window.pywebview.api.start_installation();
+            // Load model options and show setup panel
+            try {
+                const models = await window.pywebview.api.get_available_models();
+                renderModelCards(models);
+            } catch (e) {
+                // Fallback: render hardcoded defaults so setup panel is still usable
+                renderModelCards([
+                    { id: 'qwen2.5:3b',  name: 'Qwen 2.5 3B',  size: '~2 GB', description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
+                    { id: 'qwen2.5:7b',  name: 'Qwen 2.5 7B',  size: '~5 GB', description: 'Best quality — needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
+                    { id: 'qwen2.5:1.5b',name: 'Qwen 2.5 1.5B',size: '~1 GB', description: 'Lightweight — minimal hardware, basic quality', recommended: false },
+                ]);
             }
         }
 
-        // Handle pywebview ready event
-        window.addEventListener('pywebviewready', function () {
-            console.log('pywebview ready');
-            initialize();
-        });
-
-        // Fallback: try to initialize after a delay
-        setTimeout(() => {
-            if (!installationStarted) {
-                initialize();
-            }
-        }, 1000);
+        window.addEventListener('pywebviewready', initialize);
+        setTimeout(() => { if (!installationStarted) initialize(); }, 1000);
     </script>
 </body>
 

@@ -132,7 +132,7 @@ echo -e "  ${BOLD}This will:${NC}"
 echo -e "  • Create a Python virtual environment"
 echo -e "  • Install dependencies (fastapi, pywebview, etc.)"
 echo -e "  • Check/install Ollama"
-echo -e "  • Download the AI model (~600MB)"
+echo -e "  • Download the AI model (~4.7GB)"
 echo ""
 echo -e "  ${CYAN}Starting in 3 seconds... (Ctrl+C to skip, run 'contextvolt' later)${NC}"
 sleep 3

@@ -6,6 +6,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const payload = {
             source: request.payload.source,
             text: request.payload.text,
+            important_snippets: request.payload.important_snippets || [],
         };
 
         const controller = new AbortController();

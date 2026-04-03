@@ -27,6 +27,12 @@ class SummaryData(BaseModel):
     unresolved_questions: list[str] = []
 
 
+class PromptRequest(BaseModel):
+    """Optional body for POST /api/contexts/{id}/prompt — enables retrieval mode."""
+    query: str | None = None
+    size: str = "standard"
+
+
 class ContextCreate(BaseModel):
     """Request body for creating a new context."""
     title: str
@@ -49,5 +55,6 @@ class ContextResponse(BaseModel):
     summary: SummaryData | dict
     tags: list[str]
     original_chat: str
+    status: str = "completed"
     created_at: str
     updated_at: str

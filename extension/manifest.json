@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "ContextVolt Exporter",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Send conversations from ChatGPT, Claude, Gemini, Grok, DeepSeek, Perplexity & Copilot to your local ContextVolt.",
-  "permissions": ["clipboardWrite"],
+  "permissions": ["clipboardWrite", "storage"],
   "host_permissions": [
     "http://localhost:8000/*"
   ],
@@ -26,6 +26,23 @@
       ],
       "css": ["styles.css"],
       "js": ["content.js"]
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://x.com/i/grok*",
+        "https://grok.x.ai/*",
+        "https://grok.com/*",
+        "https://chat.deepseek.com/*",
+        "https://www.perplexity.ai/*",
+        "https://copilot.microsoft.com/*",
+        "https://copilot.cloud.microsoft/*"
+      ],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "icons": {

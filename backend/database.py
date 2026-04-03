@@ -16,6 +16,7 @@ def _get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -52,6 +53,33 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # column already exists
+
+    # Migration: add status column for background worker tracking
+    try:
+        conn.execute("ALTER TABLE contexts ADD COLUMN status TEXT DEFAULT 'completed'")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+    # Chunks table for embedding-based retrieval
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id   INTEGER NOT NULL,
+            chunk_index  INTEGER NOT NULL,
+            text         TEXT    NOT NULL,
+            role_hint    TEXT    DEFAULT '',
+            has_code     INTEGER DEFAULT 0,
+            is_starred   INTEGER DEFAULT 0,
+            embedding    TEXT    DEFAULT NULL,
+            created_at   TEXT    NOT NULL,
+            FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chunks_context ON chunks(context_id, chunk_index)"
+    )
+    conn.commit()
     conn.close()
 
 
@@ -88,6 +116,7 @@ def create_context(
     original_chat: str,
     embedding: list[float] | None = None,
     important_notes: list[str] | None = None,
+    status: str = "completed",
 ) -> dict:
     """Insert a new context and return it."""
     now = datetime.now(timezone.utc).isoformat()
@@ -95,9 +124,9 @@ def create_context(
     notes_json = json.dumps(important_notes) if important_notes else None
     conn = _get_conn()
     cursor = conn.execute(
-        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at, embedding, important_notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json),
+        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at, embedding, important_notes, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json, status),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (cursor.lastrowid,)).fetchone()
@@ -133,7 +162,7 @@ def get_context(context_id: int) -> dict | None:
 
 
 def update_context(context_id: int, **kwargs) -> dict | None:
-    """Update fields of a context. Accepts title, summary, tags."""
+    """Update fields of a context. Accepts title, summary, tags, status."""
     conn = _get_conn()
     now = datetime.now(timezone.utc).isoformat()
 
@@ -151,6 +180,9 @@ def update_context(context_id: int, **kwargs) -> dict | None:
         if isinstance(tags, list):
             tags = ",".join(tags)
         params.append(tags)
+    if "status" in kwargs:
+        updates.append("status = ?")
+        params.append(kwargs["status"])
 
     if not updates:
         conn.close()
@@ -188,6 +220,106 @@ def search_contexts(query: str) -> list[dict]:
     ).fetchall()
     conn.close()
     return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
+
+
+## ── Chunk CRUD ────────────────────────────────────────────────────────
+
+def create_chunks(context_id: int, chunks: list[dict]) -> list[int]:
+    """Bulk-insert chunks for a context. Returns list of inserted IDs."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    ids = []
+    for ch in chunks:
+        cur = conn.execute(
+            """INSERT INTO chunks
+               (context_id, chunk_index, text, role_hint, has_code, is_starred, embedding, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                context_id,
+                ch.get("chunk_index", 0),
+                ch["text"],
+                ch.get("role_hint", ""),
+                1 if ch.get("has_code") else 0,
+                1 if ch.get("is_starred") else 0,
+                json.dumps(ch["embedding"]) if ch.get("embedding") else None,
+                now,
+            ),
+        )
+        ids.append(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return ids
+
+
+def get_chunks_by_context(context_id: int) -> list[dict]:
+    """Return all chunks for a context, ordered by chunk_index."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM chunks WHERE context_id = ? ORDER BY chunk_index",
+        (context_id,),
+    ).fetchall()
+    conn.close()
+    return [_chunk_row_to_dict(r) for r in rows]
+
+
+def _chunk_row_to_dict(row) -> dict:
+    d = dict(row)
+    d["has_code"] = bool(d.get("has_code"))
+    d["is_starred"] = bool(d.get("is_starred"))
+    return d
+
+
+def search_chunks_semantic(
+    query_vec: list[float],
+    context_id: int | None = None,
+    top_k: int = 10,
+    star_boost: float = 0.15,
+) -> list[dict]:
+    """Return top_k chunks ranked by cosine similarity.
+
+    If context_id is given, search within that context only.
+    Starred chunks get +star_boost added to their score.
+    """
+    conn = _get_conn()
+    if context_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM chunks WHERE context_id = ? AND embedding IS NOT NULL",
+            (context_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM chunks WHERE embedding IS NOT NULL"
+        ).fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    scored = []
+    for row in rows:
+        ch = _chunk_row_to_dict(row)
+        try:
+            vec = json.loads(ch.get("embedding") or "null")
+            if vec:
+                score = _cosine_similarity(query_vec, vec)
+                if ch.get("is_starred"):
+                    score += star_boost
+                ch["_score"] = score
+                scored.append(ch)
+        except Exception:
+            continue
+
+    scored.sort(key=lambda x: x.get("_score", 0.0), reverse=True)
+    return scored[:top_k]
+
+
+def delete_chunks_by_context(context_id: int) -> int:
+    """Delete all chunks for a context. Returns count deleted."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount
 
 
 def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[dict]:

@@ -45,25 +45,47 @@ _NUM_CTX: int    = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
 _CHAR_LIMIT: int = _NUM_CTX * 3          # ~3 chars/token with headroom
 _CHUNK_LIMIT: int = max(_CHAR_LIMIT - 20000, 10000)  # leave room for prompt overhead
 
-SUMMARIZE_PROMPT = """You are a precise summarization assistant. Read the conversation below and produce a structured summary.
-
-RULES:
-- Preserve ALL exact technical values: error messages, file paths, commands, version numbers, API names, URLs.
-- Key points: up to 8, semicolon-separated. Include specific numbers/values.
-- SNAPSHOT: one sentence describing the current state of what is actively being built, coded, or debugged at the END of the conversation. Write "n/a" if nothing is being built.
-- VITALS: up to 6 exact verbatim values (error messages, commands, file paths, version strings) that must not be paraphrased. Separate with semicolons. Write "none" if there are none.
+EXTRACT_PROMPT = """Extract the key content from this conversation. List — do not summarize, interpret, or compress.
 
 CONVERSATION:
 {conversation}
 
+List every item you find in this exact format:
+CLAIMS:
+- [key arguments, explanations, or factual claims made — one per bullet]
+DECISIONS:
+- [exact decision or conclusion reached, with reasoning if stated]
+TECHNICAL:
+- [exact error message, command, file path, version string, URL — copy character-for-character]
+STATE: [one sentence: what was actively being discussed/built/debugged at the END of this text, or "none"]
+
+If a category has nothing, write "none". Do not skip any specific values or claims."""
+
+SYNTHESIZE_PROMPT = """You are a summarization assistant. Synthesize the content below into a structured summary.
+
+CONVERSATION START (first user message — use this to determine TOPIC):
+{first_user}
+
+CONVERSATION END (last assistant message — use this to determine DECIDED and OPEN):
+{last_asst}
+
+EXTRACTED FACTS:
+{merged_facts}
+
 Respond in EXACTLY this format (no extra text):
-TOPIC: [one sentence describing the main topic]
-POINTS: [2-8 key points, separated by semicolons; include specific numbers/values]
-SNAPSHOT: [current state of what is being built/debugged at conversation end, or "n/a"]
-VITALS: [up to 6 exact verbatim technical values separated by semicolons, or "none"]
-DECIDED: [what was concluded or decided, or "nothing yet"]
-OPEN: [any unanswered questions, or "none"]
-"""
+TOPIC: [one sentence — what the user originally wanted to do, learn, or solve]
+POINTS: [4-10 key points covering the full conversation; semicolons; include specific values and claims]
+SNAPSHOT: [one sentence: what was actively being discussed/built/debugged at the very end, or "n/a"]
+VITALS: [up to 6 exact verbatim technical values — copy character-for-character; semicolons, or "none"]
+DECIDED: [what was concluded or resolved, based on the final messages]
+OPEN: [unanswered questions or next steps remaining, or "none"]"""
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two equal-length vectors."""
+    dot = sum(x * y for x, y in zip(a, b))
+    mag = (sum(x ** 2 for x in a) ** 0.5) * (sum(x ** 2 for x in b) ** 0.5)
+    return dot / mag if mag else 0.0
 
 
 _MD_PREFIX = re.compile(
@@ -113,7 +135,7 @@ def _parse_text_summary(response_text: str) -> dict:
                 result["main_topic"] = val
             current_section = None
 
-        elif line_lower.startswith("points:") or line_lower.startswith("key points:"):
+        elif line_lower.startswith("points:") or line_lower.startswith("key points:") or line_lower.startswith("claims:"):
             colon_idx = line.find(":")
             rest = line[colon_idx + 1:].strip()  # type: ignore[index]
             if rest:
@@ -267,7 +289,7 @@ def _extract_json_from_response(response_text: str) -> dict:
     return result
 
 
-_MSG_BOUNDARY = re.compile(r'(?=(?:USER|ASSISTANT|Human|Assistant):\s)', re.IGNORECASE)
+_MSG_BOUNDARY = re.compile(r'(?=^(?:USER|ASSISTANT|Human|Assistant|A|AI):\s)', re.IGNORECASE | re.MULTILINE)
 
 
 def _parse_messages(text: str) -> list[str]:
@@ -280,6 +302,379 @@ def _parse_messages(text: str) -> list[str]:
     if len(messages) <= 1:
         messages = [p.strip() for p in text.split('\n\n') if p.strip()] or [text]
     return messages
+
+
+## ── Chunk + Embed for retrieval ───────────────────────────────────────
+
+def chunk_conversation(
+    text: str,
+    starred_snippets: list[str] | None = None,
+) -> list[dict]:
+    """Split conversation into message-pair chunks for embedding-based retrieval.
+
+    Groups consecutive USER+ASSISTANT messages into pairs.
+    Tags each chunk with metadata: has_code, is_starred, role_hint.
+    """
+    messages = _parse_messages(text)
+    starred_keys = set()
+    if starred_snippets:
+        starred_keys = {s[:100].strip() for s in starred_snippets if s.strip()}
+
+    chunks: list[dict] = []
+    i = 0
+    chunk_idx = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = _role_label(msg)
+
+        # Try to pair user+assistant
+        if role == "USER" and i + 1 < len(messages) and _role_label(messages[i + 1]) == "ASSISTANT":
+            pair_text = msg + "\n\n" + messages[i + 1]
+            role_hint = "pair"
+            i += 2
+        else:
+            pair_text = msg
+            role_hint = role.lower()
+            i += 1
+
+        has_code = "```" in pair_text
+        is_starred = any(key in pair_text[:200] for key in starred_keys) if starred_keys else False
+
+        chunks.append({
+            "chunk_index": chunk_idx,
+            "text": pair_text,
+            "has_code": has_code,
+            "is_starred": is_starred,
+            "role_hint": role_hint,
+        })
+        chunk_idx += 1
+
+    return chunks
+
+
+def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
+    """Embed all chunks in a single batch API call (much faster than per-chunk).
+
+    Ollama's /api/embed accepts an array of strings as 'input'.
+    One HTTP request for N chunks instead of N requests.
+    Mutates each dict in-place to add 'embedding' key. Returns same list.
+    """
+    if not chunks:
+        return chunks
+
+    # Resolve model at runtime (EMBED_MODEL is defined later in the file)
+    _model = model or os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+    texts = [ch["text"][:8000] for ch in chunks]
+    try:
+        r = requests.post(
+            f"{OLLAMA_BASE}/api/embed",
+            json={"model": _model, "input": texts},
+            timeout=60,
+        )
+        r.raise_for_status()
+        embeddings = r.json().get("embeddings", [])
+        for i, ch in enumerate(chunks):
+            ch["embedding"] = embeddings[i] if i < len(embeddings) else None
+    except Exception as e:
+        _log.warning("Batch embed failed (%d chunks): %s — falling back to sequential", len(chunks), e)
+        for ch in chunks:
+            ch["embedding"] = embed_text(ch["text"])
+    return chunks
+
+
+# Tier budgets for retrieval prompts: (max_retrieved_chars, max_code_chars, starred_chars)
+_RETRIEVAL_BUDGETS: dict[str, tuple[int, int, int]] = {
+    "compact":  (3000,    0,  500),
+    "standard": (8000, 2000, 2000),
+    "full":     (16000, 4000, 4000),
+}
+
+
+def build_retrieval_prompt(
+    retrieved_chunks: list[dict],
+    query: str,
+    total_chunks: int = 0,
+    context_title: str = "",
+    source_llm: str = "",
+    created_at: str = "",
+    prompt_size: str = "standard",
+    important_snippets: list[str] | None = None,
+) -> str:
+    """Build an XML continuation prompt from retrieved chunks.
+
+    retrieved_chunks should already be deduplicated and sorted by chunk_index.
+    """
+    tier = prompt_size if prompt_size in _RETRIEVAL_BUDGETS else "standard"
+    max_retrieved, max_code, starred_budget = _RETRIEVAL_BUDGETS[tier]
+
+    total = total_chunks or len(retrieved_chunks)
+
+    # ── Metadata ──────────────────────────────────────────────────
+    meta_parts = []
+    if source_llm:
+        meta_parts.append(f"Source: {source_llm}")
+    meta_parts.append(f"Chunks: {len(retrieved_chunks)}/{total} retrieved")
+    if created_at:
+        meta_parts.append(f"Captured: {created_at[:10]}")
+    meta_line = " | ".join(meta_parts)
+
+    sections: list[str] = []
+    sections.append(f"<context_brief>\n<meta>\n{meta_line}\n</meta>")
+    sections.append(f"\n<query>\n{query}\n</query>")
+
+    # ── Retrieved context (chronological, within budget) ──────────
+    context_lines: list[str] = []
+    char_used = 0
+    for ch in retrieved_chunks:
+        text = ch["text"]
+        if char_used + len(text) > max_retrieved:
+            # Truncate last chunk to fit
+            remaining = max_retrieved - char_used
+            if remaining > 200:
+                text = _truncate_at_sentence(text, remaining)
+            else:
+                break
+        idx = ch.get("chunk_index", 0)
+        # Label: OPENING / LATEST / STARRED / RELEVANT
+        if idx == 0:
+            label = "OPENING"
+        elif total > 0 and idx >= total - 1:
+            label = "LATEST"
+        elif ch.get("is_starred"):
+            label = "STARRED"
+        else:
+            score = ch.get("_score", 0)
+            label = f"RELEVANT ({score:.2f})" if score else "RELEVANT"
+
+        clean = _strip_capture_noise(text)
+        context_lines.append(f"[Chunk {idx + 1}/{total} - {label}]:\n{clean}")
+        char_used += len(text)
+
+    if context_lines:
+        sections.append("\n<retrieved_context>\n" + "\n\n".join(context_lines) + "\n</retrieved_context>")
+
+    # ── Starred content (verbatim) ────────────────────────────────
+    if important_snippets:
+        cleaned = [_strip_capture_noise(s) for s in important_snippets]
+        joined = "\n\n---\n\n".join(cleaned)
+        starred_section = _truncate_at_sentence(joined, starred_budget)
+        if starred_section:
+            sections.append(f"\n<important_context>\n{starred_section}\n</important_context>")
+
+    # ── Code artifacts from retrieved chunks ──────────────────────
+    if max_code > 0:
+        all_retrieved_text = "\n\n".join(ch["text"] for ch in retrieved_chunks)
+        code_blocks = _extract_code_blocks(all_retrieved_text, max_blocks=5, max_chars=max_code)
+        if code_blocks:
+            parts: list[str] = []
+            for cb in code_blocks:
+                header = f"# {cb['context']}" if cb["context"] else ""
+                lang = cb["language"]
+                parts.append(f"{header}\n```{lang}\n{cb['code']}\n```".strip())
+            sections.append("\n<code_artifacts>\n" + "\n\n".join(parts) + "\n</code_artifacts>")
+
+    # ── Instructions ──────────────────────────────────────────────
+    instructions = (
+        f"Continue this conversation. The user wants to resume: \"{query}\". "
+        f"The chunks above are the most relevant parts of a {total}-message conversation. "
+        "Use them as context to provide a helpful, informed response."
+    )
+    sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
+    sections.append("</context_brief>")
+
+    return "\n".join(sections)
+
+
+def build_hybrid_prompt(
+    summary: dict,
+    retrieved_chunks: list[dict],
+    query: str,
+    total_chunks: int,
+    source_llm: str = "",
+    created_at: str = "",
+    prompt_size: str = "standard",
+    important_snippets: list[str] | None = None,
+) -> str:
+    """Build a hybrid prompt combining a summary overview with retrieved chunks.
+
+    Gives the receiving LLM both the forest (structured overview from the summary)
+    and the trees (actual conversation exchanges from semantic retrieval). This is
+    better than pure RAG (no overview) or pure static (no verbatim text).
+
+    Uses the conversation_replay format so chunks are presented as labeled turns
+    rather than anonymous fragments.
+    """
+    tier = prompt_size if prompt_size in ("compact", "standard", "full") else "standard"
+    # Use retrieval budgets for the chunk section
+    retrieval_bases = {
+        "compact":  {"retrieved": 3000, "code": 0,    "starred": 500,  "max_blocks": 0},
+        "standard": {"retrieved": 8000, "code": 2000, "starred": 2000, "max_blocks": 3},
+        "full":     {"retrieved": 16000,"code": 4000, "starred": 4000, "max_blocks": 5},
+    }
+    rb = retrieval_bases.get(tier, retrieval_bases["standard"])
+    overview_budget = 600 if tier == "full" else 500
+
+    # ── Metadata ──────────────────────────────────────────────────
+    meta_parts = []
+    if source_llm:
+        meta_parts.append(f"Source: {source_llm}")
+    meta_parts.append(f"Chunks: {len(retrieved_chunks)}/{total_chunks} retrieved")
+    if created_at:
+        meta_parts.append(f"Captured: {created_at[:10]}")
+    meta_line = " | ".join(meta_parts)
+
+    sections: list[str] = []
+    sections.append(f"<context_brief>\n<meta>\n{meta_line}\n</meta>")
+
+    # ── Overview from summary (forest view) ───────────────────────
+    overview_text = _build_overview(summary, overview_budget)
+    if overview_text:
+        sections.append(f"\n<overview>\n{overview_text}\n</overview>")
+
+    # ── Query ─────────────────────────────────────────────────────
+    sections.append(f"\n<query>\n{query}\n</query>")
+
+    # ── Conversation replay from retrieved chunks (tree view) ─────
+    replay_lines: list[str] = []
+    char_used = 0
+    for ch in retrieved_chunks:
+        text = ch["text"]
+        if char_used + len(text) > rb["retrieved"]:
+            remaining = rb["retrieved"] - char_used
+            if remaining > 200:
+                text = _truncate_at_sentence(text, remaining)
+            else:
+                break
+
+        idx = ch.get("chunk_index", 0)
+        role = _role_label(text)
+
+        # Build turn label
+        label_parts = [f"Turn {idx + 1}/{total_chunks}", role]
+        if idx == 0:
+            label_parts.append("OPENING")
+        elif total_chunks > 0 and idx >= total_chunks - 1:
+            label_parts.append("LATEST")
+        elif ch.get("is_starred"):
+            label_parts.append("STARRED")
+        else:
+            score = ch.get("_score", 0)
+            label_parts.append(f"RELEVANT ({score:.2f})" if score else "RELEVANT")
+        label = " - ".join(label_parts)
+
+        clean = _strip_capture_noise(text)
+        replay_lines.append(f"[{label}]:\n{clean}")
+        char_used += len(text)
+
+    if replay_lines:
+        sections.append("\n<conversation_replay>\n" + "\n\n".join(replay_lines) + "\n</conversation_replay>")
+
+    # ── Code artifacts ─────────────────────────────────────────────
+    if rb["max_blocks"] > 0:
+        all_text = "\n\n".join(ch["text"] for ch in retrieved_chunks)
+        code_blocks = _extract_code_blocks(all_text, max_blocks=rb["max_blocks"], max_chars=rb["code"])
+        if code_blocks:
+            parts: list[str] = []
+            for cb in code_blocks:
+                header = f"# {cb['context']}" if cb["context"] else ""
+                lang = cb["language"]
+                parts.append(f"{header}\n```{lang}\n{cb['code']}\n```".strip())
+            sections.append("\n<code_artifacts>\n" + "\n\n".join(parts) + "\n</code_artifacts>")
+
+    # ── Starred content (verbatim) ─────────────────────────────────
+    if important_snippets:
+        cleaned = [_strip_capture_noise(s) for s in important_snippets]
+        joined = "\n\n---\n\n".join(cleaned)
+        starred = _truncate_at_sentence(joined, rb["starred"])
+        if starred:
+            sections.append(f"\n<important_context>\n{starred}\n</important_context>")
+
+    # ── Instructions ──────────────────────────────────────────────
+    source_clause = f" originally held with {source_llm}" if source_llm else ""
+    instructions = (
+        f"You are continuing a conversation{source_clause}. "
+        f"The overview summarizes the full {total_chunks}-chunk conversation. "
+        f'The replay shows the most relevant exchanges for: "{query}". '
+        "Continue naturally from where the conversation left off."
+    )
+    sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
+    sections.append("</context_brief>")
+
+    return "\n".join(sections)
+
+
+def build_cross_context_prompt(
+    retrieved_chunks: list[dict],
+    query: str,
+    prompt_size: str = "standard",
+) -> str:
+    """Build an XML prompt from chunks retrieved across multiple conversations.
+
+    Each chunk is annotated with its source context title, LLM, and date.
+    """
+    tier = prompt_size if prompt_size in _RETRIEVAL_BUDGETS else "standard"
+    max_retrieved, max_code, _starred = _RETRIEVAL_BUDGETS[tier]
+
+    sections: list[str] = []
+    sections.append(f"<context_brief>\n<meta>\nCross-conversation retrieval | Chunks: {len(retrieved_chunks)}\n</meta>")
+    sections.append(f"\n<query>\n{query}\n</query>")
+
+    # ── Retrieved context with source annotations ─────────────
+    context_lines: list[str] = []
+    char_used = 0
+    for ch in retrieved_chunks:
+        text = ch["text"]
+        if char_used + len(text) > max_retrieved:
+            remaining = max_retrieved - char_used
+            if remaining > 200:
+                text = _truncate_at_sentence(text, remaining)
+            else:
+                break
+
+        # Source annotation
+        src = ch.get("_ctx_source", "")
+        title = ch.get("_ctx_title", "")
+        date = ch.get("_ctx_date", "")
+        score = ch.get("_score", 0)
+        header_parts = []
+        if src:
+            header_parts.append(src)
+        if date:
+            header_parts.append(date)
+        if title:
+            header_parts.append(f'"{title}"')
+        source_label = " | ".join(header_parts) if header_parts else "Unknown"
+
+        clean = _strip_capture_noise(text)
+        context_lines.append(f"[From {source_label} — relevance {score:.2f}]:\n{clean}")
+        char_used += len(text)
+
+    if context_lines:
+        sections.append("\n<retrieved_context>\n" + "\n\n".join(context_lines) + "\n</retrieved_context>")
+
+    # ── Code artifacts from retrieved chunks ──────────────────
+    if max_code > 0:
+        all_text = "\n\n".join(ch["text"] for ch in retrieved_chunks)
+        code_blocks = _extract_code_blocks(all_text, max_blocks=5, max_chars=max_code)
+        if code_blocks:
+            parts: list[str] = []
+            for cb in code_blocks:
+                header = f"# {cb['context']}" if cb["context"] else ""
+                lang = cb["language"]
+                parts.append(f"{header}\n```{lang}\n{cb['code']}\n```".strip())
+            sections.append("\n<code_artifacts>\n" + "\n\n".join(parts) + "\n</code_artifacts>")
+
+    # ── Instructions ──────────────────────────────────────────
+    instructions = (
+        f'The user wants to continue working on: "{query}". '
+        f"The chunks above are from {len(set(ch.get('context_id') for ch in retrieved_chunks))} "
+        f"different past conversations. Use them as context to provide a helpful, informed response."
+    )
+    sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
+    sections.append("</context_brief>")
+
+    return "\n".join(sections)
 
 
 def _split_by_messages(text: str, chunk_char_limit: int = 10000, overlap: int = 1) -> list[str]:
@@ -322,203 +717,540 @@ def _anchor_text(messages: list[str], anchor_count: int = 2) -> tuple[str, str]:
     return opening, closing
 
 
+_USER_TURN   = re.compile(r'^(?:USER|Human)\s*:\s*', re.IGNORECASE | re.MULTILINE)
+_ASST_TURN   = re.compile(r'^(?:ASSISTANT|Assistant|A|AI)\s*:\s*', re.IGNORECASE | re.MULTILINE)
+
+
+def _conversation_anchors(text: str) -> tuple[str, str]:
+    """Return (first_user_message, last_assistant_message) from the conversation.
+
+    These are used to pin TOPIC and DECIDED to the actual conversation boundaries
+    rather than whatever facts happened to be most prominent in extracted chunks.
+    """
+    user_parts = _USER_TURN.split(text)
+    asst_parts = _ASST_TURN.split(text)
+
+    first_user = user_parts[1].strip()[:800] if len(user_parts) > 1 else ""  # type: ignore[index]
+    last_asst  = asst_parts[-1].strip()[:800] if len(asst_parts) > 1 else ""  # type: ignore[index]
+
+    return first_user, last_asst
+
+
+def _empty_summary() -> dict:
+    return {
+        "main_topic": "No topic extracted",
+        "key_ideas": [], "snapshot": "", "vitals": [],
+        "conclusions": [], "unresolved_questions": [],
+    }
+
+
+def _extract_chunk(text: str, model: str = DEFAULT_MODEL, label: str = "") -> str:
+    """Run constrained fact-extraction on a single chunk. Returns raw extraction text.
+
+    Asks the model only to LIST — no synthesis, no compression. This is reliable
+    even on small models because it's constrained extraction, not open-ended generation.
+    Returns an empty string on failure so callers can skip silently.
+    """
+    prompt = EXTRACT_PROMPT.format(conversation=text[:_CHUNK_LIMIT])  # type: ignore[index]
+    try:
+        r = _call_generate(
+            model, prompt,
+            {"temperature": 0.1, "num_predict": 800, "num_ctx": _NUM_CTX},
+            timeout=120,
+        )
+        _log.debug("Extract status=%s label=%r", r.status_code, label)
+        r.raise_for_status()
+        result = r.json().get("response", "").strip()
+        _log.debug("Extract result (first 300): %r", result[:300])  # type: ignore[index]
+        return result
+    except Exception as e:
+        _log.warning("_extract_chunk exception (label=%r): %s", label, e)
+        return ""
+
+
+def _synthesize(
+    merged_facts: str,
+    model: str = DEFAULT_MODEL,
+    label: str = "",
+    first_user: str = "",
+    last_asst: str = "",
+) -> dict:
+    """Synthesize a 6-field summary dict from merged extracted facts (or raw conversation).
+
+    This is the single compression step in the map-reduce pipeline. The model works
+    from structured extracted facts, not raw noisy conversation text.
+    first_user / last_asst pin TOPIC and DECIDED to the actual conversation boundaries.
+
+    Starred content is intentionally excluded — it's stored separately in important_notes
+    and displayed verbatim in the continuation prompt. The summary must reflect the full
+    conversation without priority overrides.
+    """
+    prompt = SYNTHESIZE_PROMPT.format(
+        first_user=first_user[:800] or "(not available)",   # type: ignore[index]
+        last_asst=last_asst[:800] or "(not available)",     # type: ignore[index]
+        merged_facts=merged_facts[:_CHAR_LIMIT],            # type: ignore[index]
+    )
+    try:
+        r = _call_generate(
+            model, prompt,
+            {"temperature": 0.2, "num_predict": 2000, "num_ctx": _NUM_CTX},
+            timeout=180,
+        )
+        _log.debug("Synthesize status=%s label=%r", r.status_code, label)
+        r.raise_for_status()
+        body = r.json()
+        if "error" in body:
+            _log.warning("Ollama error in synthesize: %s", body["error"])
+            raise RuntimeError(body["error"])
+        response_text = body.get("response", "")
+        _log.debug("Synthesize response (first 400): %r", response_text[:400])  # type: ignore[index]
+        if not response_text.strip():
+            _log.warning("Empty synthesize response (label=%r)", label)
+            return _empty_summary()
+        return _parse_text_summary(response_text)
+    except requests.ConnectionError:
+        raise ConnectionError("Cannot connect to Ollama. Is it running? (ollama serve)")
+    except requests.Timeout:
+        raise TimeoutError("Ollama took too long to respond. The model may still be loading.")
+    except Exception as e:
+        _log.warning("_synthesize exception (label=%r): %s", label, e)
+        return _empty_summary()
+
+
 def summarize_conversation(
     text: str,
     model: str = DEFAULT_MODEL,
     important_snippets: list[str] | None = None,
 ) -> dict:
     """
-    Send the conversation text to Ollama and get a structured summary.
-    Starred messages (important_snippets) are NOT injected into the summarization
-    prompt — they are stored separately and appended verbatim to the continuation
-    prompt later. This keeps the summary clean and unbiased.
+    Summarize a conversation using a two-phase Map-Reduce pipeline.
 
-    For long conversations uses message-boundary chunking with:
-      - First/last message anchoring (opening goal + most-recent state)
-      - 1-message overlap between chunks (preserves conversational flow)
-      - Progressive rolling summarization (avoids naive merge of N summaries)
-    Returns a dict with main_topic, key_ideas, conclusions, unresolved_questions.
+    Phase 1 — EXTRACT (map): Each chunk gets an independent constrained extraction call.
+      The model is only asked to LIST facts (decisions, exact errors, commands, file paths).
+      This is reliable on small models; it preserves verbatim values.
+
+    Phase 2 — MERGE: All extraction outputs are concatenated in order. No LLM involved —
+      nothing is lost in this step.
+
+    Phase 3 — SYNTHESIZE (reduce): A single final LLM call works from the clean merged
+      facts to produce the 6-field summary. One compression step instead of N chained ones.
+
+    Short conversations (≤ _CHAR_LIMIT) skip the map/merge and go straight to synthesis
+      using the raw conversation text — quality is still better because SYNTHESIZE_PROMPT
+      is more structured than the old single-pass SUMMARIZE_PROMPT.
+
+    Starred messages (important_snippets) are stored separately in the database
+      (important_notes column) and displayed verbatim in the continuation prompt.
+      They do NOT influence the summary — keeping the summary a balanced representation
+      of the full conversation.
     """
+    first_user, last_asst = _conversation_anchors(text)
+
+    # Short conversation: synthesize directly from raw text
     if len(text) <= _CHAR_LIMIT:
-        return _summarize_single(text, model)
+        return _synthesize(text, model=model, label="Single",
+                           first_user=first_user, last_asst=last_asst)
 
-    # --- Split at message boundaries, not raw char offsets ---
+    # Long conversation: Map-Reduce
     messages = _parse_messages(text)
-
-    # --- Always anchor on the first 2 and last 2 messages ---
     anchor_count = 2
     opening, closing = _anchor_text(messages, anchor_count)
 
-    # Chunk the middle section (exclude anchored messages at both ends)
     middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
     middle_text = '\n\n'.join(middle_messages)
-
-    # Build middle chunks with 1-message overlap for continuity
     middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
 
-    # --- Progressive (rolling) summarization of the middle ---
-    running_summary = _summarize_single(opening, model, label="Opening")
+    # MAP: extract facts from each section independently
+    all_extractions: list[str] = []
+
+    opening_facts = _extract_chunk(opening, model, label="Opening")
+    if opening_facts:
+        all_extractions.append(f"[OPENING]\n{opening_facts}")
 
     for idx, chunk in enumerate(middle_chunks):
-        running_topic    = running_summary.get("main_topic", "")
-        running_points   = "; ".join(running_summary.get("key_ideas", []))
-        running_snapshot = running_summary.get("snapshot", "")
-        running_vitals   = "; ".join(running_summary.get("vitals", []))
-        rolling_context = (
-            f"[So far — Topic: {running_topic}. Points: {running_points}. "
-            f"Snapshot: {running_snapshot}. Vitals: {running_vitals}]\n\n"
-            f"NEXT SECTION:\n{chunk}"
-        )
-        running_summary = _summarize_single(
-            rolling_context, model,
-            label=f"Middle {idx+1}/{len(middle_chunks)}",
-        )
+        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
+        if facts:
+            all_extractions.append(f"[SECTION {idx+1}]\n{facts}")
 
-    # --- Final pass: merge rolling summary + closing anchor ---
     if closing:
-        running_topic    = running_summary.get("main_topic", "")
-        running_points   = "; ".join(running_summary.get("key_ideas", []))
-        running_snapshot = running_summary.get("snapshot", "")
-        running_vitals   = "; ".join(running_summary.get("vitals", []))
-        running_decided  = "; ".join(running_summary.get("conclusions", []))
-        running_open     = "; ".join(running_summary.get("unresolved_questions", []))
+        closing_facts = _extract_chunk(closing, model, label="Closing")
+        if closing_facts:
+            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{closing_facts}")
 
-        final_prompt = (
-            "You are a precise summarization assistant. "
-            "Below is a running summary of a long conversation followed by the final messages.\n\n"
-            f"RUNNING SUMMARY:\n"
-            f"Topic: {running_topic}\n"
-            f"Points: {running_points}\n"
-            f"Snapshot: {running_snapshot}\n"
-            f"Vitals: {running_vitals}\n"
-            f"Decided: {running_decided}\n"
-            f"Open: {running_open}\n\n"
-            f"FINAL MESSAGES (highest priority):\n{closing}\n\n"
-            "Produce the final unified summary. Prioritise conclusions from the final messages. "
-            "Update SNAPSHOT to reflect the very end of the conversation.\n\n"
-            "Respond in EXACTLY this format (no extra text):\n"
-            "TOPIC: [one sentence describing the overall main topic]\n"
-            "POINTS: [3-8 key points covering the whole conversation, separated by semicolons]\n"
-            "SNAPSHOT: [current state of what is being built/debugged at conversation end, or \"n/a\"]\n"
-            "VITALS: [up to 6 exact verbatim technical values separated by semicolons, or \"none\"]\n"
-            "DECIDED: [what was concluded or decided overall, or \"nothing yet\"]\n"
-            "OPEN: [any unanswered questions remaining, or \"none\"]\n"
-        )
+    # MERGE: concatenate all extractions — no LLM, nothing is lost
+    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:_CHAR_LIMIT]  # type: ignore[index]
 
-        try:
-            r = _call_generate(
-                model, final_prompt,
-                {"temperature": 0.2, "num_predict": 2000, "num_ctx": _NUM_CTX},
-                timeout=180,
-            )
-            r.raise_for_status()
-            return _parse_text_summary(r.json().get("response", ""))
-        except Exception:
-            pass  # Fall through to return the rolling summary as-is
-
-    return running_summary
+    # SYNTHESIZE: one final call from clean merged facts
+    return _synthesize(merged_facts, model=model, label="Final",
+                       first_user=first_user, last_asst=last_asst)
 
 
 EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
-CONTINUATION_PROMPT = """You are preparing a context brief to help someone resume an AI conversation in a new session. The new AI assistant has no memory of the original conversation.
 
-ORIGINAL CONVERSATION SUMMARY:
-Topic: {topic}
-Key Points: {points}
-Snapshot (active state at end): {snapshot}
-Vitals (exact values to preserve): {vitals}
-Decisions Made: {decisions}
-Open Questions: {open_questions}
+# ---------------------------------------------------------------------------
+# Continuation Prompt — helper functions
+# ---------------------------------------------------------------------------
 
-RECENT MESSAGES:
-{recent_messages}
+_CODE_BLOCK_RE = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
+_ERROR_RE = re.compile(
+    r'(?:Error|Exception|Traceback|FAIL|error\[|panic:|fatal:)',
+    re.IGNORECASE,
+)
+_FILE_PATH_RE = re.compile(
+    r'(?:[a-zA-Z]:\\|/[\w.]+/|\.{1,2}/)'           # absolute or relative paths
+    r'|(?:\w+\.(?:py|js|ts|tsx|jsx|go|rs|java|rb|cpp|c|h|css|html|json|yaml|yml|toml|sql|sh|bat))',
+    re.IGNORECASE,
+)
+_DECISION_RE = re.compile(
+    r"(?:let'?s go with|I'?ll use|the solution is|decided to|we should|going with|chose|picked|settled on)",
+    re.IGNORECASE,
+)
 
-Write a concise, actionable context brief. Be specific — use exact values from Vitals verbatim.
+def _compute_budget(msg_count: int, original_len: int, tier: str) -> dict:
+    """Return character budgets for prompt assembly, scaled to conversation size.
 
-Respond in EXACTLY this format (no extra text):
-BACKGROUND: [1-2 sentences — what this conversation was about and the user's goal]
-PROGRESS: [4-6 bullet points of what was established, decided, or learned — include specific numbers/versions/names]
-SNAPSHOT: [one sentence — precisely where the work was left and what was being actively built/debugged]
-VITALS: [the exact commands, errors, file paths, version strings to know — copy verbatim from Vitals above]
-NEXT: [what to tackle next based on open questions and the snapshot]"""
-
-
-_STARRED_SUMMARY_PROMPT = """The user starred these specific messages from a conversation as particularly important:
-
-{snippets}
-
-Summarise what makes these messages important in 2-4 concise bullet points. Focus on decisions made, key findings, errors resolved, or critical context a future AI session must know.
-
-Respond with only the bullet points, no intro text."""
-
-
-def _summarize_starred(snippets: list[str], model: str = DEFAULT_MODEL) -> str | None:
-    """Run a short independent summarization of the user's starred messages.
-
-    Returns a bullet-point string, or None if the call fails (caller skips the section).
+    Short conversations (≤10 msgs) get a doubled replay budget — they often fit entirely.
+    Long conversations (>50 msgs) get a larger overview to capture more of the arc.
     """
-    joined = "\n---\n".join(snippets)
-    prompt = _STARRED_SUMMARY_PROMPT.format(snippets=joined[:6000])  # type: ignore[index]
-    try:
-        r = _call_generate(
-            model, prompt,
-            {"temperature": 0.2, "num_predict": 400, "num_ctx": min(_NUM_CTX, 8192)},
-            timeout=60,
-        )
-        r.raise_for_status()
-        result = r.json().get("response", "").strip()
-        return result or None
-    except Exception:
-        return None
+    bases: dict[str, dict] = {
+        "compact":  {"overview": 300,  "replay": 1500, "code": 0,    "starred": 500,  "max_blocks": 0},
+        "standard": {"overview": 500,  "replay": 4000, "code": 2000, "starred": 2000, "max_blocks": 3},
+        "full":     {"overview": 500,  "replay": 8000, "code": 4000, "starred": 4000, "max_blocks": 6},
+    }
+    b = dict(bases.get(tier, bases["standard"]))
+    if msg_count <= 10:
+        b["overview"] = 200
+        b["replay"] = min(original_len, b["replay"] * 2)
+    elif msg_count > 50:
+        b["overview"] = min(800, b["overview"] + 200)
+    return b
+
+
+def _extract_code_blocks(
+    text: str, max_blocks: int = 5, max_chars: int = 3000,
+) -> list[dict]:
+    """Extract fenced code blocks from conversation text.
+
+    Returns list of {"language": str, "code": str, "context": str} dicts,
+    preferring the *last* N blocks (most recent code is most relevant).
+    """
+    blocks: list[dict] = []
+    for m in _CODE_BLOCK_RE.finditer(text):
+        lang = m.group(1) or ""
+        code = m.group(2).strip()
+        # Grab up to 120 chars before the opening ``` for context
+        start = max(0, m.start() - 120)
+        preceding = text[start:m.start()].strip().split("\n")
+        context_line = preceding[-1].strip() if preceding else ""
+        blocks.append({"language": lang, "code": code, "context": context_line})
+
+    # Keep the last N blocks (most recent = most relevant)
+    blocks = blocks[-max_blocks:]
+
+    # Enforce total character budget
+    kept: list[dict] = []
+    total = 0
+    for b in blocks:
+        size = len(b["code"]) + len(b["context"])
+        if total + size > max_chars:
+            break
+        kept.append(b)
+        total += size
+    return kept
+
+
+def _score_message(msg: str, idx: int, total: int) -> int:
+    """Score a single message for importance in context selection."""
+    score = 1  # base
+    if idx == 0:
+        score += 10  # first user message — establishes goal
+    if idx >= total - 2:
+        score += 10  # last 2 messages — most recent state
+    if "```" in msg:
+        score += 5   # contains code block
+    if _ERROR_RE.search(msg):
+        score += 5   # contains error / traceback
+    if _FILE_PATH_RE.search(msg):
+        score += 3   # contains file paths
+    if _DECISION_RE.search(msg):
+        score += 2   # contains decision language
+    return score
+
+
+def _select_key_messages(
+    messages: list[str],
+    char_budget: int = 6000,
+    chunks: list[dict] | None = None,
+) -> list[tuple[int, str]]:
+    """Return (original_index, text) tuples of the most important messages.
+
+    Scores each message by heuristics + optional embedding similarity to the
+    final conversation state. Uses stored chunk embeddings (no extra API calls).
+    Re-sorts selected messages chronologically before returning.
+    """
+    if not messages:
+        return []
+
+    total = len(messages)
+    scored = [(i, _score_message(m, i, total), m) for i, m in enumerate(messages)]
+
+    # Boost messages semantically similar to the final conversation state
+    # using already-stored chunk embeddings (free — no extra embed calls).
+    if chunks:
+        # Find the embedding of the last chunk as the "final state" anchor
+        last_vec: list[float] | None = None
+        for ch in reversed(chunks):
+            raw = ch.get("embedding")
+            if raw:
+                try:
+                    vec = json.loads(raw) if isinstance(raw, str) else raw
+                    if vec:
+                        last_vec = vec
+                        break
+                except Exception:
+                    pass
+
+        if last_vec:
+            # Map chunk_index → embedding for fast lookup
+            chunk_vecs: dict[int, list[float]] = {}
+            for ch in chunks:
+                raw = ch.get("embedding")
+                if raw:
+                    try:
+                        vec = json.loads(raw) if isinstance(raw, str) else raw
+                        if vec:
+                            chunk_vecs[ch["chunk_index"]] = vec
+                    except Exception:
+                        pass
+
+            new_scored = []
+            for i, (idx, score, msg) in enumerate(scored):
+                # Messages map approximately 2:1 to chunks (pair-based chunking)
+                chunk_idx = idx // 2
+                vec = chunk_vecs.get(chunk_idx)
+                if vec:
+                    sim = _cosine_similarity(last_vec, vec)
+                    # Add 0–8 semantic bonus points (scaled from cosine similarity)
+                    score += int(sim * 8)
+                new_scored.append((idx, score, msg))
+            scored = new_scored
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    selected: list[tuple[int, str]] = []
+    used = 0
+    for idx, _score, text in scored:
+        if used + len(text) > char_budget:
+            continue
+        selected.append((idx, text))
+        used += len(text)
+
+    # Re-sort chronologically
+    selected.sort(key=lambda x: x[0])
+    return selected
+
+
+def _role_label(msg: str) -> str:
+    """Extract role label (USER/ASSISTANT) from a message string."""
+    upper = msg.lstrip()[:20].upper()
+    if upper.startswith(("USER:", "HUMAN:")):
+        return "USER"
+    if upper.startswith(("ASSISTANT:", "ASSISTANT :", "A:", "AI:")):
+        return "ASSISTANT"
+    return "USER"
+
+
+_CAPTURE_NOISE_RE = re.compile(
+    r'^\s*(?:Show thinking|Hide thinking|'
+    r'(?:Gemini|ChatGPT|Claude|Copilot|Grok|DeepSeek|Perplexity)\s+said|'
+    r'(?:Gemini|ChatGPT|Claude|Copilot|Grok|DeepSeek|Perplexity)\s+is thinking|'
+    r'Searching the web|Analyzing|Thinking)\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+_ROLE_PREFIX_RE = re.compile(
+    r'\A(?:USER|ASSISTANT|Human|Assistant|A|AI)\s*:\s*',
+    re.IGNORECASE,
+)
+
+
+def _strip_capture_noise(text: str) -> str:
+    """Remove browser-capture artifacts and role prefixes from message text."""
+    cleaned = _CAPTURE_NOISE_RE.sub('\n', text)
+    cleaned = _ROLE_PREFIX_RE.sub('', cleaned, count=1)  # strip leading role prefix
+    # Collapse multiple blank lines into one
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
+
+
+def _truncate_at_sentence(text: str, limit: int) -> str:
+    """Truncate text at a sentence boundary within the character limit."""
+    if len(text) <= limit:
+        return text
+    # Look for the last sentence-ending punctuation before the limit
+    truncated = text[:limit]
+    # Find last sentence boundary (. ! ? followed by space or newline)
+    for i in range(len(truncated) - 1, max(0, len(truncated) - 200), -1):
+        if truncated[i] in '.!?\n' and (i + 1 >= len(truncated) or truncated[i + 1] in ' \n\t'):
+            return truncated[:i + 1]
+    # No sentence boundary found — cut at last space to avoid mid-word
+    last_space = truncated.rfind(' ', max(0, limit - 100), limit)
+    if last_space > 0:
+        return truncated[:last_space] + '...'
+    return truncated + '...'
+
+
+def _build_overview(summary: dict, budget: int) -> str:
+    """Build a compact 5-field overview block from a summary dict.
+
+    Returns a plain-text block (no XML tags) suitable for embedding inside
+    an <overview> section. Fields are omitted when empty/stub.
+    """
+    lines: list[str] = []
+
+    topic = summary.get("main_topic", "") or ""
+    if topic and topic not in ("No topic extracted", "N/A"):
+        lines.append(f"Topic: {topic}")
+
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    if snapshot and snapshot.lower() not in ("n/a", "none", ""):
+        lines.append(f"State: {snapshot}")
+
+    conclusions = summary.get("conclusions", []) or []
+    if conclusions:
+        real = [c for c in conclusions if c.lower().strip() != topic.lower().strip()]
+        if real:
+            lines.append(f"Decided: {'; '.join(real)}")
+
+    unresolved = summary.get("unresolved_questions", []) or []
+    if unresolved and unresolved[0].lower() not in ("none", "n/a"):
+        lines.append(f"Open: {'; '.join(unresolved)}")
+
+    vitals = summary.get("vitals", []) or []
+    if vitals:
+        lines.append(f"Vitals: {'; '.join(vitals)}")
+
+    block = "\n".join(lines)
+    return _truncate_at_sentence(block, budget) if len(block) > budget else block
+
+
+def _message_turn_label(orig_idx: int, msg_count: int, role: str) -> str:
+    """Return a turn label like 'Turn 1/47 - USER - OPENING'."""
+    parts = [f"Turn {orig_idx + 1}/{msg_count}", role]
+    if orig_idx == 0:
+        parts.append("OPENING")
+    elif orig_idx >= msg_count - 2:
+        parts.append("LATEST")
+    return " - ".join(parts)
 
 
 def generate_continuation_prompt(
     summary: dict,
     original_chat: str,
-    model: str = DEFAULT_MODEL,
     important_snippets: list[str] | None = None,
-) -> str | None:
-    """Use the LLM to generate a rich context brief for resuming a conversation.
+    source_llm: str = "",
+    created_at: str = "",
+    prompt_size: str = "standard",
+    chunks: list[dict] | None = None,
+) -> str:
+    """Build a structured XML continuation prompt deterministically (no LLM call).
 
-    Starred messages are summarized independently and appended as a separate
-    'Important things to remember' section — keeping the main summary clean.
+    Uses an overview + conversation_replay format so the receiving LLM understands
+    the context as a natural conversation transcript rather than a structured dossier.
 
-    Returns the full brief as a plain string, or None on failure.
+    overview:           compact 5-field digest (topic, state, decided, open, vitals)
+    conversation_replay: key messages in chronological order with turn labels
+    code_artifacts:     extracted code blocks
+    important_context:  verbatim starred snippets
     """
+    tier = prompt_size if prompt_size in ("compact", "standard", "full") else "standard"
     messages = _parse_messages(original_chat)
-    recent = "\n\n".join(messages[-4:]) if len(messages) >= 4 else original_chat[:3000]  # type: ignore[index]
+    msg_count = len(messages)
+    budget = _compute_budget(msg_count, len(original_chat), tier)
 
-    prompt = CONTINUATION_PROMPT.format(
-        topic=summary.get("main_topic", "N/A"),
-        points="; ".join(summary.get("key_ideas", [])) or "None noted",
-        snapshot=summary.get("snapshot", "") or "N/A",
-        vitals="; ".join(summary.get("vitals", [])) or "None",
-        decisions="; ".join(summary.get("conclusions", [])) or "None yet",
-        open_questions="; ".join(summary.get("unresolved_questions", [])) or "None",
-        recent_messages=recent[:4000],  # type: ignore[index]
-    )
+    # ── Smart-select key messages ─────────────────────────────────
+    selected = _select_key_messages(messages, char_budget=budget["replay"], chunks=chunks)
 
-    try:
-        r = _call_generate(
-            model, prompt,
-            {"temperature": 0.3, "num_predict": 1500, "num_ctx": _NUM_CTX},
-            timeout=120,
-        )
-        r.raise_for_status()
-        result = r.json().get("response", "").strip()
-        if not result:
-            return None
-    except Exception:
-        return None
+    replay_lines: list[str] = []
+    for orig_idx, text in selected:
+        role = _role_label(text)
+        clean_text = _strip_capture_noise(text)
+        label = _message_turn_label(orig_idx, msg_count, role)
+        replay_lines.append(f"[{label}]:\n{clean_text}")
+    replay_block = "\n\n".join(replay_lines)
 
-    # Independently summarize the starred messages and append as a dedicated section
+    # ── Extract code blocks ───────────────────────────────────────
+    max_blocks = budget["max_blocks"]
+    code_blocks = _extract_code_blocks(original_chat, max_blocks=max_blocks, max_chars=budget["code"]) if max_blocks > 0 else []
+    code_section = ""
+    if code_blocks:
+        parts: list[str] = []
+        for cb in code_blocks:
+            header = f"# {cb['context']}" if cb["context"] else ""
+            lang = cb["language"]
+            parts.append(f"{header}\n```{lang}\n{cb['code']}\n```".strip())
+        code_section = "\n\n".join(parts)
+
+    # ── Starred content (verbatim) ────────────────────────────────
+    starred_section = ""
     if important_snippets:
-        starred_summary = _summarize_starred(important_snippets, model)
-        if starred_summary:
-            result += f"\n\n---\n\nIMPORTANT THINGS TO REMEMBER (from your starred messages):\n{starred_summary}"
+        cleaned = [_strip_capture_noise(s) for s in important_snippets]
+        joined = "\n\n---\n\n".join(cleaned)
+        starred_section = _truncate_at_sentence(joined, budget["starred"])
 
-    return result
+    # ── Metadata ──────────────────────────────────────────────────
+    meta_parts = []
+    if source_llm:
+        meta_parts.append(f"Source: {source_llm}")
+    meta_parts.append(f"Messages: {msg_count} turns")
+    if created_at:
+        meta_parts.append(f"Captured: {created_at[:10]}")
+    meta_line = " | ".join(meta_parts)
+
+    # ── Assemble XML prompt ───────────────────────────────────────
+    sections: list[str] = []
+    sections.append(f"<context_brief>\n<meta>\n{meta_line}\n</meta>")
+
+    # Compact overview — replaces the old multi-section dossier
+    overview_text = _build_overview(summary, budget["overview"])
+    if overview_text:
+        sections.append(f"\n<overview>\n{overview_text}\n</overview>")
+
+    # Conversation replay — chronological key messages with turn labels
+    if replay_block:
+        sections.append(f"\n<conversation_replay>\n{replay_block}\n</conversation_replay>")
+
+    # Code artifacts (skip if empty)
+    if code_section:
+        sections.append(f"\n<code_artifacts>\n{code_section}\n</code_artifacts>")
+
+    # Important context (skip if empty)
+    if starred_section:
+        sections.append(f"\n<important_context>\n{starred_section}\n</important_context>")
+
+    # Instructions
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    has_snapshot = snapshot and snapshot.lower() not in ("n/a", "none", "")
+    source_clause = f" originally held with {source_llm}" if source_llm else ""
+    if has_snapshot:
+        instructions = (
+            f"You are continuing a conversation{source_clause}. "
+            f"The overview above summarizes the full {msg_count}-turn conversation. "
+            f"The replay shows the most relevant exchanges. "
+            f"The user was last working on: {snapshot}. Continue naturally from there."
+        )
+    else:
+        instructions = (
+            f"You are continuing a conversation{source_clause}. "
+            f"The overview above summarizes the full {msg_count}-turn conversation. "
+            "The replay shows the most relevant exchanges. Continue naturally from where it left off."
+        )
+    sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
+    sections.append("</context_brief>")
+
+    return "\n".join(sections)
 
 
 def embed_text(text: str, model: str = EMBED_MODEL) -> list[float] | None:

@@ -1,5 +1,58 @@
 // Content script for ChatGPT and Claude
 
+// ─── Network Interceptor Listener ─────────────────────────────────
+// The interceptor.js (MAIN world) captures API responses and fires
+// CustomEvents. We accumulate them here in the ISOLATED world.
+let _interceptedMessages = [];   // { role: 'user'|'assistant', content: string }[]
+let _interceptorActive = false;  // set to true once we receive the first event
+
+window.addEventListener('__cv_captured__', (e) => {
+    _interceptorActive = true;
+    const incoming = e.detail?.newMessages;
+    if (!incoming || !Array.isArray(incoming)) return;
+
+    for (const msg of incoming) {
+        if (!msg.content || !msg.content.trim()) continue;
+
+        // Deduplicate: skip if we already have an identical message
+        const isDup = _interceptedMessages.some(
+            m => m.role === msg.role && m.content === msg.content.trim()
+        );
+        if (!isDup) {
+            _interceptedMessages.push({
+                role: msg.role,
+                content: msg.content.trim(),
+            });
+        }
+    }
+});
+
+// Request the full transcript from the interceptor (for page-load catch-up)
+function requestInterceptorTranscript() {
+    return new Promise((resolve) => {
+        const handler = (e) => {
+            window.removeEventListener('__cv_transcript__', handler);
+            resolve(e.detail?.messages || []);
+        };
+        window.addEventListener('__cv_transcript__', handler);
+        window.dispatchEvent(new CustomEvent('__cv_get_transcript__'));
+        // Timeout after 200ms if interceptor didn't respond (not installed)
+        setTimeout(() => {
+            window.removeEventListener('__cv_transcript__', handler);
+            resolve([]);
+        }, 200);
+    });
+}
+
+// Reset intercepted messages when URL changes (SPA navigation)
+let _lastContentUrl = location.href;
+setInterval(() => {
+    if (location.href !== _lastContentUrl) {
+        _lastContentUrl = location.href;
+        _interceptedMessages = [];
+    }
+}, 1000);
+
 // ─── Marked snippets state ────────────────────────────────────────
 // key: first 100 chars of text (dedup key), value: full message text
 const _markedSnippets = new Map();
@@ -117,8 +170,29 @@ function injectStarButtons() {
     });
 }
 
-// Utility to extract text based on domain
+// ─── Extract chat content (Network Intercept → DOM fallback) ─────
+// Priority: 1) Network-intercepted API data (clean JSON)
+//           2) DOM scraping (existing selectors, as fallback)
 function extractChatContent() {
+    // ── Priority 1: Use intercepted network data ──────────────────
+    if (_interceptedMessages.length >= 2) {
+        console.debug('[ConVX] Using intercepted network data (%d messages)', _interceptedMessages.length);
+        let chatLog = '';
+        for (const msg of _interceptedMessages) {
+            const label = msg.role === 'user' ? 'USER' : 'ASSISTANT';
+            chatLog += label + ':\n' + msg.content + '\n\n';
+        }
+        const result = chatLog.trim();
+        if (result.length >= 20) return result;
+    }
+
+    // ── Priority 2: DOM scraping (existing selectors) ────────────
+    console.debug('[ConVX] Falling back to DOM scraping');
+    return _extractChatFromDOM();
+}
+
+// The original DOM scraping logic, moved into its own function
+function _extractChatFromDOM() {
     const domain = window.location.hostname;
     let chatLog = "";
 
@@ -286,82 +360,55 @@ function extractChatContent() {
 }
 
 // ─── Paste text into ChatGPT or Claude input box ─────────────────
+function _injectIntoElement(input, text) {
+    input.focus();
+    if (input.tagName === 'TEXTAREA') {
+        // Use React's internal value setter so synthetic events fire correctly.
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype, 'value'
+        )?.set;
+        if (nativeSetter) nativeSetter.call(input, text);
+        else input.value = text;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+        // For contenteditable (React, Angular, ProseMirror):
+        // execCommand('selectAll') on an EMPTY contenteditable doesn't always set a
+        // real selection — the subsequent insertText then only inserts up to the first
+        // special character. Use Selection API to guarantee a range even on empty inputs.
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // With a real selection in place, insertText replaces it reliably.
+        document.execCommand('insertText', false, text);
+    }
+    return true;
+}
+
 function pasteIntoInput(text) {
     const domain = window.location.hostname;
+    let input = null;
 
     if (domain.includes("chatgpt.com")) {
-        const input = document.querySelector('#prompt-textarea, textarea[data-id="root"], div[contenteditable="true"]');
-        if (input) {
-            if (input.tagName === 'TEXTAREA') {
-                input.value = text;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            } else {
-                input.innerText = text;
-                input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-            }
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('#prompt-textarea, textarea[data-id="root"], div[contenteditable="true"]');
     } else if (domain.includes("claude.ai")) {
-        const input = document.querySelector('[contenteditable="true"].ProseMirror, div[contenteditable="true"]');
-        if (input) {
-            input.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
-            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('[contenteditable="true"].ProseMirror, div[contenteditable="true"]');
     } else if (domain.includes("gemini.google.com")) {
-        const input = document.querySelector('rich-textarea div[contenteditable="true"]');
-        if (input) {
-            input.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
-            input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('rich-textarea div[contenteditable="true"]');
     } else if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai")) {
-        const input = document.querySelector('textarea, [contenteditable="true"]');
-        if (input) {
-            if (input.tagName === 'TEXTAREA') {
-                input.value = text;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            } else {
-                input.innerText = text;
-                input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-            }
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('textarea, [contenteditable="true"]');
     } else if (domain.includes("deepseek.com")) {
-        const input = document.querySelector('textarea, #chat-input');
-        if (input) {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('textarea, #chat-input');
     } else if (domain.includes("perplexity.ai")) {
-        const input = document.querySelector('textarea, [contenteditable="true"]');
-        if (input) {
-            if (input.tagName === 'TEXTAREA') {
-                input.value = text;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            } else {
-                input.innerText = text;
-                input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-            }
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('textarea, [contenteditable="true"]');
     } else if (domain.includes("copilot.microsoft.com")) {
-        const input = document.querySelector('textarea, #searchbox');
-        if (input) {
-            input.value = text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.focus();
-            return true;
-        }
+        input = document.querySelector('textarea, #searchbox');
     }
-    return false;
+
+    if (!input) return false;
+    return _injectIntoElement(input, text);
 }
 
 // ─── Inject floating buttons ─────────────────────────────────────
@@ -473,11 +520,25 @@ function toggleImportPanel() {
     panel.id = "cv-import-panel";
     panel.innerHTML = `
         <div class="cv-panel-header">
-            <span class="cv-panel-title">📚 Your Vault</span>
+            <div class="cv-panel-logo">
+                <span class="cv-panel-logo-mark">✦</span>
+                <span class="cv-panel-title">Vault</span>
+            </div>
             <button class="cv-panel-close" id="cv-panel-close">✕</button>
         </div>
-        <div class="cv-panel-search">
-            <input type="text" id="cv-search-input" placeholder="Search contexts..." />
+        <div class="cv-panel-controls">
+            <div class="cv-panel-search">
+                <svg class="cv-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="cv-search-input" placeholder="Search…" />
+            </div>
+            <div class="cv-size-selector">
+                <button class="cv-size-btn" data-size="compact" title="Compact context">S</button>
+                <button class="cv-size-btn cv-size-active" data-size="standard" title="Standard context">M</button>
+                <button class="cv-size-btn" data-size="full" title="Full context">L</button>
+            </div>
+        </div>
+        <div class="cv-query-section">
+            <input type="text" id="cv-query-input" placeholder="Focus query — e.g. 'the auth bug'" />
         </div>
         <div class="cv-panel-list" id="cv-panel-list">
             <div class="cv-panel-loading"><span class="cv-spinner"></span> Loading…</div>
@@ -496,6 +557,22 @@ function toggleImportPanel() {
         panelOpen = false;
     });
 
+    // Size selector
+    panel.querySelectorAll(".cv-size-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            panel.querySelectorAll(".cv-size-btn").forEach(b => b.classList.remove("cv-size-active"));
+            btn.classList.add("cv-size-active");
+        });
+    });
+
+    // Query input — highlight border when active
+    document.getElementById("cv-query-input").addEventListener("input", (e) => {
+        const querySection = document.querySelector(".cv-query-section");
+        if (querySection) {
+            querySection.classList.toggle("cv-query-active", !!e.target.value.trim());
+        }
+    });
+
     // Search
     let searchTimer = null;
     document.getElementById("cv-search-input").addEventListener("input", (e) => {
@@ -504,6 +581,58 @@ function toggleImportPanel() {
     });
 
     loadContexts();
+}
+
+function showBriefToast(message) {
+    const existing = document.getElementById("cv-toast");
+    if (existing) existing.remove();
+    const toast = document.createElement("div");
+    toast.id = "cv-toast";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("cv-toast-visible"));
+    setTimeout(() => {
+        toast.classList.remove("cv-toast-visible");
+        setTimeout(() => toast.remove(), 300);
+    }, 2200);
+}
+
+function showContextPreview(item, ctx) {
+    // Remove any existing tooltip
+    const existing = document.getElementById("cv-preview-tooltip");
+    if (existing) existing.remove();
+
+    const title = ctx.title || "Untitled";
+    const source = ctx.source || "";
+    const date = ctx.created_at
+        ? new Date(ctx.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        : "";
+
+    const tip = document.createElement("div");
+    tip.id = "cv-preview-tooltip";
+    tip.innerHTML = `
+        <div class="cv-preview-title">${escapeHtml(title)}</div>
+        <div class="cv-preview-meta">
+            ${source ? `<span class="cv-preview-source">${escapeHtml(source)}</span>` : ""}
+            ${date ? `<span class="cv-preview-date">${date}</span>` : ""}
+        </div>
+        <div class="cv-preview-hint">Click to import into this conversation</div>
+    `;
+    document.body.appendChild(tip);
+
+    // Position: left of the item, vertically centered
+    const rect = item.getBoundingClientRect();
+    const tipWidth = 280;
+    const margin = 10;
+    let left = rect.left - tipWidth - margin;
+    if (left < 8) left = rect.right + margin; // flip right if no space
+    let top = rect.top + (rect.height / 2) - 60;
+    top = Math.max(8, Math.min(top, window.innerHeight - 160));
+
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+
+    requestAnimationFrame(() => tip.classList.add("cv-preview-visible"));
 }
 
 function loadContexts(query = "") {
@@ -538,9 +667,8 @@ function loadContexts(query = "") {
             const item = document.createElement("div");
             item.className = "cv-context-item";
             const title = ctx.title || "Untitled";
-            const summary = (ctx.summary || "No summary").substring(0, 100);
             const source = ctx.source || "";
-            const date = ctx.created_at ? new Date(ctx.created_at).toLocaleDateString() : "";
+            const date = ctx.created_at ? new Date(ctx.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 
             item.innerHTML = `
                 <div class="cv-context-title">${escapeHtml(title)}</div>
@@ -548,41 +676,69 @@ function loadContexts(query = "") {
                     ${source ? `<span class="cv-context-source">${escapeHtml(source)}</span>` : ""}
                     ${date ? `<span class="cv-context-date">${date}</span>` : ""}
                 </div>
-                <div class="cv-context-summary">${escapeHtml(summary)}…</div>
             `;
 
-            item.addEventListener("click", () => {
-                item.classList.add("cv-loading");
-                item.querySelector(".cv-context-title").innerHTML = `<span class="cv-spinner"></span> Generating prompt…`;
+            // ── Hover preview (1 second hover, not hold) ─────────────
+            let hoverTimer = null;
 
-                chrome.runtime.sendMessage({ action: "fetch_prompt", contextId: ctx.id }, (res) => {
+            item.addEventListener("mouseenter", () => {
+                hoverTimer = setTimeout(() => {
+                    hoverTimer = null;
+                    showContextPreview(item, ctx);
+                }, 1000);
+            });
+
+            item.addEventListener("mouseleave", () => {
+                if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+                // Dismiss tooltip when leaving the item
+                const tip = document.getElementById("cv-preview-tooltip");
+                if (tip) {
+                    tip.classList.remove("cv-preview-visible");
+                    setTimeout(() => tip.remove(), 180);
+                }
+            });
+
+            item.addEventListener("click", () => {
+                // Dismiss any open preview
+                const tip = document.getElementById("cv-preview-tooltip");
+                if (tip) tip.remove();
+
+                item.classList.add("cv-loading");
+                const queryInput = document.getElementById("cv-query-input");
+                const query = queryInput ? queryInput.value.trim() : "";
+                const modeLabel = query ? "Retrieving…" : "Generating…";
+                item.querySelector(".cv-context-title").innerHTML = `<span class="cv-spinner"></span> ${modeLabel}`;
+
+                const activeSize = document.querySelector(".cv-size-btn.cv-size-active");
+                const size = activeSize ? activeSize.dataset.size : "standard";
+
+                chrome.runtime.sendMessage({ action: "fetch_prompt", contextId: ctx.id, size, query }, (res) => {
                     item.classList.remove("cv-loading");
 
                     if (res && res.success && res.prompt) {
-                        const pasted = pasteIntoInput(res.prompt);
-                        if (pasted) {
-                            item.querySelector(".cv-context-title").textContent = "✅ Pasted into input!";
-                            // Close panel after a moment
-                            setTimeout(() => {
-                                const panel = document.getElementById("cv-import-panel");
-                                if (panel) { panel.classList.remove("cv-panel-open"); panelOpen = false; }
-                            }, 1200);
-                        } else {
-                            // Fallback: copy to clipboard
-                            navigator.clipboard.writeText(res.prompt).then(() => {
-                                item.querySelector(".cv-context-title").textContent = "📋 Copied to clipboard!";
-                            }).catch(() => {
-                                item.querySelector(".cv-context-title").textContent = "❌ Could not paste";
-                            });
-                        }
-                    } else {
-                        item.querySelector(".cv-context-title").textContent = "❌ Failed to generate prompt";
-                    }
+                        const mode = res.mode === "hybrid" ? "⚡ Hybrid" : res.mode === "retrieval" ? "🎯 Retrieved" : "📄 Static";
 
-                    // Reset after delay
-                    setTimeout(() => {
-                        item.querySelector(".cv-context-title").textContent = title;
-                    }, 2500);
+                        // Close panel FIRST so focus returns to the page input,
+                        // then inject after a short delay for the panel animation to settle.
+                        const panel = document.getElementById("cv-import-panel");
+                        if (panel) { panel.classList.remove("cv-panel-open"); panelOpen = false; }
+
+                        setTimeout(() => {
+                            const pasted = pasteIntoInput(res.prompt);
+                            if (!pasted) {
+                                // Fallback: copy to clipboard and briefly reopen panel to show status
+                                navigator.clipboard.writeText(res.prompt).catch(() => {});
+                                showBriefToast(`📋 ${mode} — copied to clipboard`);
+                            } else {
+                                showBriefToast(`✅ ${mode} — pasted`);
+                            }
+                        }, 120);
+                    } else {
+                        item.querySelector(".cv-context-title").textContent = "❌ Failed";
+                        setTimeout(() => {
+                            item.querySelector(".cv-context-title").textContent = title;
+                        }, 2000);
+                    }
                 });
             });
 
@@ -596,6 +752,268 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
+
+// ─── @convx keyword detection ────────────────────────────────────
+// When user types "@convx <query>" in the chat input, intercept it,
+// retrieve cross-conversation context, and replace @convx with the prompt.
+
+const CONVX_TRIGGER = /@convx\s+(.+)/i;
+let _convxProcessing = false;
+let _convxLastQuery = "";       // Prevent re-searching the same query
+let _convxPendingPrompt = null; // Stored prompt waiting for user confirmation
+let _convxOriginalText = "";    // Original input text at time of search
+
+function getChatInput() {
+    const domain = window.location.hostname;
+    if (domain.includes("chatgpt.com"))
+        return document.querySelector('#prompt-textarea, textarea[data-id="root"], div[contenteditable="true"]');
+    if (domain.includes("claude.ai"))
+        return document.querySelector('[contenteditable="true"].ProseMirror, div[contenteditable="true"]');
+    if (domain.includes("gemini.google.com"))
+        return document.querySelector('rich-textarea div[contenteditable="true"]');
+    if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai"))
+        return document.querySelector('textarea, [contenteditable="true"]');
+    if (domain.includes("deepseek.com"))
+        return document.querySelector('textarea, #chat-input');
+    if (domain.includes("perplexity.ai"))
+        return document.querySelector('textarea, [contenteditable="true"]');
+    if (domain.includes("copilot.microsoft.com"))
+        return document.querySelector('textarea, #searchbox');
+    return null;
+}
+
+function getInputText(el) {
+    if (!el) return "";
+    return el.tagName === "TEXTAREA" || el.tagName === "INPUT" ? el.value : el.innerText;
+}
+
+function setInputText(el, text) {
+    if (!el) return;
+    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+        el.value = text;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+        // contenteditable
+        const domain = window.location.hostname;
+        if (domain.includes("claude.ai") || domain.includes("gemini.google.com")) {
+            el.innerHTML = `<p>${text.replace(/\n/g, "<br>")}</p>`;
+        } else {
+            el.innerText = text;
+        }
+        el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }
+    el.focus();
+}
+
+function checkConvxTrigger() {
+    if (_convxProcessing) return;
+    const input = getChatInput();
+    if (!input) return;
+
+    const text = getInputText(input);
+    const match = text.match(CONVX_TRIGGER);
+
+    // If @convx was removed from input, reset state
+    if (!match) {
+        if (_convxLastQuery) {
+            _convxLastQuery = "";
+            _convxPendingPrompt = null;
+            _convxOriginalText = "";
+            hideConvxBadge();
+        }
+        return;
+    }
+
+    const query = match[1].trim();
+    if (!query || query.length < 3) return;
+
+    // Don't re-search the same query
+    if (query === _convxLastQuery) return;
+
+    _convxProcessing = true;
+    _convxLastQuery = query;
+    _convxOriginalText = text;
+
+    showConvxBadge("Searching...");
+
+    chrome.runtime.sendMessage({ action: "cross_retrieve", query, size: "standard" }, (res) => {
+        _convxProcessing = false;
+        if (res && res.success && res.prompt && res.chunks_found > 0) {
+            _convxPendingPrompt = res.prompt;
+            // Show badge with Inject / Dismiss buttons — user decides
+            showConvxInjectBadge(res.chunks_found, query);
+        } else {
+            _convxPendingPrompt = null;
+            showConvxBadge("No matching context found");
+            setTimeout(hideConvxBadge, 3000);
+        }
+    });
+}
+
+function showConvxInjectBadge(chunksFound, query) {
+    let badge = document.getElementById("cv-convx-badge");
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.id = "cv-convx-badge";
+        document.body.appendChild(badge);
+    }
+    badge.className = "cv-badge cv-badge-visible cv-badge-action";
+
+    const shortQuery = query.length > 30 ? query.substring(0, 30) + "…" : query;
+    badge.innerHTML = `
+        <span class="cv-badge-text">⚡ Found ${chunksFound} chunks for "${escapeHtml(shortQuery)}"</span>
+        <button class="cv-badge-btn cv-badge-inject" id="cv-convx-inject">Inject</button>
+        <button class="cv-badge-btn cv-badge-dismiss" id="cv-convx-dismiss">✕</button>
+    `;
+
+    document.getElementById("cv-convx-inject").addEventListener("click", () => {
+        if (_convxPendingPrompt) {
+            const input = getChatInput();
+            if (input) {
+                // Remove @convx ... from the original text, prepend context
+                const userMessage = _convxOriginalText.replace(CONVX_TRIGGER, "").trim();
+                const combined = _convxPendingPrompt + "\n\n" + userMessage;
+                setInputText(input, combined);
+            }
+        }
+        _convxPendingPrompt = null;
+        _convxLastQuery = "";
+        _convxOriginalText = "";
+        hideConvxBadge();
+    });
+
+    document.getElementById("cv-convx-dismiss").addEventListener("click", () => {
+        _convxPendingPrompt = null;
+        _convxLastQuery = "";
+        _convxOriginalText = "";
+        hideConvxBadge();
+    });
+}
+
+// Poll for @convx trigger (check every 800ms)
+setInterval(checkConvxTrigger, 800);
+
+
+// ─── Auto-inject on first message ────────────────────────────────
+// Detects when user is starting a new conversation and automatically
+// searches for relevant context across all saved conversations.
+
+let _autoInjectDone = false;
+let _lastUrl = window.location.href;
+let _autoInjectDismissed = false;
+let _pendingAutoPrompt = null;
+
+function isNewConversation() {
+    const domain = window.location.hostname;
+    const path = window.location.pathname;
+
+    // ChatGPT: / or /? means new chat; /c/xxx means existing
+    if (domain.includes("chatgpt.com")) return path === "/" || path === "";
+    // Claude: /new means new chat; /chat/xxx means existing
+    if (domain.includes("claude.ai")) return path === "/new" || path === "/" || path === "";
+    // Gemini: /app means new; /app/xxx means existing
+    if (domain.includes("gemini.google.com")) return path === "/app" || path === "/";
+    // Grok, DeepSeek, Perplexity: heuristic — check if no messages on page
+    if (domain.includes("grok.com") || domain.includes("deepseek.com") || domain.includes("perplexity.ai")) {
+        const msgs = document.querySelectorAll("[data-message-author-role], .message-bubble, .ds-message-row, .prose");
+        return msgs.length === 0;
+    }
+    return false;
+}
+
+function checkAutoInject() {
+    // Reset when URL changes (user navigated to a new chat)
+    if (window.location.href !== _lastUrl) {
+        _lastUrl = window.location.href;
+        _autoInjectDone = false;
+        _autoInjectDismissed = false;
+        _pendingAutoPrompt = null;
+        hideConvxBadge();
+    }
+
+    if (_autoInjectDone || _autoInjectDismissed) return;
+    if (!isNewConversation()) return;
+
+    const input = getChatInput();
+    if (!input) return;
+
+    const text = getInputText(input).trim();
+    // Need at least 15 chars of meaningful input to trigger
+    if (text.length < 15) return;
+
+    // Don't trigger if it's an @convx message (that has its own handler)
+    if (CONVX_TRIGGER.test(text)) return;
+
+    _autoInjectDone = true; // Only try once per conversation
+
+    showConvxBadge("Searching vault...");
+
+    chrome.runtime.sendMessage({ action: "cross_retrieve", query: text, size: "standard" }, (res) => {
+        if (res && res.success && res.prompt && res.chunks_found > 0) {
+            _pendingAutoPrompt = res.prompt;
+            showAutoInjectBadge(res.chunks_found);
+        } else {
+            hideConvxBadge();
+        }
+    });
+}
+
+// Check every 2 seconds for auto-inject opportunity
+setInterval(checkAutoInject, 2000);
+
+
+// ─── Badge UI for @convx and auto-inject ─────────────────────────
+
+function showConvxBadge(message) {
+    let badge = document.getElementById("cv-convx-badge");
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.id = "cv-convx-badge";
+        document.body.appendChild(badge);
+    }
+    badge.textContent = "⚡ ConVX: " + message;
+    badge.className = "cv-badge cv-badge-visible";
+}
+
+function hideConvxBadge() {
+    const badge = document.getElementById("cv-convx-badge");
+    if (badge) badge.className = "cv-badge";
+}
+
+function showAutoInjectBadge(chunksFound) {
+    let badge = document.getElementById("cv-convx-badge");
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.id = "cv-convx-badge";
+        document.body.appendChild(badge);
+    }
+    badge.className = "cv-badge cv-badge-visible cv-badge-action";
+    badge.innerHTML = `
+        <span class="cv-badge-text">⚡ ConVX found ${chunksFound} relevant chunks</span>
+        <button class="cv-badge-btn cv-badge-inject" id="cv-auto-inject-yes">Inject</button>
+        <button class="cv-badge-btn cv-badge-dismiss" id="cv-auto-inject-no">✕</button>
+    `;
+
+    document.getElementById("cv-auto-inject-yes").addEventListener("click", () => {
+        if (_pendingAutoPrompt) {
+            const input = getChatInput();
+            if (input) {
+                const currentText = getInputText(input).trim();
+                const combined = _pendingAutoPrompt + "\n\n" + currentText;
+                setInputText(input, combined);
+            }
+            _pendingAutoPrompt = null;
+        }
+        hideConvxBadge();
+    });
+
+    document.getElementById("cv-auto-inject-no").addEventListener("click", () => {
+        _autoInjectDismissed = true;
+        _pendingAutoPrompt = null;
+        hideConvxBadge();
+    });
+}
+
 
 // Run injection periodically since SPAs re-render the DOM
 setInterval(() => {

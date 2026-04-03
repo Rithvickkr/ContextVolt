@@ -7,6 +7,7 @@ Serves the REST API and static frontend files.
 import os
 import subprocess
 import sys
+import threading
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,22 +16,33 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from backend.database import (
     init_db,
     create_context,
+    create_chunks,
     get_all_contexts,
     get_context,
+    get_chunks_by_context,
     update_context,
     delete_context,
+    delete_chunks_by_context,
     search_contexts,
     search_contexts_semantic,
+    search_chunks_semantic,
     set_context_embedding,
 )
-from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest
+from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest
 from backend.ollama_client import (
     summarize_conversation,
     generate_continuation_prompt,
+    build_hybrid_prompt,
+    chunk_conversation,
+    embed_chunks,
+    build_retrieval_prompt,
+    build_cross_context_prompt,
     embed_text,
     check_ollama_running,
     check_model_available,
     DEFAULT_MODEL,
+    _parse_messages,
+    _USER_TURN,
 )
 
 # ---------------------------------------------------------------------------
@@ -157,32 +169,21 @@ def api_summarize(req: SummarizeRequest):
 
 @app.post("/api/capture")
 def api_capture(req: CaptureRequest):
-    """Receive raw text from the browser extension, summarize, and save it automatically."""
+    """Receive raw text from the browser extension, chunk + embed, and save."""
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # Build a default/fallback summary
-    default_summary: dict = {
-        "main_topic": "No topic extracted",
+    # Extract first user message as title (no LLM needed)
+    user_parts = _USER_TURN.split(req.text)
+    first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else req.text.strip()[:100]
+    title = first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "..."
+
+    # Stub summary — retrieval replaces the need for full LLM summarization
+    summary: dict = {
+        "main_topic": first_user_msg,
         "key_ideas": [], "snapshot": "", "vitals": [],
         "conclusions": [], "unresolved_questions": [],
     }
-    title = f"Captured from {req.source}"
-    summary = default_summary
-
-    # Attempt Ollama summarization, but don't block save on it
-    if check_ollama_running() and check_model_available():
-        try:
-            summary = summarize_conversation(
-                req.text,
-                important_snippets=req.important_snippets or [],
-            )
-            if summary and summary.get("main_topic") and summary["main_topic"] != "No topic extracted":
-                topic = summary["main_topic"]
-                title = topic if len(topic) < 50 else topic[:47] + "..."
-        except Exception:
-            # Summarization failed — proceed with default summary
-            summary = default_summary
 
     try:
         result = create_context(
@@ -191,10 +192,40 @@ def api_capture(req: CaptureRequest):
             tags=[req.source, "Extension"],
             original_chat=req.text,
             important_notes=req.important_snippets or [],
+            status="summarizing",
         )
-        # Best-effort embedding for semantic search (don't fail the capture if unavailable)
-        _try_embed_context(result.get("id"), summary)
-        return {"success": True, "id": result.get("id")}
+        context_id = result.get("id")
+
+        # Chunk the conversation and embed each chunk
+        chunks = chunk_conversation(req.text, starred_snippets=req.important_snippets or [])
+        chunks = embed_chunks(chunks)
+        if context_id and chunks:
+            create_chunks(context_id, chunks)
+
+        # Best-effort context-level embedding for semantic search on the list
+        _try_embed_context(context_id, summary)
+
+        # Background summarization — runs after response is returned to the extension.
+        # Replaces the stub summary with a full map-reduce summary and re-embeds the context.
+        def _bg_summarize(cid: int, text: str, snippets: list) -> None:
+            try:
+                real_summary = summarize_conversation(text, important_snippets=snippets or None)
+                new_title = real_summary.get("main_topic", "")
+                update_kwargs: dict = {"summary": real_summary}
+                if new_title and new_title not in ("No topic extracted", "N/A"):
+                    update_kwargs["title"] = new_title[:120]  # cap at 120 chars
+                update_context(cid, **update_kwargs, status="completed")
+                _try_embed_context(cid, real_summary)  # re-embed with real topic + key_ideas
+            except Exception:
+                update_context(cid, status="failed")
+
+        threading.Thread(
+            target=_bg_summarize,
+            args=(context_id, req.text, req.important_snippets or []),
+            daemon=True,
+        ).start()
+
+        return {"success": True, "id": context_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Capture save failed: {str(e)}")
 
@@ -298,7 +329,8 @@ def api_update_context(context_id: int, updates: ContextUpdate):
 
 @app.delete("/api/contexts/{context_id}")
 def api_delete_context(context_id: int):
-    """Delete a context by ID."""
+    """Delete a context and its chunks by ID."""
+    delete_chunks_by_context(context_id)
     deleted = delete_context(context_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Context not found")
@@ -341,52 +373,229 @@ def api_embed_all():
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
+@app.post("/api/contexts/chunk-all")
+def api_chunk_all():
+    """Backfill chunks for old contexts that were saved before embedding-based retrieval.
+
+    Streams progress as NDJSON lines.
+    """
+    import json as _json
+
+    contexts = get_all_contexts()
+    total = len(contexts)
+
+    def _stream():
+        updated = 0
+        skipped = 0
+        for i, ctx in enumerate(contexts, start=1):
+            cid = ctx.get("id")
+            existing_chunks = get_chunks_by_context(cid)
+            if existing_chunks:
+                skipped += 1
+            else:
+                try:
+                    chat = ctx.get("original_chat", "")
+                    if chat.strip():
+                        notes = ctx.get("important_notes") or []
+                        chunks = chunk_conversation(chat, starred_snippets=notes)
+                        chunks = embed_chunks(chunks)
+                        if chunks:
+                            create_chunks(cid, chunks)
+                        updated += 1
+                    else:
+                        skipped += 1
+                except Exception:
+                    skipped += 1
+            payload = {
+                "done": i, "total": total,
+                "updated": updated, "skipped": skipped,
+                "title": ctx.get("title", ""),
+            }
+            yield _json.dumps(payload) + "\n"
+        yield _json.dumps({"done": total, "total": total, "updated": updated,
+                            "skipped": skipped, "finished": True}) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------------------
+# Cross-conversation retrieval
+# ---------------------------------------------------------------------------
+
+@app.post("/api/retrieve")
+def api_cross_retrieve(body: PromptRequest):
+    """Search across ALL saved conversations for chunks relevant to a query.
+
+    Returns a retrieval prompt assembled from the top chunks across all contexts.
+    """
+    if not body.query or not body.query.strip():
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    query_vec = embed_text(body.query.strip())
+    if not query_vec:
+        raise HTTPException(status_code=503, detail="Embedding model not available")
+
+    # Search all chunks across all contexts
+    top_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=12)
+    if not top_chunks:
+        return {"prompt": None, "mode": "retrieval", "chunks_found": 0}
+
+    # Group by context to add source info
+    from backend.database import get_context as _get_ctx
+    context_cache: dict = {}
+    for ch in top_chunks:
+        cid = ch.get("context_id")
+        if cid and cid not in context_cache:
+            ctx = _get_ctx(cid)
+            if ctx:
+                tags = ctx.get("tags", [])
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(",")]
+                context_cache[cid] = {
+                    "title": ctx.get("title", ""),
+                    "source": next((t for t in tags if t in _KNOWN_SOURCES), ""),
+                    "created_at": ctx.get("created_at", ""),
+                }
+
+    # Enrich chunks with context metadata for the prompt
+    for ch in top_chunks:
+        cid = ch.get("context_id")
+        meta = context_cache.get(cid, {})
+        ch["_ctx_title"] = meta.get("title", "")
+        ch["_ctx_source"] = meta.get("source", "")
+        ch["_ctx_date"] = meta.get("created_at", "")[:10]
+
+    prompt = build_cross_context_prompt(
+        retrieved_chunks=top_chunks,
+        query=body.query.strip(),
+        prompt_size=body.size,
+    )
+    return {"prompt": prompt, "mode": "retrieval", "chunks_found": len(top_chunks)}
+
+
 # ---------------------------------------------------------------------------
 # Prompt Builder
 # ---------------------------------------------------------------------------
 
+_KNOWN_SOURCES = {"ChatGPT", "Claude", "Gemini", "Grok", "DeepSeek", "Perplexity", "Copilot"}
+
+
 @app.post("/api/contexts/{context_id}/prompt")
-def api_generate_prompt(context_id: int):
-    """Generate a structured continuation prompt for a context using the local LLM."""
+def api_generate_prompt(
+    context_id: int,
+    size: str = Query(default="standard"),
+    body: PromptRequest | None = None,
+):
+    """Generate a continuation prompt. Uses retrieval when a query is provided."""
     ctx = get_context(context_id)
     if not ctx:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    summary = ctx["summary"]
+    effective_size = body.size if body and body.size else size
+    query = body.query if body else None
     important_notes: list = ctx.get("important_notes") or []
 
-    # Try LLM-generated prompt first (richer context brief)
-    if isinstance(summary, dict) and check_ollama_running() and check_model_available():
-        llm_prompt = generate_continuation_prompt(
+    # Extract source LLM from tags
+    tags = ctx.get("tags", [])
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",")]
+    source_llm = next((t for t in tags if t in _KNOWN_SOURCES), "")
+
+    # ── Retrieval path: query provided AND context has chunks ──
+    if query and query.strip():
+        all_chunks = get_chunks_by_context(context_id)
+        if all_chunks:
+            query_vec = embed_text(query.strip())
+            if query_vec:
+                # Semantic search within this context
+                top_chunks = search_chunks_semantic(
+                    query_vec, context_id=context_id, top_k=8,
+                )
+            else:
+                # Embedding failed — fall back to all chunks
+                top_chunks = all_chunks[:8]
+
+            # Always anchor: first chunk, last chunk, starred chunks
+            anchor_indices = set()
+            first_idx = 0
+            last_idx = max(ch["chunk_index"] for ch in all_chunks)
+            anchor_indices.add(first_idx)
+            anchor_indices.add(last_idx)
+            for ch in all_chunks:
+                if ch.get("is_starred"):
+                    anchor_indices.add(ch["chunk_index"])
+
+            # Merge anchors with retrieval results, deduplicate
+            seen = {ch["chunk_index"] for ch in top_chunks}
+            merged = list(top_chunks)
+            for ch in all_chunks:
+                if ch["chunk_index"] in anchor_indices and ch["chunk_index"] not in seen:
+                    merged.append(ch)
+                    seen.add(ch["chunk_index"])
+
+            # Sort chronologically
+            merged.sort(key=lambda c: c["chunk_index"])
+
+            # Use hybrid prompt when a real summary exists (not just the capture stub)
+            summary = ctx.get("summary", {})
+            has_real_summary = (
+                isinstance(summary, dict)
+                and summary.get("key_ideas")  # stub has empty key_ideas
+            )
+            if has_real_summary:
+                prompt = build_hybrid_prompt(
+                    summary=summary,
+                    retrieved_chunks=merged,
+                    query=query.strip(),
+                    total_chunks=len(all_chunks),
+                    source_llm=source_llm,
+                    created_at=ctx.get("created_at", ""),
+                    prompt_size=effective_size,
+                    important_snippets=important_notes,
+                )
+                mode = "hybrid"
+            else:
+                prompt = build_retrieval_prompt(
+                    retrieved_chunks=merged,
+                    query=query.strip(),
+                    total_chunks=len(all_chunks),
+                    context_title=ctx["title"],
+                    source_llm=source_llm,
+                    created_at=ctx.get("created_at", ""),
+                    prompt_size=effective_size,
+                    important_snippets=important_notes,
+                )
+                mode = "retrieval"
+            return {
+                "prompt": prompt,
+                "context_id": context_id,
+                "title": ctx["title"],
+                "mode": mode,
+            }
+
+    # ── Static path: no query or no chunks (backward compat) ──
+    summary = ctx["summary"]
+    if isinstance(summary, dict):
+        all_chunks_static = get_chunks_by_context(context_id)
+        prompt = generate_continuation_prompt(
             summary,
             ctx.get("original_chat", ""),
             important_snippets=important_notes,
+            source_llm=source_llm,
+            created_at=ctx.get("created_at", ""),
+            prompt_size=effective_size,
+            chunks=all_chunks_static or None,
         )
-        if llm_prompt:
-            return {"prompt": llm_prompt, "context_id": context_id, "title": ctx["title"]}
+        return {
+            "prompt": prompt,
+            "context_id": context_id,
+            "title": ctx["title"],
+            "mode": "static",
+        }
 
-    # Fallback: structured template from summary fields
-    if isinstance(summary, str):
-        prompt = f"Context:\n{summary}\n\nContinue the discussion from this point."
-    else:
-        key_ideas   = "\n".join(f"- {idea}" for idea in summary.get("key_ideas", []))
-        snapshot    = summary.get("snapshot", "")
-        vitals      = "\n".join(f"- {v}" for v in summary.get("vitals", []))
-        conclusions = "\n".join(f"- {c}" for c in summary.get("conclusions", []))
-        unresolved  = "\n".join(f"- {q}" for q in summary.get("unresolved_questions", []))
-        marked      = "\n".join(f"- {n}" for n in important_notes)
-        prompt = (
-            f"Context: {summary.get('main_topic', 'N/A')}\n\n"
-            f"Key Points:\n{key_ideas or '- None noted'}\n\n"
-            + (f"Active State:\n{snapshot}\n\n" if snapshot and snapshot != "n/a" else "")
-            + (f"Technical Vitals:\n{vitals}\n\n" if vitals else "")
-            + (f"Marked Important:\n{marked}\n\n" if marked else "")
-            + f"Conclusions Reached:\n{conclusions or '- None yet'}\n\n"
-            f"Unresolved Questions:\n{unresolved or '- None'}\n\n"
-            "Continue the discussion from this point."
-        )
-
-    return {"prompt": prompt, "context_id": context_id, "title": ctx["title"]}
+    # Fallback for string summaries (legacy data)
+    prompt = f"Context:\n{summary}\n\nContinue the discussion from this point."
+    return {"prompt": prompt, "context_id": context_id, "title": ctx["title"], "mode": "static"}
 
 
 # ---------------------------------------------------------------------------

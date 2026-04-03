@@ -17,6 +17,118 @@ const state = {
     ollamaReady: false,
 };
 
+// ─── Worker Status Polling ───────────────────────────────────────
+let _workerPollTimer = null;
+
+function startWorkerPolling() {
+    stopWorkerPolling();
+    _workerPollTimer = setInterval(_pollSummarizingContexts, 3000);
+}
+
+function stopWorkerPolling() {
+    if (_workerPollTimer) {
+        clearInterval(_workerPollTimer);
+        _workerPollTimer = null;
+    }
+}
+
+async function _pollSummarizingContexts() {
+    // Collect IDs that are still 'summarizing' from library list
+    const summarizingIds = state.contexts
+        .filter(c => c.status === 'summarizing')
+        .map(c => c.id);
+
+    // Also watch the currently-open detail view
+    const detailId = state.currentContext && state.currentContext.status === 'summarizing'
+        ? state.currentContext.id : null;
+
+    const idsToCheck = [...new Set([...summarizingIds, ...(detailId ? [detailId] : [])])];
+    if (idsToCheck.length === 0) {
+        // Nothing pending — stop polling
+        stopWorkerPolling();
+        return;
+    }
+
+    // Fetch each and update state / UI
+    for (const id of idsToCheck) {
+        try {
+            const res = await fetch(`${API}/api/contexts/${id}`);
+            if (!res.ok) continue;
+            const fresh = await res.json();
+
+            // Update library list state
+            const idx = state.contexts.findIndex(c => c.id === id);
+            if (idx !== -1) state.contexts[idx] = fresh;
+
+            // Update detail view if open
+            if (state.currentContext && state.currentContext.id === id) {
+                state.currentContext = fresh;
+                // Only re-render the status banner, not the whole detail
+                const banner = document.getElementById('detail-status-banner');
+                if (banner) {
+                    const newBanner = _buildDetailStatusBanner(fresh.status);
+                    banner.outerHTML = newBanner;
+                } else if (fresh.status !== 'summarizing') {
+                    // Banner was removed (status changed) — re-render full detail
+                    renderDetail(fresh);
+                }
+            }
+
+            // If status changed from summarizing, refresh the card in the library grid
+            if (fresh.status !== 'summarizing' && state.view === 'library') {
+                _refreshCard(fresh);
+            }
+        } catch (_) { /* ignore individual errors */ }
+    }
+}
+
+function _buildDetailStatusBanner(status) {
+    if (status === 'summarizing') {
+        return `<div class="detail-status-banner status-summarizing" id="detail-status-banner">
+            <div class="detail-status-icon"><span class="detail-spinner"></span></div>
+            <div class="detail-status-text">
+                <strong>Summarizing in background…</strong>
+                <span>The AI is building a full summary. This page will update automatically when it's ready.</span>
+            </div>
+        </div>`;
+    } else if (status === 'failed') {
+        return `<div class="detail-status-banner status-failed" id="detail-status-banner">
+            <div class="detail-status-icon">⚠️</div>
+            <div class="detail-status-text">
+                <strong>Summarization failed</strong>
+                <span>The background worker could not complete the summary. The context is still saved.</span>
+            </div>
+        </div>`;
+    }
+    return '';
+}
+
+function _buildCardStatusBadge(status) {
+    if (status === 'summarizing') {
+        return `<span class="status-badge status-summarizing"><span class="badge-spinner"></span>Summarizing</span>`;
+    } else if (status === 'failed') {
+        return `<span class="status-badge status-failed">⚠ Failed</span>`;
+    }
+    return '';
+}
+
+function _refreshCard(ctx) {
+    // Find and update an existing card in the grid without full re-render
+    const grid = $('#contexts-grid');
+    if (!grid) return;
+    const cards = grid.querySelectorAll('.context-card');
+    for (const card of cards) {
+        const onclick = card.getAttribute('onclick') || '';
+        if (onclick.includes(`showDetail(${ctx.id})`)) {
+            // Remove old badge if any
+            const old = card.querySelector('.status-badge');
+            if (old) old.remove();
+            // No new badge needed since status is no longer 'summarizing'
+            break;
+        }
+    }
+}
+
 // ─── DOM Refs ────────────────────────────────────────────────────
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -124,6 +236,13 @@ function navigateTo(view) {
     // Load data if library
     if (view === 'library') {
         loadContexts();
+    }
+
+    // Start/stop background polling depending on view
+    if (view === 'library' || view === 'detail') {
+        startWorkerPolling();
+    } else {
+        stopWorkerPolling();
     }
 }
 
@@ -268,8 +387,11 @@ async function loadContexts(query = '') {
                 month: 'short', day: 'numeric'
             });
 
+            const statusBadge = _buildCardStatusBadge(ctx.status);
+
             return `
                 <div class="context-card" onclick="showDetail(${ctx.id})">
+                    ${statusBadge}
                     <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
                     <p class="card-topic">${escapeHtml(summary.main_topic || '')}</p>
                     <div class="card-tags">${tags}</div>
@@ -282,6 +404,11 @@ async function loadContexts(query = '') {
                 </div>
             `;
         }).join('');
+
+        // If any contexts are still summarizing, ensure polling is running
+        if (contexts.some(c => c.status === 'summarizing')) {
+            startWorkerPolling();
+        }
 
     } catch (err) {
         showToast('Failed to load contexts', 'error');
@@ -318,6 +445,11 @@ async function showDetail(id) {
 
         navigateTo('detail');
         renderDetail(ctx);
+
+        // Kick off polling immediately if this context is still being summarized
+        if (ctx.status === 'summarizing') {
+            startWorkerPolling();
+        }
     } catch (err) {
         showToast('Failed to load context', 'error');
     }
@@ -346,8 +478,11 @@ function renderDetail(ctx) {
     const vitals = (summary.vitals || []);
     const snapshot = summary.snapshot && summary.snapshot.toLowerCase() !== 'n/a' ? summary.snapshot : '';
 
+    const statusInfo = _buildDetailStatusBanner(ctx.status);
+
     container.innerHTML = `
         <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
+        ${statusInfo}
         <div class="detail-meta">
             <span>${date}</span>
         </div>
@@ -405,10 +540,30 @@ function renderDetail(ctx) {
             <div class="original-chat-content" id="original-chat-box" style="display:none;">${escapeHtml(ctx.original_chat)}</div>
         </div>
 
+        <div class="prompt-size-selector">
+            <span class="prompt-size-label">Prompt size:</span>
+            <button class="prompt-size-btn" data-size="compact" title="~2k chars — last exchange only, no code">Compact</button>
+            <button class="prompt-size-btn active" data-size="standard" title="~5k chars — smart-selected messages + code">Standard</button>
+            <button class="prompt-size-btn" data-size="full" title="~12k chars — maximum context + all code">Full</button>
+        </div>
+        <div class="query-input-section">
+            <label for="retrieval-query" class="query-label">Focus query (optional):</label>
+            <input type="text" id="retrieval-query" class="query-input"
+                   placeholder="What do you want to continue working on?" />
+            <div class="query-hint">Leave empty for a general continuation prompt, or describe what you want to focus on for targeted context retrieval.</div>
+        </div>
         <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id}, this)">
             Generate Continuation Prompt
         </button>
     `;
+
+    // Wire up size selector toggles
+    document.querySelectorAll('.prompt-size-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.prompt-size-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        });
+    });
 
     // Hide prompt section
     $('#prompt-section').style.display = 'none';
@@ -432,7 +587,15 @@ async function generatePrompt(id, btn) {
         btn.textContent = 'Generating…';
     }
     try {
-        const res = await fetch(`${API}/api/contexts/${id}/prompt`, { method: 'POST' });
+        const activeSize = document.querySelector('.prompt-size-btn.active');
+        const size = activeSize ? activeSize.dataset.size : 'standard';
+        const queryEl = document.getElementById('retrieval-query');
+        const query = queryEl ? queryEl.value.trim() : '';
+        const res = await fetch(`${API}/api/contexts/${id}/prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query || null, size }),
+        });
         if (!res.ok) throw new Error('Failed to generate prompt');
         const data = await res.json();
         state.currentPrompt = data.prompt;
@@ -625,6 +788,56 @@ async function embedAll() {
     }
 }
 
+// ─── Backfill Chunks (for old contexts) ─────────────────────────
+async function chunkAll() {
+    const btn = $('#btn-chunk-all');
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API}/api/contexts/chunk-all`, { method: 'POST' });
+        if (!res.ok) throw new Error('Request failed');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let lastData = null;
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    lastData = data;
+                    if (data.total > 0) {
+                        btn.textContent = `Chunking… ${data.done} / ${data.total}`;
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+
+        if (lastData) {
+            const msg = lastData.total === 0
+                ? 'No contexts to chunk'
+                : `Chunked ${lastData.updated} contexts (${lastData.skipped} already done)`;
+            showToast(msg, 'success');
+        }
+    } catch {
+        showToast('Chunk backfill failed — is nomic-embed-text installed?', 'error');
+    } finally {
+        btn.textContent = original;
+        btn.disabled = false;
+    }
+}
+
 // ─── Utilities ───────────────────────────────────────────────────
 function escapeHtml(str) {
     if (!str) return '';
@@ -668,8 +881,9 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#prompt-section').style.display = 'none';
     });
 
-    // Backfill embeddings
+    // Backfill embeddings & chunks
     $('#btn-embed-all').addEventListener('click', embedAll);
+    if ($('#btn-chunk-all')) $('#btn-chunk-all').addEventListener('click', chunkAll);
 
     // Edit modal
     $('#cancel-edit-btn').addEventListener('click', closeEditModal);

@@ -449,6 +449,23 @@ body {
     min-height: 0;
 }
 
+.setup-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding-right: 4px;
+}
+
+.setup-section {
+    padding-bottom: 4px;
+}
+
+.setup-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 18px 0;
+}
+
 .setup-heading {
     font-size: 17px;
     font-weight: 700;
@@ -461,14 +478,13 @@ body {
     font-size: 12px;
     color: var(--text-secondary);
     line-height: 1.55;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
 }
 
 .model-cards {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    flex: 1;
 }
 
 .model-card {

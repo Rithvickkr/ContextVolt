@@ -105,6 +105,20 @@
                         </div>
                     </div>
 
+                    <div class="step" data-step="embed">
+                        <div class="step-line"></div>
+                        <div class="step-icon">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
+                        </div>
+                        <div class="step-content">
+                            <span class="step-label">Embed Model</span>
+                            <span class="step-status">Waiting...</span>
+                        </div>
+                    </div>
+
                     <div class="step" data-step="extension">
                         <div class="step-line"></div>
                         <div class="step-icon">
@@ -130,13 +144,30 @@
 
                 <!-- ── Setup panel: model selection ── -->
                 <div class="setup-panel" id="setup-panel">
-                    <div class="setup-heading">Choose Your AI Model</div>
-                    <div class="setup-subtitle">
-                        Powers conversation summarization. Pick based on your hardware — you can change this later.
+                    <div class="setup-scroll">
+                        <div class="setup-section">
+                            <div class="setup-heading">Choose Your AI Model</div>
+                            <div class="setup-subtitle">
+                                Powers conversation summarization. Pick based on your hardware — you can change this later.
+                            </div>
+                            <div class="model-cards" id="model-cards">
+                                <!-- populated by JS once pywebview is ready -->
+                            </div>
+                        </div>
+
+                        <div class="setup-divider"></div>
+
+                        <div class="setup-section">
+                            <div class="setup-heading">Choose an Embedding Model</div>
+                            <div class="setup-subtitle">
+                                Enables semantic search across your saved contexts. Small download, big impact.
+                            </div>
+                            <div class="model-cards" id="embed-model-cards">
+                                <!-- populated by JS once pywebview is ready -->
+                            </div>
+                        </div>
                     </div>
-                    <div class="model-cards" id="model-cards">
-                        <!-- populated by JS once pywebview is ready -->
-                    </div>
+
                     <div class="setup-actions">
                         <button class="btn btn-primary" id="start-install-btn" disabled>
                             <span class="btn-text">Start Installation</span>
@@ -194,12 +225,13 @@
         // Installer Frontend Logic
         // ─────────────────────────────────────────────────────────────────
 
-        const stepIds = ['python', 'venv', 'deps', 'ollama', 'model', 'extension'];
+        const stepIds = ['python', 'venv', 'deps', 'ollama', 'model', 'embed', 'extension'];
         const stepElements = {};
         let installationComplete = false;
         let pollingInterval = null;
         let installationStarted = false;
         let selectedModel = 'qwen2.5:3b';
+        let selectedEmbedModel = 'nomic-embed-text';
 
         stepIds.forEach(id => {
             stepElements[id] = document.querySelector(`.step[data-step="${id}"]`);
@@ -232,12 +264,40 @@
                     <div class="model-desc">${m.description}</div>`;
                 card.addEventListener('click', () => {
                     selectedModel = m.id;
-                    document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                    container.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
                     card.classList.add('selected');
                 });
                 container.appendChild(card);
             });
-            startInstBtn.disabled = false;
+            checkBothSelected();
+        }
+
+        function renderEmbedModelCards(models) {
+            const container = document.getElementById('embed-model-cards');
+            container.innerHTML = '';
+            models.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'model-card' + (m.id === selectedEmbedModel ? ' selected' : '');
+                card.dataset.modelId = m.id;
+                card.innerHTML = `
+                    <div class="model-card-header">
+                        <span class="model-name">${m.name}</span>
+                        ${m.recommended ? '<span class="model-badge">Recommended</span>' : ''}
+                        <span class="model-size">${m.size}</span>
+                    </div>
+                    <div class="model-desc">${m.description}</div>`;
+                card.addEventListener('click', () => {
+                    selectedEmbedModel = m.id;
+                    container.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                    card.classList.add('selected');
+                });
+                container.appendChild(card);
+            });
+            checkBothSelected();
+        }
+
+        function checkBothSelected() {
+            startInstBtn.disabled = !(selectedModel && selectedEmbedModel);
         }
 
         // ── Start Installation button ─────────────────────────────────────
@@ -246,6 +306,7 @@
             if (startInstBtn.disabled || !window.pywebview?.api) return;
             startInstBtn.disabled = true;
             await window.pywebview.api.set_selected_model(selectedModel);
+            await window.pywebview.api.set_selected_embed_model(selectedEmbedModel);
             // Swap panels
             setupPanel.style.display = 'none';
             progressPanel.classList.add('active');
@@ -336,22 +397,42 @@
                 setTimeout(initialize, 100);
                 return;
             }
-            // Load model options and show setup panel
+
+            // Load saved config first so we can pre-select existing choices
+            try {
+                const saved = await window.pywebview.api.get_saved_config();
+                if (saved.model)       selectedModel      = saved.model;
+                if (saved.embed_model) selectedEmbedModel = saved.embed_model;
+            } catch (e) { /* no config yet, use defaults */ }
+
+            // Load AI model options
             try {
                 const models = await window.pywebview.api.get_available_models();
                 renderModelCards(models);
             } catch (e) {
-                // Fallback: render hardcoded defaults so setup panel is still usable
                 renderModelCards([
                     { id: 'qwen2.5:3b',  name: 'Qwen 2.5 3B',  size: '~2 GB', description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
                     { id: 'qwen2.5:7b',  name: 'Qwen 2.5 7B',  size: '~5 GB', description: 'Best quality — needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
                     { id: 'qwen2.5:1.5b',name: 'Qwen 2.5 1.5B',size: '~1 GB', description: 'Lightweight — minimal hardware, basic quality', recommended: false },
                 ]);
             }
+            // Load embedding model options
+            try {
+                const embedModels = await window.pywebview.api.get_available_embed_models();
+                renderEmbedModelCards(embedModels);
+            } catch (e) {
+                renderEmbedModelCards([
+                    { id: 'nomic-embed-text',   name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
+                    { id: 'mxbai-embed-large',  name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
+                    { id: 'nomic-embed-text:v1.5', name: 'Nomic Embed v1.5', size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
+                    { id: 'bge-m3',             name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual support — best for non-English content', recommended: false },
+                ]);
+            }
         }
 
         window.addEventListener('pywebviewready', initialize);
         setTimeout(() => { if (!installationStarted) initialize(); }, 1000);
+
     </script>
 </body>
 

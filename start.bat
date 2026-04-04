@@ -35,7 +35,9 @@ if not exist "%VENV_PYTHON%" (
     )
 )
 
-:: Check if pywebview is installed (required for GUI installer)
+
+:: ─── Launch the GUI installer ────────────────────────────────────
+
 "%VENV_PYTHON%" -c "import webview" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo  Preparing installer...

@@ -4,6 +4,7 @@ ContextVolt — FastAPI application.
 Serves the REST API and static frontend files.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from backend.database import (
     create_context,
     create_chunks,
     get_all_contexts,
+    get_contexts_paginated,
     get_context,
     get_chunks_by_context,
     update_context,
@@ -28,7 +30,7 @@ from backend.database import (
     search_chunks_semantic,
     set_context_embedding,
 )
-from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest
+from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest, EmbedModelSelect, ModelSelect
 from backend.ollama_client import (
     summarize_conversation,
     generate_continuation_prompt,
@@ -135,6 +137,158 @@ def pull_model():
 
 
 # ---------------------------------------------------------------------------
+# Embed model setup
+# ---------------------------------------------------------------------------
+
+_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+
+_EMBED_MODEL_OPTIONS = [
+    {"id": "nomic-embed-text", "label": "nomic-embed-text", "size": "274 MB",
+     "desc": "Fast, good baseline. Works out of the box.", "recommended": False},
+    {"id": "mxbai-embed-large", "label": "mxbai-embed-large", "size": "670 MB",
+     "desc": "Best quality for English technical text. Recommended.", "recommended": True},
+    {"id": "nomic-embed-text:v1.5", "label": "nomic-embed-text v1.5", "size": "274 MB",
+     "desc": "Drop-in upgrade — same size, better accuracy.", "recommended": False},
+    {"id": "bge-m3", "label": "bge-m3", "size": "1.2 GB",
+     "desc": "Best for multilingual + technical jargon. Large.", "recommended": False},
+]
+
+
+def _read_config() -> dict:
+    try:
+        with open(_CFG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_config(data: dict) -> None:
+    """Atomic write: write to temp file then rename to avoid corruption on crash."""
+    import tempfile
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(_CFG_PATH), suffix=".tmp", prefix=".config_"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, _CFG_PATH)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+@app.get("/api/setup/embed-status")
+def embed_setup_status():
+    """Return current embed model config and available model list."""
+    cfg = _read_config()
+    current = cfg.get("embed_model", "nomic-embed-text")
+    ollama_ok = check_ollama_running()
+    ready = check_model_available(current) if ollama_ok else False
+    return {
+        "current_embed_model": current,
+        "embed_model_ready": ready,
+        "available_models": _EMBED_MODEL_OPTIONS,
+    }
+
+
+@app.post("/api/setup/select-embed-model")
+def select_embed_model(req: EmbedModelSelect):
+    """Save the chosen embed model to config.json."""
+    cfg = _read_config()
+    cfg["embed_model"] = req.model
+    _write_config(cfg)
+    return {"status": "saved", "embed_model": req.model}
+
+
+@app.post("/api/setup/select-model")
+def select_model(req: ModelSelect):
+    """Save the chosen LLM model to config.json."""
+    cfg = _read_config()
+    cfg["model"] = req.model
+    _write_config(cfg)
+    return {"status": "saved", "model": req.model}
+
+
+@app.get("/api/setup/config")
+def get_config():
+    """Return the current model config and available options for the Settings modal.
+
+    Each entry in available_models / available_embed_models includes an installed
+    boolean so the frontend can show which models are already downloaded.
+    """
+    cfg = _read_config()
+    ollama_ok = check_ollama_running()
+    current_model = cfg.get("model", DEFAULT_MODEL)
+    current_embed = cfg.get("embed_model", "nomic-embed-text")
+
+    # Fetch installed model names once — single HTTP call
+    installed_names: list[str] = []
+    if ollama_ok:
+        try:
+            import requests as _req
+            r = _req.get("http://localhost:11434/api/tags", timeout=4)
+            if r.status_code == 200:
+                installed_names = [m.get("name", "") for m in r.json().get("models", [])]
+        except Exception:
+            pass
+
+    def _is_installed(model_id: str) -> bool:
+        return any(
+            n == model_id
+            or n.split(":")[0] == model_id
+            or model_id.split(":")[0] == n.split(":")[0]
+            for n in installed_names
+        )
+
+    llm_models = [
+        {"id": "qwen2.5:1.5b", "label": "Qwen 2.5 1.5B", "size": "~1 GB",
+         "desc": "Lightweight — minimal hardware, basic quality", "recommended": False},
+        {"id": "qwen2.5:3b",  "label": "Qwen 2.5 3B",  "size": "~2 GB",
+         "desc": "Recommended — fast, great summaries, runs on most hardware", "recommended": True},
+        {"id": "qwen2.5:7b",  "label": "Qwen 2.5 7B",  "size": "~5 GB",
+         "desc": "Best quality — needs 6 GB+ VRAM or 8 GB+ RAM", "recommended": False},
+    ]
+    for m in llm_models:
+        m["installed"] = _is_installed(m["id"])
+
+    embed_models = [dict(m) for m in _EMBED_MODEL_OPTIONS]
+    for m in embed_models:
+        m["installed"] = _is_installed(m["id"])
+
+    return {
+        "model": current_model,
+        "embed_model": current_embed,
+        "model_ready": _is_installed(current_model),
+        "embed_model_ready": _is_installed(current_embed),
+        "ollama_running": ollama_ok,
+        "available_models": llm_models,
+        "available_embed_models": embed_models,
+    }
+
+
+@app.post("/api/setup/pull-embed-model")
+def pull_embed_model():
+    """Trigger an Ollama pull for the configured embed model."""
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+    cfg = _read_config()
+    model = cfg.get("embed_model", "nomic-embed-text")
+    try:
+        subprocess.Popen(
+            ["ollama", "pull", model],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        return {"status": "pulling", "model": model}
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Ollama CLI not found")
+
+
+# ---------------------------------------------------------------------------
 # Summarization
 # ---------------------------------------------------------------------------
 
@@ -213,7 +367,7 @@ def api_capture(req: CaptureRequest):
                 new_title = real_summary.get("main_topic", "")
                 update_kwargs: dict = {"summary": real_summary}
                 if new_title and new_title not in ("No topic extracted", "N/A"):
-                    update_kwargs["title"] = new_title[:120]  # cap at 120 chars
+                    update_kwargs["title"] = new_title  # store full title, no truncation
                 update_context(cid, **update_kwargs, status="completed")
                 _try_embed_context(cid, real_summary)  # re-embed with real topic + key_ideas
             except Exception:
@@ -228,6 +382,39 @@ def api_capture(req: CaptureRequest):
         return {"success": True, "id": context_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Capture save failed: {str(e)}")
+
+@app.post("/api/contexts/{context_id}/resummarize")
+def api_resummarize(context_id: int):
+    """Re-trigger summarization for a stuck or failed context."""
+    ctx = get_context(context_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+
+    update_context(context_id, status="summarizing")
+
+    def _bg_resummarize(cid: int, text: str, snippets: list) -> None:
+        try:
+            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            new_title = real_summary.get("main_topic", "")
+            update_kwargs: dict = {"summary": real_summary}
+            if new_title and new_title not in ("No topic extracted", "N/A"):
+                update_kwargs["title"] = new_title
+            update_context(cid, **update_kwargs, status="completed")
+            _try_embed_context(cid, real_summary)
+        except Exception:
+            update_context(cid, status="failed")
+
+    threading.Thread(
+        target=_bg_resummarize,
+        args=(context_id, ctx.get("original_chat", ""), ctx.get("important_notes") or []),
+        daemon=True,
+    ).start()
+
+    return {"success": True, "status": "summarizing"}
+
 
 # ---------------------------------------------------------------------------
 # Lightweight Context List (for extension import panel)
@@ -287,16 +474,21 @@ def api_create_context(ctx: ContextCreate):
 
 
 @app.get("/api/contexts")
-def api_list_contexts(q: str = Query(default="", description="Search query")):
-    """List all contexts. Uses semantic search when embedding model is available, else keyword."""
+def api_list_contexts(
+    q: str = Query(default="", description="Search query"),
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=50, ge=1, le=200, description="Items per page"),
+):
+    """List contexts with pagination. Uses semantic search when query provided."""
     if q:
         vec = embed_text(q)
         if vec:
             results = search_contexts_semantic(vec)
             if results:
-                return results
-        return search_contexts(q)
-    return get_all_contexts()
+                return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False}
+        results = search_contexts(q)
+        return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False}
+    return get_contexts_paginated(page, per_page)
 
 
 @app.get("/api/contexts/{context_id}")
@@ -338,11 +530,12 @@ def api_delete_context(context_id: int):
 
 
 @app.post("/api/contexts/embed-all")
-def api_embed_all():
+def api_embed_all(force: bool = Query(default=False, description="Re-embed even if embedding already exists")):
     """Backfill embeddings for all contexts, streaming progress as NDJSON lines.
 
     Each line: {"done": N, "total": N, "updated": N, "skipped": N, "title": "..."}
-    Final line adds "finished": true
+    Final line adds "finished": true.
+    Pass force=true to re-embed all contexts with the current embed model.
     """
     import json as _json
 
@@ -353,7 +546,7 @@ def api_embed_all():
         updated = 0
         skipped = 0
         for i, ctx in enumerate(contexts, start=1):
-            if ctx.get("embedding"):
+            if ctx.get("embedding") and not force:
                 skipped += 1
             else:
                 _try_embed_context(ctx.get("id"), ctx.get("summary", {}))
@@ -374,10 +567,12 @@ def api_embed_all():
 
 
 @app.post("/api/contexts/chunk-all")
-def api_chunk_all():
+def api_chunk_all(force: bool = Query(default=False, description="Delete and re-embed existing chunks with the current embed model")):
     """Backfill chunks for old contexts that were saved before embedding-based retrieval.
 
     Streams progress as NDJSON lines.
+    Pass force=true to delete existing chunks and re-embed everything with the current
+    embed model — useful after switching to a different embedding model.
     """
     import json as _json
 
@@ -390,17 +585,22 @@ def api_chunk_all():
         for i, ctx in enumerate(contexts, start=1):
             cid = ctx.get("id")
             existing_chunks = get_chunks_by_context(cid)
-            if existing_chunks:
+            if existing_chunks and not force:
                 skipped += 1
             else:
                 try:
                     chat = ctx.get("original_chat", "")
                     if chat.strip():
+                        # Delete old chunks if force re-embedding
+                        if existing_chunks and force:
+                            delete_chunks_by_context(cid)
                         notes = ctx.get("important_notes") or []
                         chunks = chunk_conversation(chat, starred_snippets=notes)
                         chunks = embed_chunks(chunks)
                         if chunks:
                             create_chunks(cid, chunks)
+                        # Re-embed the context-level vector with new model too
+                        _try_embed_context(cid, ctx.get("summary", {}))
                         updated += 1
                     else:
                         skipped += 1
@@ -698,3 +898,23 @@ def api_debug_logs(lines: int = 100):
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         all_lines = f.readlines()
     return {"lines": all_lines[-lines:], "path": log_path, "exists": True}  # type: ignore[index]
+
+
+# ---------------------------------------------------------------------------
+# Restart
+# ---------------------------------------------------------------------------
+
+@app.post("/api/restart")
+def api_restart():
+    """Restart the backend process."""
+    def _do_restart() -> None:
+        import time
+        time.sleep(0.4)
+        kwargs: dict = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        subprocess.Popen([sys.executable] + sys.argv, **kwargs)
+        os._exit(0)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+    return {"status": "restarting"}

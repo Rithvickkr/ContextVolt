@@ -58,3 +58,14 @@ class ContextResponse(BaseModel):
     status: str = "completed"
     created_at: str
     updated_at: str
+
+
+class EmbedModelSelect(BaseModel):
+    """Request body for selecting the embedding model."""
+    model: str
+
+
+class ModelSelect(BaseModel):
+    """Request body for selecting the main LLM model."""
+    model: str
+

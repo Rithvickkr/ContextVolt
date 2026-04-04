@@ -153,6 +153,25 @@ def get_all_contexts() -> list[dict]:
     return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
 
 
+def get_contexts_paginated(page: int = 1, per_page: int = 50) -> dict:
+    """Return a page of contexts with total count for pagination."""
+    conn = _get_conn()
+    total = conn.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
+    offset = (page - 1) * per_page
+    rows = conn.execute(
+        "SELECT * FROM contexts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        (per_page, offset),
+    ).fetchall()
+    conn.close()
+    return {
+        "contexts": [_row_to_dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "has_more": offset + per_page < total,
+    }
+
+
 def get_context(context_id: int) -> dict | None:
     """Return a single context by ID."""
     conn = _get_conn()

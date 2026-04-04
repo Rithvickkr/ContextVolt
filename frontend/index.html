@@ -12,72 +12,89 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        /* Screen-reader only utility */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
 </head>
 
 <body>
     <!-- Setup Wizard (shown during initialization) -->
-    <div id="setup-wizard" class="setup-wizard">
+    <div id="setup-wizard" class="setup-wizard" role="dialog" aria-modal="true" aria-labelledby="setup-wizard-title">
         <div class="setup-shell">
             <!-- Left panel: branding + task list -->
             <div class="setup-left">
                 <div class="setup-brand">
-                    <svg width="36" height="36" viewBox="0 0 64 64" fill="none">
+                    <svg width="36" height="36" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                         <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
                         <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z" fill="var(--bg-primary)" />
                     </svg>
                     <div>
-                        <h1 class="setup-title">ContextVolt</h1>
+                        <h1 class="setup-title" id="setup-wizard-title">ContextVolt</h1>
                         <span class="setup-badge">Setup</span>
                     </div>
                 </div>
-                <div class="setup-task-label">Checking Services</div>
-                <div class="setup-steps">
-                    <div class="setup-step" id="step-backend">
-                        <div class="setup-step-line"></div>
-                        <div class="setup-step-dot">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                <div class="setup-task-label" aria-hidden="true">Checking Services</div>
+                <div class="setup-steps" role="list" aria-label="Setup steps">
+                    <div class="setup-step" id="step-backend" role="listitem">
+                        <div class="setup-step-line" aria-hidden="true"></div>
+                        <div class="setup-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
                         </div>
                         <div class="setup-step-info">
                             <span class="step-label">Backend Server</span>
-                            <span class="step-status">Connecting...</span>
+                            <span class="step-status" aria-live="polite">Connecting...</span>
                         </div>
                     </div>
-                    <div class="setup-step" id="step-ollama">
-                        <div class="setup-step-line"></div>
-                        <div class="setup-step-dot">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                    <div class="setup-step" id="step-ollama" role="listitem">
+                        <div class="setup-step-line" aria-hidden="true"></div>
+                        <div class="setup-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
                         </div>
                         <div class="setup-step-info">
                             <span class="step-label">Ollama Service</span>
-                            <span class="step-status">Checking...</span>
+                            <span class="step-status" aria-live="polite">Checking...</span>
                         </div>
                     </div>
-                    <div class="setup-step" id="step-model">
-                        <div class="setup-step-line"></div>
-                        <div class="setup-step-dot">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
+                    <div class="setup-step" id="step-model" role="listitem">
+                        <div class="setup-step-line" aria-hidden="true"></div>
+                        <div class="setup-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /></svg>
+                            <svg class="icon-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
+                            <svg class="icon-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false"><circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" /></svg>
                         </div>
                         <div class="setup-step-info">
                             <span class="step-label">AI Model</span>
-                            <span class="step-status">Checking...</span>
+                            <span class="step-status" aria-live="polite">Checking...</span>
                         </div>
                     </div>
                 </div>
             </div>
             <!-- Right panel: status + action -->
             <div class="setup-right">
-                <div class="setup-status-area">
-                    <p class="setup-status-text">Verifying your local AI environment...</p>
+                <!-- Phase 1: service checks -->
+                <div id="setup-service-area">
+                    <div class="setup-status-area">
+                        <p class="setup-status-text" aria-live="polite">Verifying your local AI environment...</p>
+                    </div>
+                    <button class="btn btn-primary setup-skip-btn" id="skip-setup-btn" style="display:none;">
+                        Continue Without AI →
+                    </button>
                 </div>
-                <button class="btn btn-primary setup-skip-btn" id="skip-setup-btn" style="display:none;">
-                    Continue Without AI →
-                </button>
             </div>
         </div>
     </div>
@@ -85,10 +102,10 @@
     <!-- Main Application -->
     <div id="app" class="app-container" style="display:none;">
         <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
+        <aside class="sidebar" id="sidebar" aria-label="Application sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
-                    <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+                    <svg width="28" height="28" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                         <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
                         <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z"
                             fill="var(--bg-primary)" />
@@ -96,51 +113,70 @@
                     <span class="sidebar-brand">ContextVolt</span>
                 </div>
             </div>
-            <nav class="sidebar-nav">
-                <button class="nav-item active" data-view="input" id="nav-input">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            <nav class="sidebar-nav" aria-label="Main navigation">
+                <button class="nav-item active" data-view="input" id="nav-input"
+                        aria-current="page" aria-label="New Chat — paste a conversation">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
                     </span>
                     <span class="nav-label">New Chat</span>
                 </button>
-                <button class="nav-item" data-view="library" id="nav-library">
-                    <span class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                <button class="nav-item" data-view="library" id="nav-library"
+                        aria-current="false" aria-label="Library — browse saved conversations">
+                    <span class="nav-icon" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                     </span>
                     <span class="nav-label">Library</span>
                 </button>
             </nav>
             <div class="sidebar-footer">
-                <button class="btn-embed-all" id="btn-embed-all" title="Generate semantic embeddings for all saved contexts (requires nomic-embed-text)">
-                    Backfill Vault
+                <button class="btn-settings" id="btn-theme-toggle" aria-label="Toggle light/dark theme">
+                    <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <svg id="theme-icon-light" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <span id="theme-label">Light Mode</span>
                 </button>
-                <button class="btn-embed-all" id="btn-chunk-all" title="Chunk + embed old contexts for retrieval-based prompts (requires nomic-embed-text)">
-                    Chunk Old Contexts
+                <button class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+                    Settings &amp; Models
                 </button>
-                <div class="status-indicator" id="status-indicator">
-                    <span class="status-dot"></span>
+                <div class="settings-current-model" id="settings-current-model-hint" aria-live="polite" aria-label="Active models"></div>
+                <button class="btn-embed-all" id="btn-rebuild-embeddings"
+                        title="Re-chunk and re-embed all contexts using the current embedding model. Use after switching embedding models."
+                        aria-label="Rebuild embeddings — re-chunk and re-embed all contexts with the current model">
+                    Rebuild Embeddings
+                </button>
+                <button class="btn-restart" id="btn-restart" aria-label="Restart the backend server">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    Restart Backend
+                </button>
+                <div class="status-indicator" id="status-indicator" aria-live="polite" aria-label="Backend connection status">
+                    <span class="status-dot" aria-hidden="true"></span>
                     <span class="status-text">Offline</span>
                 </div>
             </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="main-content" id="main-content">
+        <main class="main-content" id="main-content" aria-label="Main content">
             <!-- Chat Input View -->
-            <div class="view" id="view-input">
+            <div class="view" id="view-input" role="region" aria-labelledby="view-input-heading">
                 <div class="view-header">
-                    <h1>Paste a Conversation</h1>
-                    <p class="view-desc">Paste any AI conversation below. It will be summarized with your local LLM and saved to your library.</p>
+                    <h1 id="view-input-heading">Paste a Conversation</h1>
+                    <p class="view-desc" id="chat-textarea-desc">Paste any AI conversation below. It will be summarized with your local LLM and saved to your library.</p>
                 </div>
                 <div class="input-area">
+                    <label for="chat-textarea" class="sr-only">Conversation text</label>
                     <textarea id="chat-textarea" class="chat-textarea"
                         placeholder="Paste your AI conversation here..."
+                        aria-describedby="chat-textarea-desc char-count"
                         spellcheck="false"></textarea>
                     <div class="input-actions">
-                        <span class="char-count" id="char-count">0 characters</span>
-                        <button class="btn btn-primary" id="summarize-btn" disabled>
-                            <span class="btn-text">Summarize & Save</span>
-                            <span class="btn-loader" style="display:none;">
+                        <span class="char-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
+                        <button class="btn btn-primary" id="summarize-btn" disabled
+                                aria-disabled="true" aria-busy="false"
+                                aria-describedby="chat-textarea-desc">
+                            <span class="btn-text">Summarize &amp; Save</span>
+                            <span class="btn-loader" style="display:none;" aria-hidden="true">
                                 <span class="spinner"></span> Processing...
                             </span>
                         </button>
@@ -149,26 +185,34 @@
             </div>
 
             <!-- Context Library View -->
-            <div class="view" id="view-library" style="display:none;">
+            <div class="view" id="view-library" style="display:none;" role="region" aria-labelledby="view-library-heading">
                 <div class="view-header">
-                    <h1>Library</h1>
+                    <h1 id="view-library-heading">Library</h1>
                     <p class="view-desc">Browse and manage your saved conversation summaries.</p>
                 </div>
                 <div class="library-controls">
-                    <div class="search-box">
-                        <span class="search-icon">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <div class="search-box" role="search">
+                        <span class="search-icon" aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                         </span>
+                        <label for="search-input" class="sr-only">Search contexts</label>
                         <input type="text" id="search-input" class="search-input"
-                            placeholder="Search contexts...">
+                            placeholder="Search contexts..." aria-label="Search contexts"
+                            autocomplete="off" spellcheck="false">
                     </div>
                 </div>
-                <div class="contexts-grid" id="contexts-grid">
+                <div class="tag-filter-bar" id="tag-filter-bar" style="display:none;" role="group" aria-label="Tag filters"></div>
+                <div class="contexts-grid" id="contexts-grid" aria-live="polite" aria-label="Saved contexts">
                     <!-- Context cards will be rendered here -->
                 </div>
-                <div class="empty-state" id="empty-state" style="display:none;">
-                    <span class="empty-icon">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                <div class="load-more-container" id="load-more-container" style="display:none;">
+                    <button class="btn btn-secondary" id="btn-load-more" aria-label="Load more contexts">
+                        <span class="btn-text">Load More</span>
+                    </button>
+                </div>
+                <div class="empty-state" id="empty-state" style="display:none;" role="status">
+                    <span class="empty-icon" aria-hidden="true">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4" focusable="false"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                     </span>
                     <h3>No contexts yet</h3>
                     <p>Paste a conversation to create your first entry.</p>
@@ -176,47 +220,58 @@
             </div>
 
             <!-- Context Detail View -->
-            <div class="view" id="view-detail" style="display:none;">
+            <div class="view" id="view-detail" style="display:none;" role="region" aria-labelledby="detail-title-heading">
                 <div class="view-header">
-                    <button class="btn btn-ghost" id="back-to-library">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    <button class="btn btn-ghost" id="back-to-library" aria-label="Back to library">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>
                         Back
                     </button>
                     <div class="detail-actions">
-                        <button class="btn btn-secondary" id="edit-btn">Edit</button>
-                        <button class="btn btn-secondary" id="export-btn">Export</button>
-                        <button class="btn btn-danger" id="delete-btn">Delete</button>
+                        <button class="btn btn-secondary" id="edit-btn" aria-label="Edit this context">Edit</button>
+                        <div class="export-dropdown" id="export-dropdown">
+                            <button class="btn btn-secondary" id="export-btn"
+                                    aria-haspopup="menu" aria-expanded="false"
+                                    aria-controls="export-menu">Export</button>
+                            <div class="export-menu" id="export-menu" role="menu" aria-label="Export options" hidden>
+                                <button class="export-option" role="menuitem" data-format="markdown">Markdown (.md)</button>
+                                <button class="export-option" role="menuitem" data-format="json">Copy as JSON</button>
+                                <button class="export-option" role="menuitem" data-format="text">Copy as Plain Text</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-danger" id="delete-btn" aria-label="Delete this context">Delete</button>
                     </div>
                 </div>
-                <div class="detail-content" id="detail-content">
+                <div class="detail-content" id="detail-content" aria-live="polite">
                     <!-- Detail will be rendered here -->
                 </div>
                 <!-- Prompt Builder Section -->
-                <div class="prompt-section" id="prompt-section" style="display:none;">
-                    <h2 class="section-title">Generated Prompt</h2>
-                    <pre class="prompt-display" id="prompt-display"></pre>
+                <div class="prompt-section" id="prompt-section" style="display:none;" role="region" aria-labelledby="prompt-section-heading">
+                    <h2 class="section-title" id="prompt-section-heading">Generated Prompt</h2>
+                    <pre class="prompt-display" id="prompt-display" tabindex="0" aria-label="Generated prompt text"></pre>
                     <div class="prompt-actions">
-                        <button class="btn btn-primary" id="copy-prompt-btn">Copy to Clipboard</button>
-                        <button class="btn btn-ghost" id="close-prompt-btn">Close</button>
+                        <button class="btn btn-primary" id="copy-prompt-btn" aria-label="Copy generated prompt to clipboard">Copy to Clipboard</button>
+                        <button class="btn btn-ghost" id="close-prompt-btn" aria-label="Close generated prompt">Close</button>
                     </div>
                 </div>
             </div>
 
             <!-- Edit Modal -->
-            <div class="modal-overlay" id="edit-modal" style="display:none;">
+            <div class="modal-overlay" id="edit-modal" style="display:none;"
+                 role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
                 <div class="modal">
-                    <h2>Edit Context</h2>
+                    <h2 id="edit-modal-title">Edit Context</h2>
                     <div class="form-group">
-                        <label>Title</label>
-                        <input type="text" id="edit-title" class="form-input">
+                        <label for="edit-title">Title</label>
+                        <input type="text" id="edit-title" class="form-input" autocomplete="off">
                     </div>
                     <div class="form-group">
-                        <label>Tags (comma-separated)</label>
-                        <input type="text" id="edit-tags" class="form-input">
+                        <label for="edit-tags">Tags <span class="sr-only">(comma-separated)</span></label>
+                        <input type="text" id="edit-tags" class="form-input"
+                               placeholder="tag1, tag2, tag3" autocomplete="off">
                     </div>
                     <div class="form-group">
-                        <label>Main Topic</label>
-                        <input type="text" id="edit-topic" class="form-input">
+                        <label for="edit-topic">Main Topic</label>
+                        <input type="text" id="edit-topic" class="form-input" autocomplete="off">
                     </div>
                     <div class="modal-actions">
                         <button class="btn btn-ghost" id="cancel-edit-btn">Cancel</button>
@@ -227,10 +282,51 @@
         </main>
     </div>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast" style="display:none;">
-        <span class="toast-icon"></span>
-        <span class="toast-message"></span>
+    <!-- Toast Notification Stack -->
+    <div class="toast-stack" id="toast-stack"
+         role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications">
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-modal-overlay" id="settings-modal" style="display:none;"
+         role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div class="settings-modal">
+            <div class="settings-modal-header">
+                <span class="settings-modal-title" id="settings-modal-title">⚙ Settings &amp; Models</span>
+                <button class="settings-modal-close" id="settings-modal-close"
+                        aria-label="Close settings">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="settings-modal-body">
+                <!-- LLM Model -->
+                <div>
+                    <div class="settings-section-label" id="llm-grid-label">AI Summarization Model</div>
+                    <p class="settings-section-hint" id="llm-grid-hint">Used for summarizing conversations. Takes effect on the next summarization. A restart may be required.</p>
+                    <div class="settings-model-grid" id="settings-llm-grid"
+                         role="radiogroup" aria-labelledby="llm-grid-label" aria-describedby="llm-grid-hint">
+                        <!-- rendered by JS -->
+                    </div>
+                </div>
+                <!-- Embed Model -->
+                <div>
+                    <div class="settings-section-label" id="embed-grid-label">Embedding Model</div>
+                    <p class="settings-section-hint" id="embed-grid-hint">Used for semantic search. If you change this, click <strong style="color:var(--text-secondary)">Re-embed All (New Model)</strong> in the sidebar afterwards.</p>
+                    <div class="settings-model-grid" id="settings-embed-grid"
+                         role="radiogroup" aria-labelledby="embed-grid-label" aria-describedby="embed-grid-hint">
+                        <!-- rendered by JS -->
+                    </div>
+                    <div class="settings-embed-warning" id="settings-embed-warning" role="alert" aria-live="assertive">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <span>Embedding model changed. After saving, use <strong>Re-embed All (New Model)</strong> in the sidebar to re-index your contexts with the new model.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-modal-footer">
+                <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/app.js"></script>

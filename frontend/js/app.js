@@ -7,6 +7,31 @@
 
 const API = 'http://localhost:8000';
 
+// ─── Theme ──────────────────────────────────────────────────────
+function _applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const isDark = theme === 'dark';
+    const iconDark = document.getElementById('theme-icon-dark');
+    const iconLight = document.getElementById('theme-icon-light');
+    const label = document.getElementById('theme-label');
+    if (iconDark) iconDark.style.display = isDark ? 'inline' : 'none';
+    if (iconLight) iconLight.style.display = isDark ? 'none' : 'inline';
+    if (label) label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    _applyTheme(next);
+    localStorage.setItem('cv-theme', next);
+}
+
+// Restore saved theme on load
+(function() {
+    const saved = localStorage.getItem('cv-theme') || 'dark';
+    _applyTheme(saved);
+})();
+
 // ─── State ───────────────────────────────────────────────────────
 const state = {
     view: 'input',           // 'input' | 'library' | 'detail'
@@ -15,6 +40,9 @@ const state = {
     currentPrompt: null,
     setupComplete: false,
     ollamaReady: false,
+    libraryPage: 1,
+    libraryHasMore: false,
+    activeTagFilter: null,
 };
 
 // ─── Worker Status Polling ───────────────────────────────────────
@@ -93,11 +121,12 @@ function _buildDetailStatusBanner(status) {
         </div>`;
     } else if (status === 'failed') {
         return `<div class="detail-status-banner status-failed" id="detail-status-banner">
-            <div class="detail-status-icon">⚠️</div>
+            <div class="detail-status-icon">\u26A0\uFE0F</div>
             <div class="detail-status-text">
                 <strong>Summarization failed</strong>
-                <span>The background worker could not complete the summary. The context is still saved.</span>
+                <span>The background worker could not complete the summary.</span>
             </div>
+            <button class="btn btn-secondary btn-retry-summarize" onclick="retrySummarize()">Retry</button>
         </div>`;
     }
     return '';
@@ -137,6 +166,13 @@ const $$ = (sel) => document.querySelectorAll(sel);
 let setupInterval = null;
 let setupAttempts = 0;
 
+function _setStepState(el, stepState, statusText) {
+    el.classList.remove('pending', 'ok', 'warn');
+    el.classList.add(stepState);
+    el.querySelector('.step-status').textContent = statusText;
+}
+
+
 async function checkSetup() {
     setupAttempts++;
     const stepBackend = $('#step-backend');
@@ -144,49 +180,42 @@ async function checkSetup() {
     const stepModel = $('#step-model');
     const skipBtn = $('#skip-setup-btn');
 
-    function setStepState(el, state, statusText) {
-        el.classList.remove('pending', 'ok', 'warn');
-        el.classList.add(state);
-        el.querySelector('.step-status').textContent = statusText;
-    }
-
     try {
         const res = await fetch(`${API}/api/setup/status`);
         const data = await res.json();
 
         // Backend
-        setStepState(stepBackend, 'ok', 'Connected');
+        _setStepState(stepBackend, 'ok', 'Connected');
         stepBackend.classList.add('ready');
 
         // Ollama
         if (data.ollama_running) {
-            setStepState(stepOllama, 'ok', 'Running');
+            _setStepState(stepOllama, 'ok', 'Running');
             stepOllama.classList.add('ready');
         } else {
-            setStepState(stepOllama, 'pending', 'Waiting for Ollama...');
+            _setStepState(stepOllama, 'pending', 'Waiting for Ollama...');
             stepOllama.classList.remove('ready');
         }
 
         // Model
         if (data.model_ready) {
-            setStepState(stepModel, 'ok', `${data.model_name} ready`);
+            _setStepState(stepModel, 'ok', `${data.model_name} ready`);
             stepModel.classList.add('ready');
         } else if (data.ollama_running) {
-            setStepState(stepModel, 'pending', 'Downloading model...');
+            _setStepState(stepModel, 'pending', 'Downloading model...');
             fetch(`${API}/api/setup/pull-model`, { method: 'POST' }).catch(() => {});
         } else {
-            setStepState(stepModel, 'pending', 'Waiting...');
+            _setStepState(stepModel, 'pending', 'Waiting...');
         }
 
         // Update status indicator
         state.ollamaReady = data.ollama_running && data.model_ready;
         updateStatusIndicator(data.ollama_running && data.model_ready);
 
-        // All ready → transition to app
+        // LLM ready → go to app
         if (data.ollama_running && data.model_ready) {
             state.setupComplete = true;
-            clearInterval(setupInterval);
-            setTimeout(() => transitionToApp(), 800);
+            transitionToApp();
             return;
         }
 
@@ -197,10 +226,10 @@ async function checkSetup() {
 
     } catch (err) {
         // Backend not yet reachable
-        setStepState(stepBackend, 'pending', 'Connecting...');
+        _setStepState(stepBackend, 'pending', 'Connecting...');
 
         if (setupAttempts > 15) {
-            setStepState(stepBackend, 'warn', 'Cannot reach backend');
+            _setStepState(stepBackend, 'warn', 'Cannot reach backend');
             stepBackend.classList.add('error');
             skipBtn.style.display = 'block';
         }
@@ -208,6 +237,7 @@ async function checkSetup() {
 }
 
 function transitionToApp() {
+    if (setupInterval) { clearInterval(setupInterval); setupInterval = null; }
     const wizard = $('#setup-wizard');
     wizard.style.transition = 'opacity 0.5s ease';
     wizard.style.opacity = '0';
@@ -261,12 +291,15 @@ function initChatInput() {
     summarizeBtn.addEventListener('click', () => summarizeAndSave());
 }
 
+let _summarizing = false;
 async function summarizeAndSave() {
+    if (_summarizing) return;
     const textarea = $('#chat-textarea');
     const btn = $('#summarize-btn');
     const text = textarea.value.trim();
     if (!text) return;
 
+    _summarizing = true;
     // Show loading
     btn.querySelector('.btn-text').style.display = 'none';
     btn.querySelector('.btn-loader').style.display = 'inline-flex';
@@ -324,6 +357,7 @@ async function summarizeAndSave() {
     } catch (err) {
         showToast(err.message, 'error');
     } finally {
+        _summarizing = false;
         btn.querySelector('.btn-text').style.display = 'inline-flex';
         btn.querySelector('.btn-loader').style.display = 'none';
         btn.disabled = false;
@@ -356,21 +390,64 @@ function generateTags(summary) {
 }
 
 // ─── Context Library ─────────────────────────────────────────────
-async function loadContexts(query = '') {
+function _renderContextCard(ctx) {
+    const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
+    const tags = (ctx.tags || []).map(t =>
+        `<span class="tag">${escapeHtml(t)}</span>`
+    ).join('');
+    const date = new Date(ctx.created_at).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric'
+    });
+    const statusBadge = _buildCardStatusBadge(ctx.status);
+    return `
+        <div class="context-card" onclick="showDetail(${ctx.id})">
+            ${statusBadge}
+            <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
+            ${(() => {
+                const ideas = summary.key_ideas || [];
+                const sub = ideas.length > 0 ? ideas[0] : (summary.snapshot || '');
+                return sub ? `<p class="card-topic">${escapeHtml(sub)}</p>` : '';
+            })()}
+            <div class="card-tags">${tags}</div>
+            <div class="card-meta">
+                <span>${date}</span>
+                <button class="card-delete" onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})" title="Delete">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+async function loadContexts(query = '', append = false) {
     const grid = $('#contexts-grid');
     const emptyState = $('#empty-state');
+    const loadMoreContainer = $('#load-more-container');
+
+    if (!append) {
+        state.libraryPage = 1;
+        state.contexts = [];
+    }
 
     try {
-        const url = query
+        let url = query
             ? `${API}/api/contexts?q=${encodeURIComponent(query)}`
-            : `${API}/api/contexts`;
+            : `${API}/api/contexts?page=${state.libraryPage}&per_page=50`;
 
         const res = await fetch(url);
-        const contexts = await res.json();
-        state.contexts = contexts;
+        const data = await res.json();
+        const contexts = data.contexts || data;
+        state.libraryHasMore = !!data.has_more;
 
-        if (contexts.length === 0) {
+        if (append) {
+            state.contexts = state.contexts.concat(contexts);
+        } else {
+            state.contexts = contexts;
+        }
+
+        if (state.contexts.length === 0) {
             grid.style.display = 'none';
+            loadMoreContainer.style.display = 'none';
             emptyState.style.display = 'block';
             return;
         }
@@ -378,35 +455,23 @@ async function loadContexts(query = '') {
         grid.style.display = 'grid';
         emptyState.style.display = 'none';
 
-        grid.innerHTML = contexts.map(ctx => {
-            const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
-            const tags = (ctx.tags || []).map(t =>
-                `<span class="tag">${escapeHtml(t)}</span>`
-            ).join('');
-            const date = new Date(ctx.created_at).toLocaleDateString('en-US', {
-                month: 'short', day: 'numeric'
-            });
+        // Apply tag filter
+        const filtered = state.activeTagFilter
+            ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
+            : state.contexts;
 
-            const statusBadge = _buildCardStatusBadge(ctx.status);
+        if (append && !state.activeTagFilter) {
+            grid.insertAdjacentHTML('beforeend', contexts.map(_renderContextCard).join(''));
+        } else {
+            grid.innerHTML = filtered.map(_renderContextCard).join('');
+        }
 
-            return `
-                <div class="context-card" onclick="showDetail(${ctx.id})">
-                    ${statusBadge}
-                    <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
-                    <p class="card-topic">${escapeHtml(summary.main_topic || '')}</p>
-                    <div class="card-tags">${tags}</div>
-                    <div class="card-meta">
-                        <span>${date}</span>
-                        <button class="card-delete" onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})" title="Delete">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        // Build tag filter bar
+        if (!append) _renderTagFilterBar(state.contexts);
 
-        // If any contexts are still summarizing, ensure polling is running
-        if (contexts.some(c => c.status === 'summarizing')) {
+        loadMoreContainer.style.display = state.libraryHasMore && !query ? 'flex' : 'none';
+
+        if (state.contexts.some(c => c.status === 'summarizing')) {
             startWorkerPolling();
         }
 
@@ -415,11 +480,73 @@ async function loadContexts(query = '') {
     }
 }
 
+async function loadMoreContexts() {
+    state.libraryPage++;
+    await loadContexts('', true);
+}
+
+function _renderTagFilterBar(contexts) {
+    const bar = $('#tag-filter-bar');
+    if (!bar) return;
+
+    // Collect all unique tags with counts
+    const tagCounts = {};
+    contexts.forEach(ctx => {
+        (ctx.tags || []).forEach(t => {
+            tagCounts[t] = (tagCounts[t] || 0) + 1;
+        });
+    });
+
+    const tags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+
+    if (tags.length === 0) {
+        bar.style.display = 'none';
+        return;
+    }
+
+    bar.style.display = 'flex';
+    bar.innerHTML = tags.map(([tag, count]) => {
+        const active = state.activeTagFilter === tag ? ' active' : '';
+        return `<button class="tag-chip${active}" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)} <span class="tag-chip-count">${count}</span></button>`;
+    }).join('');
+
+    // Wire up click handlers
+    bar.querySelectorAll('.tag-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const tag = chip.dataset.tag;
+            if (state.activeTagFilter === tag) {
+                state.activeTagFilter = null;
+            } else {
+                state.activeTagFilter = tag;
+            }
+            _applyTagFilter();
+        });
+    });
+}
+
+function _applyTagFilter() {
+    const grid = $('#contexts-grid');
+    const bar = $('#tag-filter-bar');
+
+    // Update chip active states
+    bar.querySelectorAll('.tag-chip').forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.tag === state.activeTagFilter);
+    });
+
+    // Re-render grid with filter
+    const filtered = state.activeTagFilter
+        ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
+        : state.contexts;
+
+    grid.innerHTML = filtered.map(_renderContextCard).join('');
+}
+
 function initSearch() {
     let debounce = null;
     const input = $('#search-input');
     input.addEventListener('input', () => {
         clearTimeout(debounce);
+        state.activeTagFilter = null;
         debounce = setTimeout(() => loadContexts(input.value.trim()), 300);
     });
 }
@@ -437,13 +564,15 @@ async function deleteFromLibrary(id) {
 
 // ─── Context Detail ──────────────────────────────────────────────
 async function showDetail(id) {
+    // Show detail view immediately with loading state
+    navigateTo('detail');
+    $('#detail-content').innerHTML = '<div style="text-align:center;padding:60px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span></div>';
     try {
         const res = await fetch(`${API}/api/contexts/${id}`);
         if (!res.ok) throw new Error('Not found');
         const ctx = await res.json();
         state.currentContext = ctx;
 
-        navigateTo('detail');
         renderDetail(ctx);
 
         // Kick off polling immediately if this context is still being summarized
@@ -488,10 +617,11 @@ function renderDetail(ctx) {
         </div>
         <div class="detail-tags">${tags || '<span style="color:var(--text-faint);font-size:12px;">No tags</span>'}</div>
 
+        ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') ? `
         <div class="summary-section">
             <h3 class="section-title">Main Topic</h3>
-            <div class="topic-text">${escapeHtml(summary.main_topic || 'No topic')}</div>
-        </div>
+            <div class="topic-text">${escapeHtml(summary.main_topic)}</div>
+        </div>` : ''}
 
         ${importantNotes.length ? `
         <div class="summary-section important-notes-section">
@@ -624,10 +754,14 @@ function openEditModal() {
     $('#edit-tags').value = (ctx.tags || []).join(', ');
     $('#edit-topic').value = summary.main_topic || '';
     $('#edit-modal').style.display = 'flex';
+    
+    trapFocus($('#edit-modal').querySelector('.modal'), $('#edit-btn'));
 }
 
 function closeEditModal() {
-    $('#edit-modal').style.display = 'none';
+    const modal = $('#edit-modal');
+    releaseFocus(modal.querySelector('.modal'));
+    modal.style.display = 'none';
 }
 
 async function saveEdit() {
@@ -676,16 +810,81 @@ async function deleteCurrentContext() {
 }
 
 // ─── Export ──────────────────────────────────────────────────────
-async function exportMarkdown() {
+function toggleExportMenu() {
+    const menu = $('#export-menu');
+    const btn = $('#export-btn');
+    const isOpen = menu.classList.toggle('open');
+    if (isOpen) {
+        menu.removeAttribute('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+    } else {
+        menu.setAttribute('hidden', '');
+        btn.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function closeExportMenu() {
+    const menu = $('#export-menu');
+    const btn = $('#export-btn');
+    if (menu) {
+        menu.classList.remove('open');
+        menu.setAttribute('hidden', '');
+    }
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+async function exportContext(format) {
+    closeExportMenu();
     const ctx = state.currentContext;
     if (!ctx) return;
 
-    try {
-        // Open the download endpoint directly — works in pywebview and browsers
+    if (format === 'markdown') {
         window.open(`${API}/api/contexts/${ctx.id}/export/download`, '_blank');
         showToast('Exported as Markdown', 'success');
-    } catch (err) {
-        showToast(err.message, 'error');
+        return;
+    }
+
+    const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
+
+    if (format === 'json') {
+        const data = { title: ctx.title, tags: ctx.tags, summary, created_at: ctx.created_at };
+        await _copyText(JSON.stringify(data, null, 2));
+        showToast('Summary JSON copied', 'success');
+        return;
+    }
+
+    if (format === 'text') {
+        const lines = [ctx.title, ''];
+        if (summary.main_topic) lines.push(`Topic: ${summary.main_topic}`, '');
+        if (summary.key_ideas?.length) {
+            lines.push('Key Ideas:');
+            summary.key_ideas.forEach(i => lines.push(`  - ${i}`));
+            lines.push('');
+        }
+        if (summary.conclusions?.length) {
+            lines.push('Conclusions:');
+            summary.conclusions.forEach(c => lines.push(`  - ${c}`));
+            lines.push('');
+        }
+        if (summary.unresolved_questions?.length) {
+            lines.push('Open Questions:');
+            summary.unresolved_questions.forEach(q => lines.push(`  - ${q}`));
+        }
+        await _copyText(lines.join('\n'));
+        showToast('Summary text copied', 'success');
+    }
+}
+
+async function _copyText(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
     }
 }
 
@@ -708,20 +907,24 @@ async function copyPrompt() {
 }
 
 // ─── Toast ───────────────────────────────────────────────────────
-let toastTimer = null;
-
 function showToast(message, type = 'success') {
-    const toast = $('#toast');
-    clearTimeout(toastTimer);
-
+    const stack = $('#toast-stack');
+    const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.querySelector('.toast-icon').textContent = type === 'success' ? '✅' : '❌';
-    toast.querySelector('.toast-message').textContent = message;
-    toast.style.display = 'flex';
+    toast.innerHTML = `<span class="toast-icon">${type === 'success' ? '\u2705' : '\u274C'}</span><span class="toast-message">${escapeHtml(message)}</span>`;
+    stack.appendChild(toast);
 
-    toastTimer = setTimeout(() => {
-        toast.style.display = 'none';
+    // Auto-remove after 3s
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(40px)';
+        setTimeout(() => toast.remove(), 300);
     }, 3000);
+
+    // Cap at 5 visible toasts
+    while (stack.children.length > 5) {
+        stack.firstChild.remove();
+    }
 }
 
 // ─── Status Indicator ────────────────────────────────────────────
@@ -737,66 +940,19 @@ function updateStatusIndicator(online) {
     }
 }
 
-// ─── Backfill Embeddings ─────────────────────────────────────────
-async function embedAll() {
-    const btn = $('#btn-embed-all');
-    const original = btn.textContent;
-    btn.disabled = true;
-
-    try {
-        const res = await fetch(`${API}/api/contexts/embed-all`, { method: 'POST' });
-        if (!res.ok) throw new Error('Request failed');
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let lastData = null;
-
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); // keep incomplete last line
-
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const data = JSON.parse(line);
-                    lastData = data;
-                    if (data.total > 0) {
-                        btn.textContent = `Backfilling… ${data.done} / ${data.total}`;
-                    } else {
-                        btn.textContent = 'No contexts found';
-                    }
-                } catch { /* ignore malformed line */ }
-            }
-        }
-
-        if (lastData) {
-            const msg = lastData.total === 0
-                ? 'No contexts to embed'
-                : `Embedded ${lastData.updated} contexts (${lastData.skipped} already done)`;
-            showToast(msg, 'success');
-        }
-    } catch {
-        showToast('Backfill failed — is nomic-embed-text installed?', 'error');
-    } finally {
-        btn.textContent = original;
-        btn.disabled = false;
-    }
-}
-
-// ─── Backfill Chunks (for old contexts) ─────────────────────────
-async function chunkAll() {
-    const btn = $('#btn-chunk-all');
+// ─── Rebuild Embeddings ──────────────────────────────────────────
+async function rebuildEmbeddings() {
+    const btn = $('#btn-rebuild-embeddings');
     if (!btn) return;
+
+    if (!confirm('This will re-chunk and re-embed all saved contexts using the current embedding model.\n\nExisting embeddings will be replaced. Continue?')) return;
+
     const original = btn.textContent;
     btn.disabled = true;
+    btn.textContent = 'Starting…';
 
     try {
-        const res = await fetch(`${API}/api/contexts/chunk-all`, { method: 'POST' });
+        const res = await fetch(`${API}/api/contexts/chunk-all?force=true`, { method: 'POST' });
         if (!res.ok) throw new Error('Request failed');
 
         const reader = res.body.getReader();
@@ -818,7 +974,7 @@ async function chunkAll() {
                     const data = JSON.parse(line);
                     lastData = data;
                     if (data.total > 0) {
-                        btn.textContent = `Chunking… ${data.done} / ${data.total}`;
+                        btn.textContent = `Re-embedding… ${data.done} / ${data.total}`;
                     }
                 } catch { /* ignore */ }
             }
@@ -826,16 +982,167 @@ async function chunkAll() {
 
         if (lastData) {
             const msg = lastData.total === 0
-                ? 'No contexts to chunk'
-                : `Chunked ${lastData.updated} contexts (${lastData.skipped} already done)`;
+                ? 'No contexts found'
+                : `Re-embedded ${lastData.updated} contexts with new model (${lastData.skipped} skipped)`;
             showToast(msg, 'success');
         }
     } catch {
-        showToast('Chunk backfill failed — is nomic-embed-text installed?', 'error');
+        showToast('Re-embed failed — check that your embed model is installed', 'error');
     } finally {
         btn.textContent = original;
         btn.disabled = false;
     }
+}
+
+// ─── Settings Modal ──────────────────────────────────────────────
+let _settingsConfig = null; // last loaded config from backend
+
+async function openSettingsModal() {
+    const modal = $('#settings-modal');
+    modal.style.display = 'flex';
+
+    // Reset warning
+    $('#settings-embed-warning').classList.remove('visible');
+
+    // Keyboard trap — keep focus inside while open
+    trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
+
+    try {
+        const res = await fetch(`${API}/api/setup/config`);
+        _settingsConfig = await res.json();
+        _renderSettingsCards();
+    } catch {
+        showToast('Could not load config', 'error');
+    }
+}
+
+function closeSettingsModal() {
+    const modal = $('#settings-modal');
+    releaseFocus(modal.querySelector('.settings-modal'));
+    modal.style.display = 'none';
+}
+
+function _makeSettingsCard(item, selectedId, containerId, onSelect) {
+    const card = document.createElement('div');
+    card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '');
+    card.dataset.id = item.id;
+
+    const label = item.label || item.id;
+    const desc  = item.desc  || '';
+    const size  = item.size  || '';
+    const rec   = item.recommended;
+    const inst  = item.installed;
+
+    const statusBadge = inst
+        ? '<span class="settings-installed-badge">✓ Installed</span>'
+        : '<span class="settings-not-installed-badge">Not downloaded</span>';
+
+    card.innerHTML = `
+        <div class="settings-model-card-left">
+            <div class="settings-model-name">${escapeHtml(label)}</div>
+            <div class="settings-model-desc">${escapeHtml(desc)}</div>
+        </div>
+        <div class="settings-model-card-right">
+            ${statusBadge}
+            ${rec ? '<span class="settings-model-badge">Recommended</span>' : ''}
+            <span class="settings-model-size">${escapeHtml(size)}</span>
+            <div class="settings-model-radio"></div>
+        </div>`;
+
+    card.addEventListener('click', () => {
+        document.querySelectorAll(`#${containerId} .settings-model-card`)
+            .forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        onSelect(item.id);
+    });
+
+    return card;
+}
+
+function _renderSettingsCards() {
+    if (!_settingsConfig) return;
+
+    const llmGrid   = $('#settings-llm-grid');
+    const embedGrid = $('#settings-embed-grid');
+    llmGrid.innerHTML = '';
+    embedGrid.innerHTML = '';
+
+    let selectedLlm   = _settingsConfig.model;
+    let selectedEmbed = _settingsConfig.embed_model;
+    const originalEmbed = _settingsConfig.embed_model;
+
+    (_settingsConfig.available_models || []).forEach(m => {
+        llmGrid.appendChild(_makeSettingsCard(m, selectedLlm, 'settings-llm-grid', id => {
+            selectedLlm = id;
+            llmGrid.dataset.selected = id;
+        }));
+    });
+    llmGrid.dataset.selected = selectedLlm;
+
+    (_settingsConfig.available_embed_models || []).forEach(m => {
+        embedGrid.appendChild(_makeSettingsCard(m, selectedEmbed, 'settings-embed-grid', id => {
+            selectedEmbed = id;
+            embedGrid.dataset.selected = id;
+            // Show warning if embed model has changed
+            const warn = $('#settings-embed-warning');
+            if (id !== originalEmbed) {
+                warn.classList.add('visible');
+            } else {
+                warn.classList.remove('visible');
+            }
+        }));
+    });
+    embedGrid.dataset.selected = selectedEmbed;
+}
+
+async function saveSettings() {
+    const llmGrid   = $('#settings-llm-grid');
+    const embedGrid = $('#settings-embed-grid');
+    const newModel  = llmGrid.dataset.selected;
+    const newEmbed  = embedGrid.dataset.selected;
+
+    const saveBtn = $('#settings-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+        const [r1, r2] = await Promise.all([
+            fetch(`${API}/api/setup/select-model`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newModel }) }),
+            fetch(`${API}/api/setup/select-embed-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newEmbed }) }),
+        ]);
+        if (!r1.ok || !r2.ok) throw new Error('Save failed');
+
+        // Update sidebar hint
+        _updateSettingsHint(newModel, newEmbed);
+
+        const embedChanged = _settingsConfig && newEmbed !== _settingsConfig.embed_model;
+        closeSettingsModal();
+
+        if (embedChanged) {
+            showToast('Models saved. Click "Rebuild Embeddings" to apply the new embedding model.', 'success');
+        } else {
+            showToast('Settings saved', 'success');
+        }
+    } catch {
+        showToast('Failed to save settings', 'error');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+    }
+}
+
+function _updateSettingsHint(model, embed) {
+    const hint = $('#settings-current-model-hint');
+    if (hint) hint.textContent = `${model} · ${embed}`;
+}
+
+// Fetch and show current models in the hint on app load
+async function _initSettingsHint() {
+    try {
+        const res = await fetch(`${API}/api/setup/config`);
+        const cfg = await res.json();
+        _updateSettingsHint(cfg.model, cfg.embed_model);
+    } catch { /* ignore */ }
 }
 
 // ─── Utilities ───────────────────────────────────────────────────
@@ -846,13 +1153,66 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// ─── Accessibility: Focus Trap ───────────────────────────────────
+let _focusTrapEl   = null;   // currently trapped container
+let _focusTrapPrev = null;   // element that had focus before modal opened
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function trapFocus(container, triggerEl) {
+    _focusTrapEl   = container;
+    _focusTrapPrev = triggerEl || document.activeElement;
+
+    const focusable = () => Array.from(container.querySelectorAll(FOCUSABLE));
+
+    // Move focus to first focusable inside
+    const first = focusable()[0];
+    if (first) first.focus();
+
+    container._trapHandler = (e) => {
+        if (e.key !== 'Tab') return;
+        const items = focusable();
+        if (!items.length) { e.preventDefault(); return; }
+        const firstEl = items[0];
+        const lastEl  = items[items.length - 1];
+        if (e.shiftKey) {
+            if (document.activeElement === firstEl) { e.preventDefault(); lastEl.focus(); }
+        } else {
+            if (document.activeElement === lastEl)  { e.preventDefault(); firstEl.focus(); }
+        }
+    };
+    container.addEventListener('keydown', container._trapHandler);
+}
+
+function releaseFocus(container) {
+    if (container && container._trapHandler) {
+        container.removeEventListener('keydown', container._trapHandler);
+        container._trapHandler = null;
+    }
+    if (_focusTrapPrev && typeof _focusTrapPrev.focus === 'function') {
+        _focusTrapPrev.focus();
+    }
+    _focusTrapEl   = null;
+    _focusTrapPrev = null;
+}
+
+// Global Escape key — closes whichever modal is open
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const editModal     = $('#edit-modal');
+    const settingsModal = $('#settings-modal');
+    if (editModal     && editModal.style.display     !== 'none') closeEditModal();
+    if (settingsModal && settingsModal.style.display !== 'none') closeSettingsModal();
+});
+
 // ─── Init ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     // Setup wizard
     setupInterval = setInterval(checkSetup, 2000);
     checkSetup(); // Immediate first check
+    _initSettingsHint(); // Show active models in sidebar hint
 
-    // Skip setup button
+
+    // Skip setup button (service phase)
     $('#skip-setup-btn').addEventListener('click', () => {
         clearInterval(setupInterval);
         transitionToApp();
@@ -872,7 +1232,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Detail view buttons
     $('#back-to-library').addEventListener('click', () => navigateTo('library'));
     $('#edit-btn').addEventListener('click', openEditModal);
-    $('#export-btn').addEventListener('click', exportMarkdown);
+    $('#export-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleExportMenu(); });
+    $$('.export-option').forEach(opt => {
+        opt.addEventListener('click', () => exportContext(opt.dataset.format));
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#export-dropdown')) closeExportMenu();
+    });
     $('#delete-btn').addEventListener('click', deleteCurrentContext);
 
     // Prompt buttons
@@ -882,8 +1248,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Backfill embeddings & chunks
-    $('#btn-embed-all').addEventListener('click', embedAll);
-    if ($('#btn-chunk-all')) $('#btn-chunk-all').addEventListener('click', chunkAll);
+    if ($('#btn-rebuild-embeddings')) $('#btn-rebuild-embeddings').addEventListener('click', rebuildEmbeddings);
+    if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
+    if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
 
     // Edit modal
     $('#cancel-edit-btn').addEventListener('click', closeEditModal);
@@ -892,6 +1259,57 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close modal on overlay click
     $('#edit-modal').addEventListener('click', (e) => {
         if (e.target === $('#edit-modal')) closeEditModal();
+    });
+
+    // Theme toggle
+    if ($('#btn-theme-toggle')) $('#btn-theme-toggle').addEventListener('click', toggleTheme);
+
+    // Settings modal
+    $('#btn-settings').addEventListener('click', openSettingsModal);
+    $('#settings-modal-close').addEventListener('click', closeSettingsModal);
+    $('#settings-cancel-btn').addEventListener('click', closeSettingsModal);
+    $('#settings-save-btn').addEventListener('click', saveSettings);
+    $('#settings-modal').addEventListener('click', (e) => {
+        if (e.target === $('#settings-modal')) closeSettingsModal();
+    });
+
+
+    // ── Keyboard Shortcuts ──────────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+        const active = document.activeElement;
+        const inInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+
+        // Esc — close modals
+        if (e.key === 'Escape') {
+            if ($('#edit-modal').style.display !== 'none') { closeEditModal(); return; }
+            if ($('#settings-modal').style.display !== 'none') { closeSettingsModal(); return; }
+            if ($('#prompt-section') && $('#prompt-section').style.display !== 'none') {
+                $('#prompt-section').style.display = 'none'; return;
+            }
+        }
+
+        // Shortcuts below only fire when not typing in an input
+        if (inInput) return;
+
+        // / — focus search (when in library view)
+        if (e.key === '/' && state.view === 'library') {
+            e.preventDefault();
+            $('#search-input').focus();
+        }
+
+        // Backspace — go back from detail to library
+        if (e.key === 'Backspace' && state.view === 'detail') {
+            navigateTo('library');
+        }
+    });
+
+    // Ctrl+Enter — summarize when in chat input
+    $('#chat-textarea').addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            const btn = $('#summarize-btn');
+            if (!btn.disabled) summarizeAndSave();
+        }
     });
 
     // Periodic status check
@@ -906,8 +1324,55 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 30000);
 });
 
+// ─── Restart Backend ─────────────────────────────────────────────
+async function restartBackend() {
+    const btn = $('#btn-restart');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('restarting');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restarting…`;
+
+    try {
+        await fetch(`${API}/api/restart`, { method: 'POST' });
+    } catch { /* expected — server drops */ }
+
+    // Poll until backend is back
+    const poll = async () => {
+        try {
+            const res = await fetch(`${API}/api/setup/status`);
+            if (res.ok) {
+                showToast('Backend restarted', 'success');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+                btn.classList.remove('restarting');
+                return;
+            }
+        } catch { /* still down */ }
+        setTimeout(poll, 800);
+    };
+    setTimeout(poll, 1200);
+}
+
+// ─── Retry Summarization ────────────────────────────────────────
+async function retrySummarize() {
+    const ctx = state.currentContext;
+    if (!ctx) return;
+    try {
+        const res = await fetch(`${API}/api/contexts/${ctx.id}/resummarize`, { method: 'POST' });
+        if (!res.ok) throw new Error('Retry failed');
+        showToast('Re-summarizing...', 'success');
+        ctx.status = 'summarizing';
+        renderDetail(ctx);
+        startWorkerPolling();
+    } catch (err) {
+        showToast('Failed to retry summarization', 'error');
+    }
+}
+
 // Expose to global for inline onclick handlers
 window.showDetail = showDetail;
 window.deleteFromLibrary = deleteFromLibrary;
 window.toggleOriginalChat = toggleOriginalChat;
 window.generatePrompt = generatePrompt;
+window.retrySummarize = retrySummarize;

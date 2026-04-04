@@ -12,16 +12,15 @@ import requests
 
 OLLAMA_BASE = "http://localhost:11434"
 
-# File logger — writes to <project_root>/contextvolt.log regardless of launch method
+# File logger — writes to <project_root>/contextvolt.log with rotation (max 5 MB, 2 backups)
 _LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contextvolt.log")
-logging.basicConfig(
-    filename=_LOG_PATH,
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-    encoding="utf-8",
-)
+from logging.handlers import RotatingFileHandler as _RFH
 _log = logging.getLogger("contextvolt")
+_log.setLevel(logging.DEBUG)
+if not _log.handlers:
+    _handler = _RFH(_LOG_PATH, maxBytes=5_000_000, backupCount=2, encoding="utf-8")
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+    _log.addHandler(_handler)
 def _load_default_model() -> str:
     """Priority: OLLAMA_MODEL env var → config.json → hardcoded default."""
     env = os.getenv("OLLAMA_MODEL")
@@ -38,6 +37,23 @@ def _load_default_model() -> str:
     return "qwen2.5:3b"
 
 DEFAULT_MODEL = _load_default_model()
+
+_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+
+
+def _get_embed_model() -> str:
+    """Read embed model from config.json at call time (supports runtime changes without restart)."""
+    env = os.getenv("OLLAMA_EMBED_MODEL")
+    if env:
+        return env
+    try:
+        with open(_CFG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = json.load(_f)
+            if isinstance(_cfg, dict) and "embed_model" in _cfg:
+                return str(_cfg["embed_model"])
+    except Exception:
+        pass
+    return "nomic-embed-text"
 
 # Context window config — override via env vars to match your local model.
 # Default: 32k tokens (safe starting point; raise to e.g. 131072 for 128k models).
@@ -187,9 +203,9 @@ def _parse_text_summary(response_text: str) -> dict:
                 if item.lower() not in ("none", "n/a"):
                     result["unresolved_questions"].append(item)
 
-    # Last-ditch: if still no topic but we have key ideas, derive one
+    # Last-ditch: if still no topic but we have key ideas, use the first idea as-is
     if result["main_topic"] == "No topic extracted" and result["key_ideas"]:
-        result["main_topic"] = "Discussion about: " + result["key_ideas"][0][:60]  # type: ignore[index]
+        result["main_topic"] = result["key_ideas"][0]  # type: ignore[index]
 
     return result
 
@@ -363,7 +379,7 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
         return chunks
 
     # Resolve model at runtime (EMBED_MODEL is defined later in the file)
-    _model = model or os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    _model = model or _get_embed_model()
 
     texts = [ch["text"][:8000] for ch in chunks]
     try:
@@ -885,7 +901,8 @@ def summarize_conversation(
                        first_user=first_user, last_asst=last_asst)
 
 
-EMBED_MODEL: str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+# EMBED_MODEL kept for backward compatibility — runtime resolution via _get_embed_model()
+EMBED_MODEL: str = _get_embed_model()
 
 
 # ---------------------------------------------------------------------------
@@ -1253,16 +1270,17 @@ def generate_continuation_prompt(
     return "\n".join(sections)
 
 
-def embed_text(text: str, model: str = EMBED_MODEL) -> list[float] | None:
+def embed_text(text: str, model: str | None = None) -> list[float] | None:
     """Generate an embedding vector via Ollama's /api/embed endpoint.
 
     Returns None if the embed model is not installed or any error occurs —
     callers must handle None gracefully (fall back to keyword search).
     """
+    _model = model or _get_embed_model()
     try:
         r = requests.post(
             f"{OLLAMA_BASE}/api/embed",
-            json={"model": model, "input": text[:8000]},  # type: ignore[index]
+            json={"model": _model, "input": text[:8000]},
             timeout=30,
         )
         r.raise_for_status()

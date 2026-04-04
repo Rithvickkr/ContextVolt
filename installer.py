@@ -29,6 +29,7 @@ VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3"
 VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
 REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
 OLLAMA_MODEL = "qwen2.5:3b"  # Default; user selects during setup. Options: 1.5b/3b/7b
+EMBED_MODEL = "nomic-embed-text"  # Default; user selects during setup
 
 AVAILABLE_MODELS = [
     {
@@ -50,6 +51,37 @@ AVAILABLE_MODELS = [
         "name": "Qwen 2.5 1.5B",
         "size": "~1 GB",
         "description": "Lightweight — minimal hardware needed, basic summary quality",
+        "recommended": False,
+    },
+]
+
+AVAILABLE_EMBED_MODELS = [
+    {
+        "id": "nomic-embed-text",
+        "name": "Nomic Embed Text",
+        "size": "~274 MB",
+        "description": "Fast and accurate — great balance for most use cases",
+        "recommended": False,
+    },
+    {
+        "id": "mxbai-embed-large",
+        "name": "MixedBread Large",
+        "size": "~670 MB",
+        "description": "Highest quality embeddings — best semantic search accuracy",
+        "recommended": True,
+    },
+    {
+        "id": "nomic-embed-text:v1.5",
+        "name": "Nomic Embed v1.5",
+        "size": "~274 MB",
+        "description": "Improved Nomic with Matryoshka representation support",
+        "recommended": False,
+    },
+    {
+        "id": "bge-m3",
+        "name": "BGE-M3",
+        "size": "~1.2 GB",
+        "description": "Multilingual support — best for non-English content",
         "recommended": False,
     },
 ]
@@ -82,6 +114,7 @@ class InstallState:
             {"id": "deps", "label": "Dependencies", "status": "pending"},
             {"id": "ollama", "label": "Ollama Service", "status": "pending"},
             {"id": "model", "label": "AI Model", "status": "pending"},
+            {"id": "embed", "label": "Embed Model", "status": "pending"},
             {"id": "extension", "label": "Browser Extension", "status": "pending"},
         ]
         self.logs = []
@@ -443,26 +476,107 @@ def run_installation():
             state.log(f"  Error pulling model: {str(e)[:80]}")
             state.log(f"  You can retry manually with: ollama pull {OLLAMA_MODEL}")
 
-        # Pull embedding model for semantic search (small, ~270MB, best-effort)
-        EMBED_MODEL = "nomic-embed-text"
-        state.log(f"  Pulling {EMBED_MODEL} (~270MB) for semantic search...")
+        return True
+
+    def step_pull_embed_model():
+        state.log(f"Checking embedding model ({EMBED_MODEL})...")
+        ollama_path = shutil.which("ollama")
+        if not ollama_path and IS_WINDOWS:
+            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+            if local.exists():
+                ollama_path = str(local)
+        if not ollama_path and IS_MAC:
+            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
+                if Path(p).exists():
+                    ollama_path = p
+                    break
+        if not ollama_path:
+            state.log("  Ollama not available, skipping embed model pull")
+            state.log(f"  You can pull it later with: ollama pull {EMBED_MODEL}")
+            return True
+
+        ollama_env = os.environ.copy()
+        ollama_env["OLLAMA_MODELS"] = str(OLLAMA_MODELS_DIR)
+
+        import urllib.request
+        service_running = False
+        for attempt in range(5):
+            try:
+                urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+                service_running = True
+                break
+            except Exception:
+                if attempt == 0:
+                    state.log("  Starting Ollama service...")
+                    serve_kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "env": ollama_env}
+                    if IS_WINDOWS:
+                        serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
+                time.sleep(2)
+
+        if not service_running:
+            state.log("  Could not start Ollama service")
+            state.log(f"  You can pull it later with: ollama pull {EMBED_MODEL}")
+            return True
+
+        # Check if already installed
         try:
-            embed_process = subprocess.Popen(
+            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
+                data = json.loads(r.read().decode())
+                installed_names = [m.get("name", "") for m in data.get("models", [])]
+                already_installed = any(
+                    name == EMBED_MODEL
+                    or name.startswith(EMBED_MODEL + ":")
+                    or name.split(":")[0] == EMBED_MODEL
+                    for name in installed_names
+                )
+                if already_installed:
+                    state.log(f"  {EMBED_MODEL} already installed")
+                    return True
+        except Exception as e:
+            state.log(f"  Could not check models: {str(e)[:30]}")
+
+        # Pull with real-time progress
+        size_hint = next((m["size"] for m in AVAILABLE_EMBED_MODELS if m["id"] == EMBED_MODEL), "?")
+        state.log(f"  Pulling {EMBED_MODEL} ({size_hint})...")
+        try:
+            process = subprocess.Popen(
                 [ollama_path, "pull", EMBED_MODEL],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                encoding='utf-8', errors='replace',  # type: ignore[call-overload,arg-type]
+                encoding='utf-8', errors='replace',  # type: ignore[call-overload]
                 env=ollama_env,
-                **(dict(creationflags=subprocess.CREATE_NO_WINDOW) if IS_WINDOWS else {})  # type: ignore[call-overload,arg-type]
+                **(dict(creationflags=subprocess.CREATE_NO_WINDOW) if IS_WINDOWS else {})
             )
-            embed_process.wait(timeout=300)
-            if embed_process.returncode == 0:
+            last_log: str = ""
+            buf: str = ""
+            stdout = process.stdout
+            if stdout is not None:
+                while True:
+                    ch: str = str(stdout.read(1))
+                    if not ch:
+                        if process.poll() is not None:
+                            break
+                        continue
+                    if ch in ('\n', '\r'):
+                        line: str = str(buf).strip()
+                        buf = ""
+                        if line and line != last_log:
+                            state.log("  " + line[:80])
+                            last_log = line
+                    else:
+                        buf = buf + ch
+                flushed: str = str(buf).strip()
+                if flushed and flushed != last_log:
+                    state.log("  " + flushed[:80])
+
+            if process.returncode == 0:
                 state.log(f"  {EMBED_MODEL} ready!")
             else:
-                state.log(f"  {EMBED_MODEL} pull failed — semantic search unavailable")
+                state.log(f"  Pull failed (exit code: {process.returncode})")
                 state.log(f"  You can retry with: ollama pull {EMBED_MODEL}")
         except Exception as e:
-            state.log(f"  Could not pull {EMBED_MODEL}: {str(e)[0:60]}")  # type: ignore[index]
-            state.log("  Semantic search will be unavailable until you run: ollama pull nomic-embed-text")
+            state.log(f"  Error pulling model: {str(e)[:80]}")
+            state.log(f"  You can retry manually with: ollama pull {EMBED_MODEL}")
 
         return True
 
@@ -527,7 +641,7 @@ def run_installation():
 
         return True
 
-    steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_install_extension]
+    steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_pull_embed_model, step_install_extension]
     
     try:
         for i in range(state.current_step, len(steps)):
@@ -589,6 +703,48 @@ class Api:
     def get_available_models(self):
         """Return list of available model options."""
         return AVAILABLE_MODELS
+
+    def get_available_embed_models(self):
+        """Return list of available embedding model options."""
+        return AVAILABLE_EMBED_MODELS
+
+    def get_saved_config(self):
+        """Return the currently saved model + embed_model from config.json."""
+        global OLLAMA_MODEL, EMBED_MODEL
+        config_path = PROJECT_ROOT / "config.json"
+        try:
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                saved_model = cfg.get("model", OLLAMA_MODEL)
+                saved_embed = cfg.get("embed_model", EMBED_MODEL)
+                # Update globals so installation uses whatever was persisted
+                OLLAMA_MODEL = saved_model
+                EMBED_MODEL = saved_embed
+                return {"model": saved_model, "embed_model": saved_embed}
+        except Exception:
+            pass
+        return {"model": OLLAMA_MODEL, "embed_model": EMBED_MODEL}
+
+    def set_selected_embed_model(self, model_id: str):
+        """Set the embedding model to install and persist to config.json."""
+        global EMBED_MODEL
+        valid_ids = [m["id"] for m in AVAILABLE_EMBED_MODELS]
+        if model_id not in valid_ids:
+            return {"success": False, "error": "Unknown model"}
+        EMBED_MODEL = model_id
+        try:
+            config_path = PROJECT_ROOT / "config.json"
+            config = {}
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            config["embed_model"] = model_id  # type: ignore[index]
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass
+        return {"success": True}
 
     def set_selected_model(self, model_id: str):
         """Set the model to install and persist to config.json."""

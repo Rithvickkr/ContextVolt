@@ -145,6 +145,10 @@
                         aria-label="Rebuild embeddings — re-chunk and re-embed all contexts with the current model">
                     Rebuild Embeddings
                 </button>
+                <button class="btn-shortcuts" id="btn-shortcuts" aria-label="Keyboard shortcuts">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M18 12h.01M8 16h8"/></svg>
+                    Shortcuts <kbd>?</kbd>
+                </button>
                 <button class="btn-restart" id="btn-restart" aria-label="Restart the backend server">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                     Restart Backend
@@ -191,19 +195,45 @@
                     <p class="view-desc">Browse and manage your saved conversation summaries.</p>
                 </div>
                 <div class="library-controls">
-                    <div class="search-box" role="search">
-                        <span class="search-icon" aria-hidden="true">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                        </span>
-                        <label for="search-input" class="sr-only">Search contexts</label>
-                        <input type="text" id="search-input" class="search-input"
-                            placeholder="Search contexts..." aria-label="Search contexts"
-                            autocomplete="off" spellcheck="false">
+                    <div class="library-controls-row">
+                        <div class="search-box" role="search">
+                            <span class="search-icon" aria-hidden="true">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                            </span>
+                            <label for="search-input" class="sr-only">Search contexts</label>
+                            <input type="text" id="search-input" class="search-input"
+                                placeholder="Search contexts..." aria-label="Search contexts"
+                                autocomplete="off" spellcheck="false">
+                            <button class="btn-deep-search" id="btn-deep-search" title="Deep search across all chunk content" aria-label="Toggle deep cross-context search" aria-pressed="false">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+                                Deep
+                            </button>
+                        </div>
+                        <div class="library-actions">
+                            <select id="sort-select" class="sort-select" aria-label="Sort order">
+                                <option value="newest">Newest</option>
+                                <option value="oldest">Oldest</option>
+                                <option value="alpha">A — Z</option>
+                            </select>
+                            <button class="btn btn-ghost btn-select-mode" id="btn-select-mode" aria-label="Toggle multi-select">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
+                                Select
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bulk-actions-bar" id="bulk-actions-bar" style="display:none;">
+                        <span class="bulk-count" id="bulk-count">0 selected</span>
+                        <button class="btn btn-ghost" id="btn-select-all">Select All</button>
+                        <button class="btn btn-danger" id="btn-bulk-delete">Delete Selected</button>
+                        <button class="btn btn-ghost" id="btn-cancel-select">Cancel</button>
                     </div>
                 </div>
                 <div class="tag-filter-bar" id="tag-filter-bar" style="display:none;" role="group" aria-label="Tag filters"></div>
                 <div class="contexts-grid" id="contexts-grid" aria-live="polite" aria-label="Saved contexts">
                     <!-- Context cards will be rendered here -->
+                </div>
+                <div class="deep-search-results" id="deep-search-results" style="display:none;" role="region" aria-label="Deep search results">
+                    <!-- Filled by JS -->
                 </div>
                 <div class="load-more-container" id="load-more-container" style="display:none;">
                     <button class="btn btn-secondary" id="btn-load-more" aria-label="Load more contexts">
@@ -273,6 +303,12 @@
                         <label for="edit-topic">Main Topic</label>
                         <input type="text" id="edit-topic" class="form-input" autocomplete="off">
                     </div>
+                    <div class="form-group">
+                        <label for="edit-notes">Important Notes <span style="color:var(--text-muted);font-weight:normal;">(one per line)</span></label>
+                        <textarea id="edit-notes" class="form-input" rows="4"
+                                  placeholder="Add important notes, one per line..."
+                                  style="resize:vertical;font-family:inherit;"></textarea>
+                    </div>
                     <div class="modal-actions">
                         <button class="btn btn-ghost" id="cancel-edit-btn">Cancel</button>
                         <button class="btn btn-primary" id="save-edit-btn">Save Changes</button>
@@ -325,6 +361,51 @@
             <div class="settings-modal-footer">
                 <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
                 <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div class="shortcuts-modal-overlay" id="shortcuts-modal" style="display:none;"
+         role="dialog" aria-modal="true" aria-labelledby="shortcuts-modal-title">
+        <div class="shortcuts-modal">
+            <div class="shortcuts-modal-header">
+                <span class="shortcuts-modal-title" id="shortcuts-modal-title">⌨ Keyboard Shortcuts</span>
+                <button class="shortcuts-modal-close" id="shortcuts-modal-close" aria-label="Close shortcuts">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="shortcuts-table">
+                <table>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>?</kbd></div></td>
+                        <td>Show this cheat sheet</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>/</kbd></div></td>
+                        <td>Focus search (in Library)</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>Esc</kbd></div></td>
+                        <td>Close modals &amp; prompts</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>Backspace</kbd></div></td>
+                        <td>Back to Library (from Detail)</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-plus">+</span><kbd>Enter</kbd></div></td>
+                        <td>Summarize &amp; Save (in New Chat)</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>N</kbd></div></td>
+                        <td>Go to New Chat</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>L</kbd></div></td>
+                        <td>Go to Library</td>
+                    </tr>
+                </table>
             </div>
         </div>
     </div>

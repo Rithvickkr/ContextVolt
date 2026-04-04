@@ -43,7 +43,22 @@ const state = {
     libraryPage: 1,
     libraryHasMore: false,
     activeTagFilter: null,
+    sortOrder: 'newest',
+    selectMode: false,
+    selectedIds: new Set(),
+    pendingDeletes: new Map(),  // id -> { timer, ctx }
 };
+
+// ─── P2-2: Source badge constants ────────────────────────────────
+const _KNOWN_SOURCES = ['ChatGPT', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Perplexity', 'Copilot'];
+
+function _getSourceBadge(tags) {
+    if (!tags || !tags.length) return '';
+    const source = tags.find(t => _KNOWN_SOURCES.includes(t));
+    if (!source) return '';
+    const cls = 'source-' + source.toLowerCase();
+    return `<span class="source-badge ${cls}">${escapeHtml(source)}</span>`;
+}
 
 // ─── Worker Status Polling ───────────────────────────────────────
 let _workerPollTimer = null;
@@ -284,7 +299,9 @@ function initChatInput() {
 
     textarea.addEventListener('input', () => {
         const len = textarea.value.length;
-        charCount.textContent = `${len.toLocaleString()} characters`;
+        const tokens = Math.round(len / 4);
+        const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
+        charCount.textContent = `${len.toLocaleString()} chars · ${tokenStr} tokens`;
         summarizeBtn.disabled = len < 20;
     });
 
@@ -306,27 +323,60 @@ async function summarizeAndSave() {
     btn.disabled = true;
 
     try {
-        // Step 1: Summarize via Ollama
-        const summaryRes = await fetch(`${API}/api/summarize`, {
+        // Step 1: Summarize via Ollama (streaming progress)
+        const _setProgress = (msg) => {
+            const loader = btn.querySelector('.btn-loader');
+            const textNode = loader.querySelector('.spinner').nextSibling;
+            if (textNode) textNode.textContent = ' ' + msg;
+        };
+        _setProgress('Summarizing…');
+
+        const summaryRes = await fetch(`${API}/api/summarize/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text }),
         });
 
         if (!summaryRes.ok) {
-            const err = await summaryRes.json();
+            const err = await summaryRes.json().catch(() => ({}));
             throw new Error(err.detail || 'Summarization failed');
         }
 
-        const summary = await summaryRes.json();
+        // Read NDJSON stream for progress
+        let summary = null;
+        const reader = summaryRes.body.getReader();
+        const decoder = new TextDecoder();
+        let streamBuf = '';
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            streamBuf += decoder.decode(value, { stream: true });
+            const lines = streamBuf.split('\n');
+            streamBuf = lines.pop();
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const evt = JSON.parse(line);
+                    if (evt.error) throw new Error(evt.error);
+                    if (evt.step) {
+                        const pct = evt.total > 0 ? Math.round((evt.done / evt.total) * 100) : 0;
+                        _setProgress(`${evt.step} (${pct}%)`);
+                    }
+                    if (evt.result) summary = evt.result;
+                } catch (e) { if (e.message !== line) throw e; }
+            }
+        }
+
+        if (!summary) throw new Error('Summarization produced no result');
 
         // Step 2: Create a title from the main topic
         const title = summary.main_topic || 'Untitled Context';
 
-        // Step 3: Auto-generate tags from key ideas
+        // Step 3: Auto-generate tags from summary content (LLM-derived)
         const tags = generateTags(summary);
 
         // Step 4: Save to database
+        btn.querySelector('.btn-loader').querySelector('.spinner').nextSibling.textContent = ' Saving…';
         const createRes = await fetch(`${API}/api/contexts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -344,12 +394,31 @@ async function summarizeAndSave() {
 
         const created = await createRes.json();
 
+        // Step 5: Chunk and embed the conversation
+        btn.querySelector('.btn-loader').querySelector('.spinner').nextSibling.textContent = ' Chunking & embedding…';
+        try {
+            const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
+            if (chunkRes.ok) {
+                // Consume the NDJSON stream to completion
+                const reader = chunkRes.body.getReader();
+                const decoder = new TextDecoder();
+                let buf = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buf += decoder.decode(value, { stream: true });
+                }
+            }
+        } catch {
+            showToast('Context saved, but chunking failed — use Rebuild Embeddings later', 'error');
+        }
+
         // Clear textarea
         textarea.value = '';
         $('#char-count').textContent = '0 characters';
         btn.disabled = true;
 
-        showToast('Context saved successfully!', 'success');
+        showToast('Context saved and embedded!', 'success');
 
         // Navigate to detail view
         setTimeout(() => showDetail(created.id), 500);
@@ -365,28 +434,50 @@ async function summarizeAndSave() {
 }
 
 function generateTags(summary) {
-    // Simple auto-tagging from key ideas
-    const tags = [];
-    const text = [
+    const tags = new Set();
+    const corpus = [
         summary.main_topic || '',
         ...(summary.key_ideas || []),
+        ...(summary.conclusions || []),
+        ...(summary.vitals || []),
     ].join(' ').toLowerCase();
 
-    const tagMap = {
-        'python': 'python', 'javascript': 'javascript', 'react': 'react',
-        'ai': 'ai', 'machine learning': 'ml', 'deep learning': 'deep-learning',
-        'api': 'api', 'database': 'database', 'css': 'css', 'html': 'html',
-        'node': 'nodejs', 'docker': 'docker', 'git': 'git',
-        'algorithm': 'algorithms', 'design': 'design', 'testing': 'testing',
-        'security': 'security', 'performance': 'performance',
-        'debug': 'debugging', 'architecture': 'architecture',
+    // Known tech keywords — still useful for canonical naming
+    const knownTags = {
+        'python': 'Python', 'javascript': 'JavaScript', 'typescript': 'TypeScript',
+        'react': 'React', 'vue': 'Vue', 'angular': 'Angular', 'svelte': 'Svelte',
+        'node': 'Node.js', 'express': 'Express', 'fastapi': 'FastAPI', 'django': 'Django', 'flask': 'Flask',
+        'rust': 'Rust', 'go ': 'Go', 'golang': 'Go', 'java ': 'Java', 'kotlin': 'Kotlin', 'swift': 'Swift',
+        'c++': 'C++', 'c#': 'C#', '.net': '.NET',
+        'sql': 'SQL', 'sqlite': 'SQLite', 'postgres': 'PostgreSQL', 'mongodb': 'MongoDB', 'redis': 'Redis',
+        'docker': 'Docker', 'kubernetes': 'Kubernetes', 'aws': 'AWS', 'gcp': 'GCP', 'azure': 'Azure',
+        'git ': 'Git', 'github': 'GitHub', 'ci/cd': 'CI/CD', 'terraform': 'Terraform',
+        'css': 'CSS', 'html': 'HTML', 'tailwind': 'Tailwind', 'sass': 'Sass',
+        'machine learning': 'ML', 'deep learning': 'Deep Learning', 'neural': 'ML',
+        'llm': 'LLM', 'gpt': 'LLM', 'transformer': 'ML', 'embedding': 'Embeddings',
+        'api': 'API', 'rest': 'REST', 'graphql': 'GraphQL', 'websocket': 'WebSocket',
+        'testing': 'Testing', 'debug': 'Debugging', 'performance': 'Performance',
+        'security': 'Security', 'auth': 'Auth', 'oauth': 'Auth', 'jwt': 'Auth',
+        'linux': 'Linux', 'windows': 'Windows', 'bash': 'Shell', 'powershell': 'Shell',
     };
-
-    for (const [keyword, tag] of Object.entries(tagMap)) {
-        if (text.includes(keyword)) tags.push(tag);
+    for (const [keyword, tag] of Object.entries(knownTags)) {
+        if (corpus.includes(keyword)) tags.add(tag);
     }
 
-    return tags.slice(0, 5); // Max 5 auto-tags
+    // Extract key nouns from the topic itself as tags (2+ word chunks)
+    const topic = (summary.main_topic || '').trim();
+    if (topic && tags.size < 3) {
+        // Use capitalized words from the topic that look like proper nouns or tech terms
+        const topicWords = topic.split(/\s+/).filter(w => w.length > 2);
+        for (const w of topicWords) {
+            if (/^[A-Z]/.test(w) && !['The', 'And', 'For', 'With', 'How', 'What', 'Why', 'When', 'Using', 'From', 'Into', 'About'].includes(w)) {
+                tags.add(w);
+            }
+            if (tags.size >= 5) break;
+        }
+    }
+
+    return [...tags].slice(0, 5);
 }
 
 // ─── Context Library ─────────────────────────────────────────────
@@ -399,10 +490,22 @@ function _renderContextCard(ctx) {
         month: 'short', day: 'numeric'
     });
     const statusBadge = _buildCardStatusBadge(ctx.status);
+    const starred = ctx.starred;
+    const checked = state.selectedIds.has(ctx.id) ? ' checked' : '';
+    const sourceBadge = _getSourceBadge(ctx.tags);
     return `
-        <div class="context-card" onclick="showDetail(${ctx.id})">
+        <div class="context-card${starred ? ' starred' : ''}" data-id="${ctx.id}" onclick="${state.selectMode ? `toggleSelectCard(${ctx.id})` : `showDetail(${ctx.id})`}">
+            ${state.selectMode ? `<input type="checkbox" class="card-checkbox" ${checked} onclick="event.stopPropagation(); toggleSelectCard(${ctx.id})" />` : ''}
             ${statusBadge}
-            <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
+            <div class="card-header-row">
+                <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    ${sourceBadge}
+                    ${!state.selectMode ? `<button class="card-star${starred ? ' active' : ''}" onclick="event.stopPropagation(); toggleStar(${ctx.id})" title="${starred ? 'Unpin' : 'Pin'}" aria-label="${starred ? 'Unpin context' : 'Pin context'}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </button>` : ''}
+                </div>
+            </div>
             ${(() => {
                 const ideas = summary.key_ideas || [];
                 const sub = ideas.length > 0 ? ideas[0] : (summary.snapshot || '');
@@ -411,9 +514,9 @@ function _renderContextCard(ctx) {
             <div class="card-tags">${tags}</div>
             <div class="card-meta">
                 <span>${date}</span>
-                <button class="card-delete" onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})" title="Delete">
+                ${!state.selectMode ? `<button class="card-delete" onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})" title="Delete">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                </button>
+                </button>` : ''}
             </div>
         </div>
     `;
@@ -432,12 +535,17 @@ async function loadContexts(query = '', append = false) {
     try {
         let url = query
             ? `${API}/api/contexts?q=${encodeURIComponent(query)}`
-            : `${API}/api/contexts?page=${state.libraryPage}&per_page=50`;
+            : `${API}/api/contexts?page=${state.libraryPage}&per_page=50&sort=${state.sortOrder}`;
 
         const res = await fetch(url);
         const data = await res.json();
         const contexts = data.contexts || data;
         state.libraryHasMore = !!data.has_more;
+
+        // Notify user when semantic search fell back to keyword
+        if (query && data.search_mode === 'keyword') {
+            showToast('Semantic search unavailable — showing keyword results', 'error');
+        }
 
         if (append) {
             state.contexts = state.contexts.concat(contexts);
@@ -541,25 +649,284 @@ function _applyTagFilter() {
     grid.innerHTML = filtered.map(_renderContextCard).join('');
 }
 
+let _deepSearchMode = false;
+
 function initSearch() {
     let debounce = null;
     const input = $('#search-input');
     input.addEventListener('input', () => {
         clearTimeout(debounce);
         state.activeTagFilter = null;
-        debounce = setTimeout(() => loadContexts(input.value.trim()), 300);
+        const q = input.value.trim();
+        if (_deepSearchMode && q.length >= 3) {
+            debounce = setTimeout(() => _runDeepSearch(q), 500);
+        } else {
+            _hideDeepResults();
+            debounce = setTimeout(() => loadContexts(q), 300);
+        }
+    });
+
+    // Enter key triggers deep search immediately
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && _deepSearchMode) {
+            clearTimeout(debounce);
+            const q = input.value.trim();
+            if (q.length >= 2) _runDeepSearch(q);
+        }
     });
 }
 
-async function deleteFromLibrary(id) {
-    if (!confirm('Delete this context?')) return;
+function toggleDeepSearch() {
+    _deepSearchMode = !_deepSearchMode;
+    const btn = $('#btn-deep-search');
+    btn.classList.toggle('active', _deepSearchMode);
+    btn.setAttribute('aria-pressed', _deepSearchMode ? 'true' : 'false');
+
+    const input = $('#search-input');
+    if (_deepSearchMode) {
+        input.placeholder = 'Deep search across all chunks…';
+        const q = input.value.trim();
+        if (q.length >= 3) _runDeepSearch(q);
+    } else {
+        input.placeholder = 'Search contexts...';
+        _hideDeepResults();
+        loadContexts(input.value.trim());
+    }
+}
+
+function _hideDeepResults() {
+    const container = $('#deep-search-results');
+    if (container) { container.style.display = 'none'; container.innerHTML = ''; }
+    $('#contexts-grid').style.display = 'grid';
+    $('#tag-filter-bar').style.display = '';
+}
+
+async function _runDeepSearch(query) {
+    const container = $('#deep-search-results');
+    const grid = $('#contexts-grid');
+    const tagBar = $('#tag-filter-bar');
+    const loadMore = $('#load-more-container');
+    const emptyState = $('#empty-state');
+
+    // Show loading
+    grid.style.display = 'none';
+    tagBar.style.display = 'none';
+    loadMore.style.display = 'none';
+    emptyState.style.display = 'none';
+    container.style.display = 'block';
+    container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Searching all chunks…</div>';
+
+    try {
+        const res = await fetch(`${API}/api/retrieve/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Search failed');
+        }
+        const data = await res.json();
+        _renderDeepResults(data, query);
+    } catch (err) {
+        container.innerHTML = `<div style="text-align:center;padding:40px 0;color:var(--danger)">${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function _renderDeepResults(data, query) {
+    const container = $('#deep-search-results');
+    if (!data.results || data.results.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">No matching chunks found across your conversations.</div>';
+        return;
+    }
+
+    let html = `<div class="deep-search-header">${data.total_chunks} chunks matched across ${data.results.length} conversation${data.results.length > 1 ? 's' : ''}</div>`;
+
+    for (const group of data.results) {
+        const date = new Date(group.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const tags = (group.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+        const scoreLabel = `${Math.round(group.best_score * 100)}% match`;
+
+        html += `<div class="deep-result-group">
+            <div class="deep-result-header" onclick="showDetail(${group.context_id})">
+                <div class="deep-result-title">${escapeHtml(group.title)}</div>
+                <div class="deep-result-meta">
+                    <span class="deep-score">${scoreLabel}</span>
+                    <span>${date}</span>
+                    ${tags}
+                </div>
+            </div>
+            <div class="deep-result-chunks">`;
+
+        for (const chunk of group.chunks) {
+            const excerpt = escapeHtml(chunk.text.length > 300 ? chunk.text.slice(0, 300) + '…' : chunk.text);
+            const badges = [];
+            if (chunk.has_code) badges.push('<span class="deep-badge">code</span>');
+            if (chunk.is_starred) badges.push('<span class="deep-badge starred">starred</span>');
+            html += `<div class="deep-chunk">
+                <div class="deep-chunk-score">${Math.round(chunk.score * 100)}%</div>
+                <div class="deep-chunk-text">${excerpt}${badges.length ? ' ' + badges.join('') : ''}</div>
+            </div>`;
+        }
+
+        html += `</div></div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function deleteFromLibrary(id) {
+    // P2-10: Undo delete — hide card immediately, commit after 5s
+    const ctx = state.contexts.find(c => c.id === id);
+    if (!ctx) return;
+
+    // Cancel any existing pending delete for this id
+    if (state.pendingDeletes.has(id)) {
+        clearTimeout(state.pendingDeletes.get(id).timer);
+        state.pendingDeletes.delete(id);
+    }
+
+    // Hide card from grid
+    const card = document.querySelector(`.context-card[data-id="${id}"]`);
+    if (card) {
+        card.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.95)';
+        setTimeout(() => card.style.display = 'none', 200);
+    }
+
+    // Show undo toast
+    const timer = setTimeout(() => _commitDelete(id), 5000);
+    state.pendingDeletes.set(id, { timer, ctx });
+    _showUndoToast(`"${ctx.title}" deleted`, () => {
+        // Undo: cancel timer, restore card
+        clearTimeout(timer);
+        state.pendingDeletes.delete(id);
+        if (card) {
+            card.style.display = '';
+            requestAnimationFrame(() => {
+                card.style.opacity = '1';
+                card.style.transform = 'scale(1)';
+            });
+        }
+        showToast('Delete undone', 'success');
+    });
+}
+
+async function _commitDelete(id) {
+    state.pendingDeletes.delete(id);
     try {
         await fetch(`${API}/api/contexts/${id}`, { method: 'DELETE' });
-        showToast('Context deleted', 'success');
-        loadContexts($('#search-input').value.trim());
+        // Remove from state
+        state.contexts = state.contexts.filter(c => c.id !== id);
     } catch (err) {
         showToast('Failed to delete', 'error');
+        // Reload to restore
+        loadContexts($('#search-input').value.trim());
     }
+}
+
+// ─── Star / Select / Bulk ────────────────────────────────────────
+async function toggleStar(id) {
+    try {
+        const res = await fetch(`${API}/api/contexts/${id}/star`, { method: 'POST' });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        const idx = state.contexts.findIndex(c => c.id === id);
+        if (idx !== -1) state.contexts[idx] = updated;
+        _rerenderGrid();
+    } catch {
+        showToast('Failed to toggle pin', 'error');
+    }
+}
+
+async function toggleStarDetail(id) {
+    try {
+        const res = await fetch(`${API}/api/contexts/${id}/star`, { method: 'POST' });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        state.currentContext = updated;
+        renderDetail(updated);
+    } catch {
+        showToast('Failed to toggle pin', 'error');
+    }
+}
+
+function toggleSelectMode() {
+    state.selectMode = !state.selectMode;
+    state.selectedIds.clear();
+    const bar = $('#bulk-actions-bar');
+    const btn = $('#btn-select-mode');
+    if (state.selectMode) {
+        bar.style.display = 'flex';
+        btn.classList.add('active');
+    } else {
+        bar.style.display = 'none';
+        btn.classList.remove('active');
+    }
+    _rerenderGrid();
+    _updateBulkCount();
+}
+
+function toggleSelectCard(id) {
+    if (state.selectedIds.has(id)) {
+        state.selectedIds.delete(id);
+    } else {
+        state.selectedIds.add(id);
+    }
+    // Update checkbox without full re-render
+    const card = document.querySelector(`.context-card[data-id="${id}"]`);
+    if (card) {
+        const cb = card.querySelector('.card-checkbox');
+        if (cb) cb.checked = state.selectedIds.has(id);
+    }
+    _updateBulkCount();
+}
+
+function selectAllCards() {
+    const filtered = state.activeTagFilter
+        ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
+        : state.contexts;
+    filtered.forEach(c => state.selectedIds.add(c.id));
+    _rerenderGrid();
+    _updateBulkCount();
+}
+
+async function bulkDelete() {
+    const count = state.selectedIds.size;
+    if (!count) return;
+    if (!confirm(`Delete ${count} context${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+
+    try {
+        const res = await fetch(`${API}/api/contexts/bulk-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: [...state.selectedIds] }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        showToast(`Deleted ${data.deleted} context${data.deleted > 1 ? 's' : ''}`, 'success');
+        state.selectMode = false;
+        state.selectedIds.clear();
+        $('#bulk-actions-bar').style.display = 'none';
+        $('#btn-select-mode').classList.remove('active');
+        loadContexts($('#search-input').value.trim());
+    } catch {
+        showToast('Bulk delete failed', 'error');
+    }
+}
+
+function _updateBulkCount() {
+    const el = $('#bulk-count');
+    if (el) el.textContent = `${state.selectedIds.size} selected`;
+}
+
+function _rerenderGrid() {
+    const grid = $('#contexts-grid');
+    const filtered = state.activeTagFilter
+        ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
+        : state.contexts;
+    grid.innerHTML = filtered.map(_renderContextCard).join('');
 }
 
 // ─── Context Detail ──────────────────────────────────────────────
@@ -585,6 +952,7 @@ async function showDetail(id) {
 }
 
 function renderDetail(ctx) {
+    _chunksLoaded = false; // Reset chunk viewer for new context
     const container = $('#detail-content');
     const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
     const tags = (ctx.tags || []).map(t =>
@@ -609,8 +977,16 @@ function renderDetail(ctx) {
 
     const statusInfo = _buildDetailStatusBanner(ctx.status);
 
+    const starredClass = ctx.starred ? ' active' : '';
+    const starFill = ctx.starred ? 'currentColor' : 'none';
+
     container.innerHTML = `
-        <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
+        <div class="detail-title-row">
+            <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
+            <button class="detail-star${starredClass}" onclick="toggleStarDetail(${ctx.id})" title="${ctx.starred ? 'Unpin' : 'Pin'}" aria-label="${ctx.starred ? 'Unpin context' : 'Pin context'}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="${starFill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+        </div>
         ${statusInfo}
         <div class="detail-meta">
             <span>${date}</span>
@@ -670,6 +1046,13 @@ function renderDetail(ctx) {
             <div class="original-chat-content" id="original-chat-box" style="display:none;">${escapeHtml(ctx.original_chat)}</div>
         </div>
 
+        <div class="chunks-section">
+            <button class="chunks-toggle" id="chunks-toggle" onclick="toggleChunkViewer(${ctx.id})">
+                <span class="chunks-toggle-icon" id="chunks-toggle-icon">▶</span> View Chunks
+            </button>
+            <div id="chunks-viewer-content" style="display:none;"></div>
+        </div>
+
         <div class="prompt-size-selector">
             <span class="prompt-size-label">Prompt size:</span>
             <button class="prompt-size-btn" data-size="compact" title="~2k chars — last exchange only, no code">Compact</button>
@@ -698,6 +1081,99 @@ function renderDetail(ctx) {
     // Hide prompt section
     $('#prompt-section').style.display = 'none';
 }
+
+// ─── P2-4: Chunk Viewer ──────────────────────────────────────────
+let _chunksLoaded = false;
+
+async function toggleChunkViewer(contextId) {
+    const content = $('#chunks-viewer-content');
+    const toggle = $('#chunks-toggle');
+    const icon = $('#chunks-toggle-icon');
+
+    if (content.style.display !== 'none') {
+        content.style.display = 'none';
+        toggle.classList.remove('open');
+        icon.textContent = '▶';
+        return;
+    }
+
+    toggle.classList.add('open');
+    icon.textContent = '▼';
+    content.style.display = 'block';
+
+    if (!_chunksLoaded) {
+        content.innerHTML = `
+            <div class="chunks-query-row">
+                <input type="text" class="chunks-query-input" id="chunks-query" placeholder="Enter a query to see similarity scores…" />
+                <button class="btn btn-secondary chunks-score-btn" id="chunks-score-btn" onclick="loadChunks(${contextId})">Score</button>
+            </div>
+            <div id="chunks-list-container"><div class="chunks-empty">Loading chunks…</div></div>
+        `;
+        await loadChunks(contextId);
+    }
+}
+
+async function loadChunks(contextId) {
+    const container = $('#chunks-list-container');
+    const queryInput = $('#chunks-query');
+    const query = queryInput ? queryInput.value.trim() : '';
+
+    container.innerHTML = '<div class="chunks-empty"><span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Loading…</div>';
+
+    try {
+        const url = query
+            ? `${API}/api/contexts/${contextId}/chunks?query=${encodeURIComponent(query)}`
+            : `${API}/api/contexts/${contextId}/chunks`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Failed to load chunks');
+        const data = await res.json();
+
+        if (!data.chunks || data.chunks.length === 0) {
+            container.innerHTML = '<div class="chunks-empty">No chunks stored for this context yet.</div>';
+            return;
+        }
+
+        _chunksLoaded = true;
+        let html = `<div class="chunks-summary">${data.total} chunks${query ? ' — scored against: "' + escapeHtml(query) + '"' : ''}</div><div class="chunks-list">`;
+
+        for (const ch of data.chunks) {
+            const badges = [];
+            if (ch.has_code) badges.push('<span class="chunk-badge code">code</span>');
+            if (ch.is_starred) badges.push('<span class="chunk-badge starred">★ important</span>');
+
+            const scoreHtml = ch.similarity !== null && ch.similarity !== undefined
+                ? (() => {
+                    const pct = Math.round(ch.similarity * 100);
+                    const color = pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : '#f87171';
+                    return `<div class="chunk-score-bar">
+                        <div class="chunk-score-track"><div class="chunk-score-fill" style="width:${pct}%;background:${color}"></div></div>
+                        <span class="chunk-score-label" style="color:${color}">${pct}%</span>
+                    </div>`;
+                })()
+                : '';
+
+            const text = ch.text.length > 300 ? ch.text.slice(0, 300) + '…' : ch.text;
+            const role = ch.role_hint ? `<div class="chunk-role">${escapeHtml(ch.role_hint)}</div>` : '';
+
+            html += `<div class="chunk-card">
+                <div class="chunk-card-header">
+                    <span class="chunk-index">#${ch.chunk_index}</span>
+                    <div class="chunk-badges">${badges.join('')}${scoreHtml}</div>
+                </div>
+                <div class="chunk-text">${escapeHtml(text)}</div>
+                ${role}
+            </div>`;
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<div class="chunks-empty" style="color:var(--danger)">${escapeHtml(err.message)}</div>`;
+    }
+}
+
+window.toggleChunkViewer = toggleChunkViewer;
+window.loadChunks = loadChunks;
 
 function toggleOriginalChat() {
     const box = $('#original-chat-box');
@@ -753,6 +1229,7 @@ function openEditModal() {
     $('#edit-title').value = ctx.title || '';
     $('#edit-tags').value = (ctx.tags || []).join(', ');
     $('#edit-topic').value = summary.main_topic || '';
+    $('#edit-notes').value = (ctx.important_notes || []).join('\n');
     $('#edit-modal').style.display = 'flex';
     
     trapFocus($('#edit-modal').querySelector('.modal'), $('#edit-btn'));
@@ -771,6 +1248,7 @@ async function saveEdit() {
     const title = $('#edit-title').value.trim();
     const tags = $('#edit-tags').value.split(',').map(t => t.trim()).filter(Boolean);
     const mainTopic = $('#edit-topic').value.trim();
+    const importantNotes = $('#edit-notes').value.split('\n').map(l => l.trim()).filter(Boolean);
 
     const summary = typeof ctx.summary === 'string' ? {} : { ...ctx.summary };
     if (mainTopic) summary.main_topic = mainTopic;
@@ -779,7 +1257,7 @@ async function saveEdit() {
         const res = await fetch(`${API}/api/contexts/${ctx.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, tags, summary }),
+            body: JSON.stringify({ title, tags, summary, important_notes: importantNotes }),
         });
 
         if (!res.ok) throw new Error('Failed to update');
@@ -794,19 +1272,34 @@ async function saveEdit() {
 }
 
 // ─── Delete ──────────────────────────────────────────────────────
-async function deleteCurrentContext() {
+function deleteCurrentContext() {
     const ctx = state.currentContext;
     if (!ctx) return;
-    if (!confirm('Are you sure you want to delete this context?')) return;
 
-    try {
-        await fetch(`${API}/api/contexts/${ctx.id}`, { method: 'DELETE' });
-        showToast('Context deleted', 'success');
-        state.currentContext = null;
-        navigateTo('library');
-    } catch (err) {
-        showToast('Failed to delete', 'error');
+    // P2-10: Undo delete from detail view
+    if (state.pendingDeletes.has(ctx.id)) {
+        clearTimeout(state.pendingDeletes.get(ctx.id).timer);
+        state.pendingDeletes.delete(ctx.id);
     }
+
+    state.currentContext = null;
+    navigateTo('library');
+
+    const timer = setTimeout(() => _commitDelete(ctx.id), 5000);
+    state.pendingDeletes.set(ctx.id, { timer, ctx });
+
+    // Remove from visible list immediately
+    state.contexts = state.contexts.filter(c => c.id !== ctx.id);
+    _rerenderGrid();
+
+    _showUndoToast(`"${ctx.title}" deleted`, () => {
+        clearTimeout(timer);
+        state.pendingDeletes.delete(ctx.id);
+        // Restore to state & re-render
+        state.contexts.unshift(ctx);
+        _rerenderGrid();
+        showToast('Delete undone', 'success');
+    });
 }
 
 // ─── Export ──────────────────────────────────────────────────────
@@ -927,6 +1420,37 @@ function showToast(message, type = 'success') {
     }
 }
 
+// ─── P2-10: Undo Toast ───────────────────────────────────────────
+function _showUndoToast(message, onUndo) {
+    const stack = $('#toast-stack');
+    const toast = document.createElement('div');
+    toast.className = 'toast undo';
+    toast.innerHTML = `
+        <span class="toast-icon">🗑️</span>
+        <span class="toast-message">${escapeHtml(message)}</span>
+        <button class="toast-undo-btn">Undo</button>
+        <div class="toast-countdown"></div>
+    `;
+    stack.appendChild(toast);
+
+    const undoBtn = toast.querySelector('.toast-undo-btn');
+    undoBtn.addEventListener('click', () => {
+        if (onUndo) onUndo();
+        toast.remove();
+    });
+
+    // Auto-remove after 5.3s (a bit after the countdown animation)
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(40px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 5300);
+
+    while (stack.children.length > 5) {
+        stack.firstChild.remove();
+    }
+}
+
 // ─── Status Indicator ────────────────────────────────────────────
 function updateStatusIndicator(online) {
     const dot = $('.status-dot');
@@ -1041,22 +1565,130 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
         <div class="settings-model-card-left">
             <div class="settings-model-name">${escapeHtml(label)}</div>
             <div class="settings-model-desc">${escapeHtml(desc)}</div>
+            <div class="settings-download-area" id="dl-area-${item.id.replace(/[:.]/g, '-')}" style="display:none;"></div>
         </div>
         <div class="settings-model-card-right">
-            ${statusBadge}
+            <span class="settings-status-badge" id="status-badge-${item.id.replace(/[:.]/g, '-')}">${statusBadge.replace(/<\/?span[^>]*>/g, '')}</span>
             ${rec ? '<span class="settings-model-badge">Recommended</span>' : ''}
             <span class="settings-model-size">${escapeHtml(size)}</span>
             <div class="settings-model-radio"></div>
         </div>`;
+
+    // Apply correct class to status badge
+    const badge = card.querySelector('.settings-status-badge');
+    if (inst) {
+        badge.className = 'settings-installed-badge';
+        badge.textContent = '✓ Installed';
+    } else {
+        badge.className = 'settings-not-installed-badge';
+        badge.textContent = 'Not downloaded';
+    }
 
     card.addEventListener('click', () => {
         document.querySelectorAll(`#${containerId} .settings-model-card`)
             .forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         onSelect(item.id);
+
+        // P2-3: Auto-pull if not installed
+        if (!inst && !card.classList.contains('downloading')) {
+            _pullModelInline(item.id, card);
+        }
     });
 
     return card;
+}
+
+// ─── P2-3: Inline Model Download ─────────────────────────────────
+async function _pullModelInline(modelId, card) {
+    const safeId = modelId.replace(/[:.]/g, '-');
+    const dlArea = card.querySelector(`#dl-area-${safeId}`);
+    const badge = card.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+
+    card.classList.add('downloading');
+    if (badge) {
+        badge.className = 'settings-not-installed-badge';
+        badge.textContent = 'Downloading…';
+    }
+
+    if (dlArea) {
+        dlArea.style.display = 'block';
+        dlArea.innerHTML = `
+            <div class="settings-download-bar-bg"><div class="settings-download-bar-fill" id="dl-fill-${safeId}"></div></div>
+            <div class="settings-download-status" id="dl-status-${safeId}">Starting download…</div>
+        `;
+    }
+
+    try {
+        const res = await fetch(`${API}/api/setup/pull-model-stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelId }),
+        });
+
+        if (!res.ok) throw new Error('Pull request failed');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let lastStatus = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    const fill = document.getElementById(`dl-fill-${safeId}`);
+                    const statusEl = document.getElementById(`dl-status-${safeId}`);
+
+                    if (data.error) throw new Error(data.error);
+
+                    lastStatus = data.status || '';
+
+                    if (data.total && data.completed) {
+                        const pct = Math.round((data.completed / data.total) * 100);
+                        if (fill) fill.style.width = pct + '%';
+                        const mb = (data.completed / (1024 * 1024)).toFixed(0);
+                        const totalMb = (data.total / (1024 * 1024)).toFixed(0);
+                        if (statusEl) statusEl.textContent = `${data.status || 'Downloading'} — ${mb} / ${totalMb} MB (${pct}%)`;
+                    } else if (statusEl) {
+                        statusEl.textContent = data.status || 'Processing…';
+                    }
+                } catch (e) {
+                    if (e.message && e.message !== line) {
+                        throw e;
+                    }
+                }
+            }
+        }
+
+        // Success
+        card.classList.remove('downloading');
+        if (badge) {
+            badge.className = 'settings-installed-badge';
+            badge.textContent = '✓ Installed';
+        }
+        if (dlArea) dlArea.style.display = 'none';
+        showToast(`Model "${modelId}" downloaded!`, 'success');
+
+    } catch (err) {
+        card.classList.remove('downloading');
+        if (badge) {
+            badge.className = 'settings-not-installed-badge';
+            badge.textContent = 'Download failed';
+        }
+        const statusEl = document.getElementById(`dl-status-${safeId}`);
+        if (statusEl) {
+            statusEl.className = 'settings-download-error';
+            statusEl.textContent = err.message || 'Download failed';
+        }
+    }
 }
 
 function _renderSettingsCards() {
@@ -1198,11 +1830,26 @@ function releaseFocus(container) {
 // Global Escape key — closes whichever modal is open
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    const editModal     = $('#edit-modal');
-    const settingsModal = $('#settings-modal');
-    if (editModal     && editModal.style.display     !== 'none') closeEditModal();
-    if (settingsModal && settingsModal.style.display !== 'none') closeSettingsModal();
+    const editModal      = $('#edit-modal');
+    const settingsModal  = $('#settings-modal');
+    const shortcutsModal = $('#shortcuts-modal');
+    if (shortcutsModal && shortcutsModal.style.display !== 'none') { closeShortcutsModal(); return; }
+    if (editModal      && editModal.style.display      !== 'none') closeEditModal();
+    if (settingsModal  && settingsModal.style.display   !== 'none') closeSettingsModal();
 });
+
+// ─── P2-9: Keyboard Shortcuts Modal ──────────────────────────────
+function openShortcutsModal() {
+    const modal = $('#shortcuts-modal');
+    modal.style.display = 'flex';
+    trapFocus(modal.querySelector('.shortcuts-modal'), $('#btn-shortcuts'));
+}
+
+function closeShortcutsModal() {
+    const modal = $('#shortcuts-modal');
+    releaseFocus(modal.querySelector('.shortcuts-modal'));
+    modal.style.display = 'none';
+}
 
 // ─── Init ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -1252,6 +1899,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
     if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
 
+    // Sort control
+    if ($('#sort-select')) {
+        $('#sort-select').addEventListener('change', (e) => {
+            state.sortOrder = e.target.value;
+            loadContexts($('#search-input').value.trim());
+        });
+    }
+
+    // Select mode & bulk actions
+    if ($('#btn-select-mode')) $('#btn-select-mode').addEventListener('click', toggleSelectMode);
+    if ($('#btn-select-all')) $('#btn-select-all').addEventListener('click', selectAllCards);
+    if ($('#btn-bulk-delete')) $('#btn-bulk-delete').addEventListener('click', bulkDelete);
+    if ($('#btn-cancel-select')) $('#btn-cancel-select').addEventListener('click', toggleSelectMode);
+
+    // Deep search toggle
+    if ($('#btn-deep-search')) $('#btn-deep-search').addEventListener('click', toggleDeepSearch);
+
     // Edit modal
     $('#cancel-edit-btn').addEventListener('click', closeEditModal);
     $('#save-edit-btn').addEventListener('click', saveEdit);
@@ -1263,6 +1927,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Theme toggle
     if ($('#btn-theme-toggle')) $('#btn-theme-toggle').addEventListener('click', toggleTheme);
+
+    // Shortcuts modal
+    if ($('#btn-shortcuts')) $('#btn-shortcuts').addEventListener('click', openShortcutsModal);
+    if ($('#shortcuts-modal-close')) $('#shortcuts-modal-close').addEventListener('click', closeShortcutsModal);
+    if ($('#shortcuts-modal')) $('#shortcuts-modal').addEventListener('click', (e) => {
+        if (e.target === $('#shortcuts-modal')) closeShortcutsModal();
+    });
 
     // Settings modal
     $('#btn-settings').addEventListener('click', openSettingsModal);
@@ -1281,6 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Esc — close modals
         if (e.key === 'Escape') {
+            if ($('#shortcuts-modal').style.display !== 'none') { closeShortcutsModal(); return; }
             if ($('#edit-modal').style.display !== 'none') { closeEditModal(); return; }
             if ($('#settings-modal').style.display !== 'none') { closeSettingsModal(); return; }
             if ($('#prompt-section') && $('#prompt-section').style.display !== 'none') {
@@ -1291,6 +1963,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Shortcuts below only fire when not typing in an input
         if (inInput) return;
 
+        // ? — open keyboard shortcuts cheat sheet
+        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+            e.preventDefault();
+            const modal = $('#shortcuts-modal');
+            if (modal.style.display !== 'none') {
+                closeShortcutsModal();
+            } else {
+                openShortcutsModal();
+            }
+            return;
+        }
+
         // / — focus search (when in library view)
         if (e.key === '/' && state.view === 'library') {
             e.preventDefault();
@@ -1299,6 +1983,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Backspace — go back from detail to library
         if (e.key === 'Backspace' && state.view === 'detail') {
+            navigateTo('library');
+        }
+
+        // N — go to New Chat
+        if (e.key === 'n' || e.key === 'N') {
+            navigateTo('input');
+        }
+
+        // L — go to Library
+        if (e.key === 'l' || e.key === 'L') {
             navigateTo('library');
         }
     });

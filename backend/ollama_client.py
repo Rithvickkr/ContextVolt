@@ -36,7 +36,13 @@ def _load_default_model() -> str:
         pass
     return "qwen2.5:3b"
 
-DEFAULT_MODEL = _load_default_model()
+def _get_default_model() -> str:
+    """Read LLM model from config at call time (supports runtime changes without restart)."""
+    return _load_default_model()
+
+# Module-level constant for backward compatibility — used as the initial/fallback value.
+# All internal functions should call _get_default_model() instead.
+DEFAULT_MODEL = _load_default_model()  # exported for setup_status endpoint
 
 _CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
 
@@ -219,8 +225,9 @@ def check_ollama_running() -> bool:
         return False
 
 
-def check_model_available(model: str = DEFAULT_MODEL) -> bool:
+def check_model_available(model: str | None = None) -> bool:
     """Check if the specified model is already pulled."""
+    model = model or _get_default_model()
     try:
         r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
         if r.status_code != 200:
@@ -236,11 +243,12 @@ def check_model_available(model: str = DEFAULT_MODEL) -> bool:
         return False
 
 
-def get_pull_progress(model: str = DEFAULT_MODEL) -> dict:
+def get_pull_progress(model: str | None = None) -> dict:
     """
     Get a snapshot of whether the model is available.
     Returns {"available": bool, "model": str}.
     """
+    model = model or _get_default_model()
     available = check_model_available(model)
     return {"available": available, "model": model}
 
@@ -760,13 +768,14 @@ def _empty_summary() -> dict:
     }
 
 
-def _extract_chunk(text: str, model: str = DEFAULT_MODEL, label: str = "") -> str:
+def _extract_chunk(text: str, model: str | None = None, label: str = "") -> str:
     """Run constrained fact-extraction on a single chunk. Returns raw extraction text.
 
     Asks the model only to LIST — no synthesis, no compression. This is reliable
     even on small models because it's constrained extraction, not open-ended generation.
     Returns an empty string on failure so callers can skip silently.
     """
+    model = model or _get_default_model()
     prompt = EXTRACT_PROMPT.format(conversation=text[:_CHUNK_LIMIT])  # type: ignore[index]
     try:
         r = _call_generate(
@@ -786,7 +795,7 @@ def _extract_chunk(text: str, model: str = DEFAULT_MODEL, label: str = "") -> st
 
 def _synthesize(
     merged_facts: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     label: str = "",
     first_user: str = "",
     last_asst: str = "",
@@ -801,6 +810,7 @@ def _synthesize(
     and displayed verbatim in the continuation prompt. The summary must reflect the full
     conversation without priority overrides.
     """
+    model = model or _get_default_model()
     prompt = SYNTHESIZE_PROMPT.format(
         first_user=first_user[:800] or "(not available)",   # type: ignore[index]
         last_asst=last_asst[:800] or "(not available)",     # type: ignore[index]
@@ -835,7 +845,7 @@ def _synthesize(
 
 def summarize_conversation(
     text: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     important_snippets: list[str] | None = None,
 ) -> dict:
     """
@@ -860,6 +870,7 @@ def summarize_conversation(
       They do NOT influence the summary — keeping the summary a balanced representation
       of the full conversation.
     """
+    model = model or _get_default_model()
     first_user, last_asst = _conversation_anchors(text)
 
     # Short conversation: synthesize directly from raw text
@@ -899,6 +910,68 @@ def summarize_conversation(
     # SYNTHESIZE: one final call from clean merged facts
     return _synthesize(merged_facts, model=model, label="Final",
                        first_user=first_user, last_asst=last_asst)
+
+
+def summarize_conversation_streaming(
+    text: str,
+    model: str | None = None,
+    important_snippets: list[str] | None = None,
+):
+    """Generator version of summarize_conversation that yields progress dicts.
+
+    Each yield is a dict: {"step": str, "done": int, "total": int}
+    The final yield includes "result": <summary dict>.
+    """
+    import json as _json
+    model = model or _get_default_model()
+    first_user, last_asst = _conversation_anchors(text)
+
+    if len(text) <= _CHAR_LIMIT:
+        yield {"step": "Synthesizing summary…", "done": 0, "total": 1}
+        result = _synthesize(text, model=model, label="Single",
+                             first_user=first_user, last_asst=last_asst)
+        yield {"step": "Done", "done": 1, "total": 1, "result": result}
+        return
+
+    messages = _parse_messages(text)
+    anchor_count = 2
+    opening, closing = _anchor_text(messages, anchor_count)
+    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
+    middle_text = '\n\n'.join(middle_messages)
+    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
+
+    total_steps = 1 + len(middle_chunks) + (1 if closing else 0) + 1  # opening + middles + closing + synthesize
+    done = 0
+
+    all_extractions: list[str] = []
+
+    yield {"step": "Extracting from opening…", "done": done, "total": total_steps}
+    opening_facts = _extract_chunk(opening, model, label="Opening")
+    if opening_facts:
+        all_extractions.append(f"[OPENING]\n{opening_facts}")
+    done += 1
+
+    for idx, chunk in enumerate(middle_chunks):
+        yield {"step": f"Extracting section {idx+1}/{len(middle_chunks)}…", "done": done, "total": total_steps}
+        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
+        if facts:
+            all_extractions.append(f"[SECTION {idx+1}]\n{facts}")
+        done += 1
+
+    if closing:
+        yield {"step": "Extracting from closing…", "done": done, "total": total_steps}
+        closing_facts = _extract_chunk(closing, model, label="Closing")
+        if closing_facts:
+            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{closing_facts}")
+        done += 1
+
+    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:_CHAR_LIMIT]
+
+    yield {"step": "Synthesizing final summary…", "done": done, "total": total_steps}
+    result = _synthesize(merged_facts, model=model, label="Final",
+                         first_user=first_user, last_asst=last_asst)
+    done += 1
+    yield {"step": "Done", "done": done, "total": total_steps, "result": result}
 
 
 # EMBED_MODEL kept for backward compatibility — runtime resolution via _get_embed_model()
@@ -1340,8 +1413,9 @@ def _call_generate(model: str, prompt: str, options: dict, timeout: int = 180) -
     return r
 
 
-def _summarize_single(text: str, model: str = DEFAULT_MODEL, label: str = "") -> dict:
+def _summarize_single(text: str, model: str | None = None, label: str = "") -> dict:
     """Summarize a single chunk of text."""
+    model = model or _get_default_model()
     prompt = SUMMARIZE_PROMPT.format(conversation=text[:_CHAR_LIMIT])  # type: ignore[index]
 
     try:

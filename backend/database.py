@@ -61,6 +61,13 @@ def init_db():
     except Exception:
         pass  # column already exists
 
+    # Migration: add starred column for pinned contexts
+    try:
+        conn.execute("ALTER TABLE contexts ADD COLUMN starred INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
     # Chunks table for embedding-based retrieval
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
@@ -106,6 +113,7 @@ def _row_to_dict(row):
             d["important_notes"] = []
     else:
         d["important_notes"] = []
+    d["starred"] = bool(d.get("starred"))
     return d  # type: ignore[return-value]
 
 
@@ -153,13 +161,23 @@ def get_all_contexts() -> list[dict]:
     return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
 
 
-def get_contexts_paginated(page: int = 1, per_page: int = 50) -> dict:
-    """Return a page of contexts with total count for pagination."""
+def get_contexts_paginated(page: int = 1, per_page: int = 50, sort: str = "newest") -> dict:
+    """Return a page of contexts with total count for pagination.
+
+    sort options: newest (default), oldest, alpha, starred-first is always applied.
+    """
     conn = _get_conn()
     total = conn.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
     offset = (page - 1) * per_page
+
+    order_clause = {
+        "newest": "starred DESC, created_at DESC",
+        "oldest": "starred DESC, created_at ASC",
+        "alpha":  "starred DESC, title COLLATE NOCASE ASC",
+    }.get(sort, "starred DESC, created_at DESC")
+
     rows = conn.execute(
-        "SELECT * FROM contexts ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        f"SELECT * FROM contexts ORDER BY {order_clause} LIMIT ? OFFSET ?",
         (per_page, offset),
     ).fetchall()
     conn.close()
@@ -202,6 +220,10 @@ def update_context(context_id: int, **kwargs) -> dict | None:
     if "status" in kwargs:
         updates.append("status = ?")
         params.append(kwargs["status"])
+    if "important_notes" in kwargs:
+        updates.append("important_notes = ?")
+        notes = kwargs["important_notes"]
+        params.append(json.dumps(notes) if isinstance(notes, list) else notes)
 
     if not updates:
         conn.close()
@@ -212,6 +234,19 @@ def update_context(context_id: int, **kwargs) -> dict | None:
     params.append(context_id)
 
     conn.execute(f"UPDATE contexts SET {', '.join(updates)} WHERE id = ?", params)
+    conn.commit()
+    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
+    conn.close()
+    return _row_to_dict(row)
+
+
+def toggle_context_starred(context_id: int) -> dict | None:
+    """Toggle the starred state of a context. Returns updated context."""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE contexts SET starred = CASE WHEN starred = 1 THEN 0 ELSE 1 END WHERE id = ?",
+        (context_id,),
+    )
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
     conn.close()

@@ -46,6 +46,7 @@ class ContextUpdate(BaseModel):
     title: str | None = None
     summary: SummaryData | None = None
     tags: list[str] | None = None
+    important_notes: list[str] | None = None
 
 
 class ContextResponse(BaseModel):

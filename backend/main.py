@@ -29,10 +29,12 @@ from backend.database import (
     search_contexts_semantic,
     search_chunks_semantic,
     set_context_embedding,
+    toggle_context_starred,
 )
 from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest, EmbedModelSelect, ModelSelect
 from backend.ollama_client import (
     summarize_conversation,
+    summarize_conversation_streaming,
     generate_continuation_prompt,
     build_hybrid_prompt,
     chunk_conversation,
@@ -109,13 +111,15 @@ def health():
 @app.get("/api/setup/status")
 def setup_status():
     """Report readiness of all services for the Setup Wizard UI."""
+    from backend.ollama_client import _get_default_model
+    current_model = _get_default_model()
     ollama_running = check_ollama_running()
-    model_ready = check_model_available(DEFAULT_MODEL) if ollama_running else False
+    model_ready = check_model_available(current_model) if ollama_running else False
     return {
         "backend": True,
         "ollama_running": ollama_running,
         "model_ready": model_ready,
-        "model_name": DEFAULT_MODEL,
+        "model_name": current_model,
     }
 
 
@@ -288,6 +292,40 @@ def pull_embed_model():
         raise HTTPException(status_code=503, detail="Ollama CLI not found")
 
 
+@app.post("/api/setup/pull-model-stream")
+def pull_model_stream(body: ModelSelect):
+    """Stream Ollama pull progress for a model as NDJSON.
+
+    Each line: {"status": "downloading", "completed": bytes, "total": bytes}
+    Final line: {"status": "success"}
+    """
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+
+    import requests as _req
+    import json as _json
+
+    def _stream():
+        try:
+            resp = _req.post(
+                "http://localhost:11434/api/pull",
+                json={"name": body.model, "stream": True},
+                stream=True,
+                timeout=600,
+            )
+            for line in resp.iter_lines():
+                if line:
+                    try:
+                        data = _json.loads(line)
+                        yield _json.dumps(data) + "\n"
+                    except Exception:
+                        pass
+        except Exception as e:
+            yield _json.dumps({"status": "error", "error": str(e)}) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
 # ---------------------------------------------------------------------------
 # Summarization
 # ---------------------------------------------------------------------------
@@ -319,6 +357,28 @@ def api_summarize(req: SummarizeRequest):
         raise HTTPException(status_code=504, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Summarization failed: {str(e)}")
+
+
+@app.post("/api/summarize/stream")
+def api_summarize_stream(req: SummarizeRequest):
+    """Streaming version of /api/summarize — sends NDJSON progress lines."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+    if not check_model_available():
+        raise HTTPException(status_code=503, detail="Model not available")
+
+    import json as _json
+
+    def _stream():
+        try:
+            for event in summarize_conversation_streaming(req.text):
+                yield _json.dumps(event) + "\n"
+        except Exception as e:
+            yield _json.dumps({"error": str(e)}) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
 @app.post("/api/capture")
@@ -478,6 +538,7 @@ def api_list_contexts(
     q: str = Query(default="", description="Search query"),
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=50, ge=1, le=200, description="Items per page"),
+    sort: str = Query(default="newest", description="Sort order: newest, oldest, alpha"),
 ):
     """List contexts with pagination. Uses semantic search when query provided."""
     if q:
@@ -485,10 +546,33 @@ def api_list_contexts(
         if vec:
             results = search_contexts_semantic(vec)
             if results:
-                return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False}
+                return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False, "search_mode": "semantic"}
         results = search_contexts(q)
-        return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False}
-    return get_contexts_paginated(page, per_page)
+        return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False, "search_mode": "keyword"}
+    return get_contexts_paginated(page, per_page, sort=sort)
+
+
+@app.post("/api/contexts/{context_id}/star")
+def api_toggle_star(context_id: int):
+    """Toggle the starred/pinned state of a context."""
+    result = toggle_context_starred(context_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Context not found")
+    return result
+
+
+@app.post("/api/contexts/bulk-delete")
+def api_bulk_delete(body: dict):
+    """Delete multiple contexts by ID list. Body: {"ids": [1, 2, 3]}"""
+    ids = body.get("ids", [])
+    if not ids or not isinstance(ids, list):
+        raise HTTPException(status_code=400, detail="ids list required")
+    deleted = 0
+    for cid in ids:
+        delete_chunks_by_context(cid)
+        if delete_context(cid):
+            deleted += 1
+    return {"deleted": deleted, "requested": len(ids)}
 
 
 @app.get("/api/contexts/{context_id}")
@@ -514,6 +598,8 @@ def api_update_context(context_id: int, updates: ContextUpdate):
         kwargs["summary"] = updates.summary.model_dump()
     if updates.tags is not None:
         kwargs["tags"] = updates.tags
+    if updates.important_notes is not None:
+        kwargs["important_notes"] = updates.important_notes
 
     result = update_context(context_id, **kwargs)
     return result
@@ -527,6 +613,49 @@ def api_delete_context(context_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail="Context not found")
     return {"status": "deleted", "id": context_id}
+
+
+@app.get("/api/contexts/{context_id}/chunks")
+def api_get_chunks(
+    context_id: int,
+    query: str = Query(default="", description="Optional query for similarity scoring"),
+):
+    """Return all chunks for a context, optionally scored against a query."""
+    ctx = get_context(context_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+
+    chunks = get_chunks_by_context(context_id)
+
+    # If a query is provided, compute similarity scores
+    if query.strip():
+        query_vec = embed_text(query.strip())
+        if query_vec:
+            import json as _json
+            for ch in chunks:
+                try:
+                    vec = _json.loads(ch.get("embedding") or "null")
+                    if vec:
+                        from backend.database import _cosine_similarity
+                        ch["similarity"] = round(_cosine_similarity(query_vec, vec), 4)
+                    else:
+                        ch["similarity"] = None
+                except Exception:
+                    ch["similarity"] = None
+            # Sort by similarity descending
+            chunks.sort(key=lambda c: c.get("similarity") or 0.0, reverse=True)
+        else:
+            for ch in chunks:
+                ch["similarity"] = None
+    else:
+        for ch in chunks:
+            ch["similarity"] = None
+
+    # Strip embedding vectors from response (large)
+    for ch in chunks:
+        ch.pop("embedding", None)
+
+    return {"context_id": context_id, "chunks": chunks, "total": len(chunks)}
 
 
 @app.post("/api/contexts/embed-all")
@@ -671,6 +800,70 @@ def api_cross_retrieve(body: PromptRequest):
         prompt_size=body.size,
     )
     return {"prompt": prompt, "mode": "retrieval", "chunks_found": len(top_chunks)}
+
+
+@app.post("/api/retrieve/search")
+def api_cross_search(body: PromptRequest):
+    """Search across ALL conversations and return raw chunk results grouped by context.
+
+    Returns structured data for the cross-context search UI (not a prompt).
+    """
+    if not body.query or not body.query.strip():
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    query_vec = embed_text(body.query.strip())
+    if not query_vec:
+        raise HTTPException(status_code=503, detail="Embedding model not available")
+
+    top_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=20)
+    if not top_chunks:
+        return {"results": [], "query": body.query.strip(), "total_chunks": 0}
+
+    from backend.database import get_context as _get_ctx
+    context_cache: dict = {}
+    for ch in top_chunks:
+        cid = ch.get("context_id")
+        if cid and cid not in context_cache:
+            ctx = _get_ctx(cid)
+            if ctx:
+                tags = ctx.get("tags", [])
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(",")]
+                context_cache[cid] = {
+                    "id": cid,
+                    "title": ctx.get("title", ""),
+                    "tags": tags,
+                    "created_at": ctx.get("created_at", ""),
+                }
+
+    # Group chunks by context
+    groups: dict = {}
+    for ch in top_chunks:
+        cid = ch.get("context_id")
+        if cid not in groups:
+            meta = context_cache.get(cid, {})
+            groups[cid] = {
+                "context_id": cid,
+                "title": meta.get("title", "Unknown"),
+                "tags": meta.get("tags", []),
+                "created_at": meta.get("created_at", ""),
+                "chunks": [],
+                "best_score": 0,
+            }
+        score = ch.get("_score", 0)
+        groups[cid]["chunks"].append({
+            "text": ch.get("text", "")[:500],
+            "score": round(score, 3),
+            "chunk_index": ch.get("chunk_index", 0),
+            "has_code": ch.get("has_code", False),
+            "is_starred": ch.get("is_starred", False),
+        })
+        if score > groups[cid]["best_score"]:
+            groups[cid]["best_score"] = round(score, 3)
+
+    # Sort groups by best chunk score
+    sorted_groups = sorted(groups.values(), key=lambda g: g["best_score"], reverse=True)
+    return {"results": sorted_groups, "query": body.query.strip(), "total_chunks": len(top_chunks)}
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,8 @@ from backend.database import (
     search_chunks_semantic,
     set_context_embedding,
     toggle_context_starred,
+    update_chunk_embedding,
+    search_chunks_keyword,
 )
 from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest, EmbedModelSelect, ModelSelect
 from backend.ollama_client import (
@@ -714,21 +716,39 @@ def api_chunk_all(force: bool = Query(default=False, description="Delete and re-
         for i, ctx in enumerate(contexts, start=1):
             cid = ctx.get("id")
             existing_chunks = get_chunks_by_context(cid)
-            if existing_chunks and not force:
+            # Check if any existing chunks are missing embeddings
+            unembedded = [ch for ch in existing_chunks if not ch.get("embedding")]
+            if existing_chunks and not force and not unembedded:
                 skipped += 1
             else:
                 try:
                     chat = ctx.get("original_chat", "")
                     if chat.strip():
-                        # Delete old chunks if force re-embedding
-                        if existing_chunks and force:
-                            delete_chunks_by_context(cid)
-                        notes = ctx.get("important_notes") or []
-                        chunks = chunk_conversation(chat, starred_snippets=notes)
-                        chunks = embed_chunks(chunks)
-                        if chunks:
-                            create_chunks(cid, chunks)
-                        # Re-embed the context-level vector with new model too
+                        if force:
+                            # Full re-chunk and re-embed
+                            if existing_chunks:
+                                delete_chunks_by_context(cid)
+                            notes = ctx.get("important_notes") or []
+                            chunks = chunk_conversation(chat, starred_snippets=notes)
+                            chunks = embed_chunks(chunks)
+                            if chunks:
+                                create_chunks(cid, chunks)
+                        elif unembedded:
+                            # Patch only the chunks that are missing embeddings
+                            texts = [ch["text"] for ch in unembedded]
+                            embedded = embed_chunks([{"text": t} for t in texts])
+                            for ch, result in zip(unembedded, embedded):
+                                vec = result.get("embedding")
+                                if vec:
+                                    update_chunk_embedding(ch["id"], vec)
+                        else:
+                            # No existing chunks at all — create from scratch
+                            notes = ctx.get("important_notes") or []
+                            chunks = chunk_conversation(chat, starred_snippets=notes)
+                            chunks = embed_chunks(chunks)
+                            if chunks:
+                                create_chunks(cid, chunks)
+                        # Re-embed the context-level vector too
                         _try_embed_context(cid, ctx.get("summary", {}))
                         updated += 1
                     else:
@@ -811,13 +831,22 @@ def api_cross_search(body: PromptRequest):
     if not body.query or not body.query.strip():
         raise HTTPException(status_code=400, detail="Query is required")
 
-    query_vec = embed_text(body.query.strip())
-    if not query_vec:
-        raise HTTPException(status_code=503, detail="Embedding model not available")
+    query_words = len(body.query.strip().split())
+    MIN_SCORE = 0.65 if query_words <= 2 else 0.55
+    search_mode = "semantic"
 
-    top_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=20)
+    query_vec = embed_text(body.query.strip())
+    if query_vec:
+        top_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=20)
+        top_chunks = [ch for ch in top_chunks if ch.get("_score", 0) >= MIN_SCORE]
+
+    if not query_vec or not top_chunks:
+        # Semantic unavailable or scored below threshold — fall back to keyword search
+        top_chunks = search_chunks_keyword(body.query.strip(), top_k=20)
+        search_mode = "keyword"
+
     if not top_chunks:
-        return {"results": [], "query": body.query.strip(), "total_chunks": 0}
+        return {"results": [], "query": body.query.strip(), "total_chunks": 0, "low_confidence": True, "search_mode": search_mode}
 
     from backend.database import get_context as _get_ctx
     context_cache: dict = {}
@@ -850,20 +879,20 @@ def api_cross_search(body: PromptRequest):
                 "chunks": [],
                 "best_score": 0,
             }
-        score = ch.get("_score", 0)
+        score = ch.get("_score") or 0
         groups[cid]["chunks"].append({
             "text": ch.get("text", "")[:500],
-            "score": round(score, 3),
+            "score": round(score, 3) if score else None,
             "chunk_index": ch.get("chunk_index", 0),
             "has_code": ch.get("has_code", False),
             "is_starred": ch.get("is_starred", False),
         })
-        if score > groups[cid]["best_score"]:
+        if score and score > groups[cid]["best_score"]:
             groups[cid]["best_score"] = round(score, 3)
 
     # Sort groups by best chunk score
     sorted_groups = sorted(groups.values(), key=lambda g: g["best_score"], reverse=True)
-    return {"results": sorted_groups, "query": body.query.strip(), "total_chunks": len(top_chunks)}
+    return {"results": sorted_groups, "query": body.query.strip(), "total_chunks": len(top_chunks), "search_mode": search_mode}
 
 
 # ---------------------------------------------------------------------------

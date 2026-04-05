@@ -3,3 +3,5 @@ uvicorn[standard]
 requests
 pydantic
 pywebview
+numpy
+sqlite-vec

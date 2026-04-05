@@ -736,16 +736,25 @@ async function _runDeepSearch(query) {
 function _renderDeepResults(data, query) {
     const container = $('#deep-search-results');
     if (!data.results || data.results.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">No matching chunks found across your conversations.</div>';
+        const msg = data.low_confidence
+            ? `<div style="text-align:center;padding:40px 0;color:var(--text-muted)">
+                <div style="font-size:1.1rem;margin-bottom:8px">No strong matches found for <strong>${escapeHtml(data.query || query)}</strong></div>
+                <div style="font-size:0.85rem;opacity:0.7">If this conversation was recently captured, try <strong>Rebuild Embeddings</strong> in Settings.<br>Otherwise, try a more specific query.</div>
+               </div>`
+            : '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">No matching chunks found across your conversations.</div>';
+        container.innerHTML = msg;
         return;
     }
 
-    let html = `<div class="deep-search-header">${data.total_chunks} chunks matched across ${data.results.length} conversation${data.results.length > 1 ? 's' : ''}</div>`;
+    const modeNote = data.search_mode === 'keyword'
+        ? ' <span style="font-size:0.75rem;opacity:0.6;font-weight:normal">(keyword match — run Rebuild Embeddings for semantic search)</span>'
+        : '';
+    let html = `<div class="deep-search-header">${data.total_chunks} chunks matched across ${data.results.length} conversation${data.results.length > 1 ? 's' : ''}${modeNote}</div>`;
 
     for (const group of data.results) {
         const date = new Date(group.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const tags = (group.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
-        const scoreLabel = `${Math.round(group.best_score * 100)}% match`;
+        const scoreLabel = data.search_mode === 'keyword' ? 'keyword match' : `${Math.round(group.best_score * 100)}% match`;
 
         html += `<div class="deep-result-group">
             <div class="deep-result-header" onclick="showDetail(${group.context_id})">
@@ -764,7 +773,7 @@ function _renderDeepResults(data, query) {
             if (chunk.has_code) badges.push('<span class="deep-badge">code</span>');
             if (chunk.is_starred) badges.push('<span class="deep-badge starred">starred</span>');
             html += `<div class="deep-chunk">
-                <div class="deep-chunk-score">${Math.round(chunk.score * 100)}%</div>
+                <div class="deep-chunk-score">${chunk.score != null ? Math.round(chunk.score * 100) + '%' : '~'}</div>
                 <div class="deep-chunk-text">${excerpt}${badges.length ? ' ' + badges.join('') : ''}</div>
             </div>`;
         }

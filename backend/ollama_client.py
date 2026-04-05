@@ -61,6 +61,44 @@ def _get_embed_model() -> str:
         pass
     return "nomic-embed-text"
 
+
+# Cache: model name → max chars (avoids repeated /api/show calls)
+_embed_ctx_cache: dict[str, int] = {}
+
+def _get_embed_max_chars(model: str) -> int:
+    """Return the safe char truncation limit for an embed model.
+
+    Queries Ollama's /api/show for the model's context_length, then converts
+    tokens → chars with a 0.85 safety margin (accounts for multi-byte chars/emoji).
+    Falls back to 1400 (safe for 512-token models like mxbai-embed-large) on any error.
+    Result is cached per model name for the lifetime of the process.
+    """
+    if model in _embed_ctx_cache:
+        return _embed_ctx_cache[model]
+    try:
+        r = requests.post(f"{OLLAMA_BASE}/api/show", json={"name": model}, timeout=10)
+        r.raise_for_status()
+        info = r.json().get("model_info", {})
+        # Different model families use different keys
+        ctx_tokens = (
+            info.get("llama.context_length")
+            or info.get("bert.context_length")
+            or info.get("nomic_bert.context_length")
+            or info.get("xlm-roberta.context_length")
+        )
+        if ctx_tokens and isinstance(ctx_tokens, int) and ctx_tokens > 0:
+            # Use 2.5 chars/token — conservative estimate that handles emoji-heavy
+            # and multi-byte text (Hindi, CJK) where effective chars/token can be <2.
+            # For 512-token models this gives 1280 chars, well within the safe range.
+            limit = max(int(ctx_tokens * 2.5), 256)
+            _embed_ctx_cache[model] = limit
+            _log.debug("Embed model %s context_length=%d → char limit=%d", model, ctx_tokens, limit)
+            return limit
+    except Exception as e:
+        _log.debug("Could not fetch context_length for %s: %s — using default 1200", model, e)
+    _embed_ctx_cache[model] = 1200  # safe default for unknown models
+    return 1200
+
 # Context window config — override via env vars to match your local model.
 # Default: 32k tokens (safe starting point; raise to e.g. 131072 for 128k models).
 _NUM_CTX: int    = int(os.getenv("OLLAMA_NUM_CTX", "32768"))
@@ -330,13 +368,44 @@ def _parse_messages(text: str) -> list[str]:
 
 ## ── Chunk + Embed for retrieval ───────────────────────────────────────
 
+def _split_to_fit(text: str, max_chars: int) -> list[str]:
+    """Split text into segments that each fit within max_chars.
+
+    Splits on newlines first (preserving structure), then falls back to
+    hard-splitting on the char limit. Returns a list of non-empty strings.
+    """
+    if len(text) <= max_chars:
+        return [text]
+    parts = []
+    current = []
+    current_len = 0
+    for line in text.split("\n"):
+        line_len = len(line) + 1  # +1 for newline
+        if current_len + line_len > max_chars and current:
+            parts.append("\n".join(current))
+            current = []
+            current_len = 0
+        # Single line longer than max_chars — hard split
+        if line_len > max_chars:
+            for start in range(0, len(line), max_chars):
+                parts.append(line[start:start + max_chars])
+        else:
+            current.append(line)
+            current_len += line_len
+    if current:
+        parts.append("\n".join(current))
+    return [p for p in parts if p.strip()]
+
+
 def chunk_conversation(
     text: str,
     starred_snippets: list[str] | None = None,
 ) -> list[dict]:
     """Split conversation into message-pair chunks for embedding-based retrieval.
 
-    Groups consecutive USER+ASSISTANT messages into pairs.
+    Groups consecutive USER+ASSISTANT messages into pairs, then sub-splits any
+    pair that exceeds the embed model's context window so every chunk is fully
+    embedded (no silent truncation).
     Tags each chunk with metadata: has_code, is_starred, role_hint.
     """
     messages = _parse_messages(text)
@@ -344,9 +413,25 @@ def chunk_conversation(
     if starred_snippets:
         starred_keys = {s[:100].strip() for s in starred_snippets if s.strip()}
 
+    # Determine the embed model's char limit once per call
+    embed_max = _get_embed_max_chars(_get_embed_model())
+
     chunks: list[dict] = []
-    i = 0
     chunk_idx = 0
+
+    def _add(text_segment: str, role_hint: str, has_code: bool, is_starred: bool) -> None:
+        nonlocal chunk_idx
+        for segment in _split_to_fit(text_segment, embed_max):
+            chunks.append({
+                "chunk_index": chunk_idx,
+                "text": segment,
+                "has_code": has_code or "```" in segment,
+                "is_starred": is_starred,
+                "role_hint": role_hint,
+            })
+            chunk_idx += 1
+
+    i = 0
     while i < len(messages):
         msg = messages[i]
         role = _role_label(msg)
@@ -363,15 +448,7 @@ def chunk_conversation(
 
         has_code = "```" in pair_text
         is_starred = any(key in pair_text[:200] for key in starred_keys) if starred_keys else False
-
-        chunks.append({
-            "chunk_index": chunk_idx,
-            "text": pair_text,
-            "has_code": has_code,
-            "is_starred": is_starred,
-            "role_hint": role_hint,
-        })
-        chunk_idx += 1
+        _add(pair_text, role_hint, has_code, is_starred)
 
     return chunks
 
@@ -389,7 +466,8 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     # Resolve model at runtime (EMBED_MODEL is defined later in the file)
     _model = model or _get_embed_model()
 
-    texts = [ch["text"][:8000] for ch in chunks]
+    max_chars = _get_embed_max_chars(_model)
+    texts = [ch["text"][:max_chars] for ch in chunks]
     try:
         r = requests.post(
             f"{OLLAMA_BASE}/api/embed",
@@ -1353,7 +1431,7 @@ def embed_text(text: str, model: str | None = None) -> list[float] | None:
     try:
         r = requests.post(
             f"{OLLAMA_BASE}/api/embed",
-            json={"model": _model, "input": text[:8000]},
+            json={"model": _model, "input": text[:_get_embed_max_chars(_model)]},
             timeout=30,
         )
         r.raise_for_status()

@@ -1,33 +1,147 @@
 """
 ContextVolt — SQLite database layer.
 
-Manages the 'contexts' table for storing conversation summaries.
+Manages the 'contexts' and 'chunks' tables, plus sqlite-vec virtual tables
+for fast vector similarity search.
 """
 
 import sqlite3
 import json
+import logging
 import os
+import struct
 from datetime import datetime, timezone
+
+import sqlite_vec
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "context_volt.db")
 
+_log = logging.getLogger("contextvolt")
 
-def _get_conn():
+# ---------------------------------------------------------------------------
+# Connection helper
+# ---------------------------------------------------------------------------
+
+def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
     return conn
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    mag = (sum(x ** 2 for x in a) ** 0.5) * (sum(x ** 2 for x in b) ** 0.5)
-    return dot / mag if mag else 0.0
+def _vec_to_blob(vec: list[float]) -> bytes:
+    """Pack a Python list of floats into a little-endian float32 blob for sqlite-vec."""
+    return struct.pack(f"{len(vec)}f", *vec)
+
+
+def _blob_to_vec(blob: bytes) -> list[float]:
+    """Unpack a sqlite-vec float32 blob back to a Python list."""
+    n = len(blob) // 4
+    return list(struct.unpack(f"{n}f", blob))
+
+
+# ---------------------------------------------------------------------------
+# Schema & migrations
+# ---------------------------------------------------------------------------
+
+def _detect_embed_dim(conn: sqlite3.Connection) -> int:
+    """Detect embedding dimension from existing data. Returns 0 if none found."""
+    row = conn.execute(
+        "SELECT embedding FROM chunks WHERE embedding IS NOT NULL LIMIT 1"
+    ).fetchone()
+    if row and row[0]:
+        try:
+            return len(json.loads(row[0]))
+        except Exception:
+            pass
+    row = conn.execute(
+        "SELECT embedding FROM contexts WHERE embedding IS NOT NULL LIMIT 1"
+    ).fetchone()
+    if row and row[0]:
+        try:
+            return len(json.loads(row[0]))
+        except Exception:
+            pass
+    return 0
+
+
+
+def _ensure_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
+    """Create or recreate the vec0 virtual tables for the given embedding dimension."""
+    if dim <= 0:
+        return
+
+    # Store current dim in a metadata table so we can detect changes
+    conn.execute("CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT)")
+    row = conn.execute("SELECT value FROM _vec_meta WHERE key = 'embed_dim'").fetchone()
+    stored_dim = int(row[0]) if row else 0
+
+    if stored_dim == dim:
+        # Tables already exist with correct dim — check they actually exist
+        try:
+            conn.execute("SELECT rowid FROM chunk_vecs LIMIT 0")
+            conn.execute("SELECT rowid FROM context_vecs LIMIT 0")
+            return  # all good
+        except Exception:
+            pass  # table missing, recreate
+
+    _log.info("(Re)creating vec tables: dim %d (was %d)", dim, stored_dim)
+
+    # Drop and recreate
+    conn.execute("DROP TABLE IF EXISTS chunk_vecs")
+    conn.execute("DROP TABLE IF EXISTS context_vecs")
+    conn.execute(f"CREATE VIRTUAL TABLE chunk_vecs USING vec0(embedding float[{dim}] distance_metric=cosine)")
+    conn.execute(f"CREATE VIRTUAL TABLE context_vecs USING vec0(embedding float[{dim}] distance_metric=cosine)")
+
+    conn.execute("INSERT OR REPLACE INTO _vec_meta (key, value) VALUES ('embed_dim', ?)", (str(dim),))
+    conn.commit()
+
+    # Backfill from existing JSON embeddings
+    _backfill_vec_tables(conn, dim)
+
+
+def _backfill_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
+    """Populate vec tables from JSON embedding columns in chunks/contexts."""
+    # Chunks
+    rows = conn.execute("SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL").fetchall()
+    count = 0
+    for row in rows:
+        try:
+            vec = json.loads(row["embedding"])
+            if len(vec) == dim:
+                conn.execute(
+                    "INSERT OR REPLACE INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
+                    (row["id"], _vec_to_blob(vec)),
+                )
+                count += 1
+        except Exception:
+            continue
+    _log.info("Backfilled %d/%d chunk vectors", count, len(rows))
+
+    # Contexts
+    rows = conn.execute("SELECT id, embedding FROM contexts WHERE embedding IS NOT NULL").fetchall()
+    count = 0
+    for row in rows:
+        try:
+            vec = json.loads(row["embedding"])
+            if len(vec) == dim:
+                conn.execute(
+                    "INSERT OR REPLACE INTO context_vecs (rowid, embedding) VALUES (?, ?)",
+                    (row["id"], _vec_to_blob(vec)),
+                )
+                count += 1
+        except Exception:
+            continue
+    _log.info("Backfilled %d/%d context vectors", count, len(rows))
+    conn.commit()
 
 
 def init_db():
-    """Create the contexts table if it doesn't exist, and run migrations."""
+    """Create tables, run migrations, and initialise sqlite-vec virtual tables."""
     conn = _get_conn()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS contexts (
@@ -41,34 +155,22 @@ def init_db():
         )
     """)
     conn.commit()
-    # Migration: add embedding column for semantic search (safe to run every startup)
-    try:
-        conn.execute("ALTER TABLE contexts ADD COLUMN embedding TEXT DEFAULT NULL")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
-    # Migration: add important_notes column for user-marked snippets
-    try:
-        conn.execute("ALTER TABLE contexts ADD COLUMN important_notes TEXT DEFAULT NULL")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
 
-    # Migration: add status column for background worker tracking
-    try:
-        conn.execute("ALTER TABLE contexts ADD COLUMN status TEXT DEFAULT 'completed'")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
+    # Column migrations (safe to run every startup — ALTER TABLE ADD is a no-op if exists)
+    _migrations = [
+        "ALTER TABLE contexts ADD COLUMN embedding TEXT DEFAULT NULL",
+        "ALTER TABLE contexts ADD COLUMN important_notes TEXT DEFAULT NULL",
+        "ALTER TABLE contexts ADD COLUMN status TEXT DEFAULT 'completed'",
+        "ALTER TABLE contexts ADD COLUMN starred INTEGER DEFAULT 0",
+    ]
+    for sql in _migrations:
+        try:
+            conn.execute(sql)
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
-    # Migration: add starred column for pinned contexts
-    try:
-        conn.execute("ALTER TABLE contexts ADD COLUMN starred INTEGER DEFAULT 0")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
-
-    # Chunks table for embedding-based retrieval
+    # Chunks table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,25 +189,74 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_chunks_context ON chunks(context_id, chunk_index)"
     )
     conn.commit()
+
+    # sqlite-vec virtual tables
+    dim = _detect_embed_dim(conn)
+    if dim > 0:
+        _ensure_vec_tables(conn, dim)
+
     conn.close()
 
+
+# ---------------------------------------------------------------------------
+# Vec sync helpers — keep vec tables in sync with JSON embedding columns
+# ---------------------------------------------------------------------------
+
+def _sync_chunk_vec(conn: sqlite3.Connection, chunk_id: int, embedding: list[float] | None) -> None:
+    """Insert/update/delete a chunk's entry in chunk_vecs."""
+    if not embedding:
+        try:
+            conn.execute("DELETE FROM chunk_vecs WHERE rowid = ?", (chunk_id,))
+        except Exception:
+            pass
+        return
+    dim = len(embedding)
+    _ensure_vec_tables(conn, dim)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
+            (chunk_id, _vec_to_blob(embedding)),
+        )
+    except Exception as e:
+        _log.warning("Failed to sync chunk_vecs rowid=%d: %s", chunk_id, e)
+
+
+def _sync_context_vec(conn: sqlite3.Connection, context_id: int, embedding: list[float] | None) -> None:
+    """Insert/update/delete a context's entry in context_vecs."""
+    if not embedding:
+        try:
+            conn.execute("DELETE FROM context_vecs WHERE rowid = ?", (context_id,))
+        except Exception:
+            pass
+        return
+    dim = len(embedding)
+    _ensure_vec_tables(conn, dim)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO context_vecs (rowid, embedding) VALUES (?, ?)",
+            (context_id, _vec_to_blob(embedding)),
+        )
+    except Exception as e:
+        _log.warning("Failed to sync context_vecs rowid=%d: %s", context_id, e)
+
+
+# ---------------------------------------------------------------------------
+# Row converters
+# ---------------------------------------------------------------------------
 
 def _row_to_dict(row):
     """Convert a sqlite3.Row to a plain dict, parsing JSON summary."""
     if row is None:
         return None
     d = dict(row)
-    # Parse the summary JSON string back to a dict
     try:
         d["summary"] = json.loads(d["summary"])
     except (json.JSONDecodeError, TypeError):
         pass
-    # Parse tags from comma-separated string to list
     if d.get("tags"):
-        d["tags"] = [t.strip() for t in d["tags"].split(",") if t.strip()]  # type: ignore[assignment]
+        d["tags"] = [t.strip() for t in d["tags"].split(",") if t.strip()]
     else:
-        d["tags"] = []  # type: ignore[assignment]
-    # Parse important_notes JSON array
+        d["tags"] = []
     if d.get("important_notes"):
         try:
             d["important_notes"] = json.loads(d["important_notes"])
@@ -114,8 +265,19 @@ def _row_to_dict(row):
     else:
         d["important_notes"] = []
     d["starred"] = bool(d.get("starred"))
-    return d  # type: ignore[return-value]
+    return d
 
+
+def _chunk_row_to_dict(row) -> dict:
+    d = dict(row)
+    d["has_code"] = bool(d.get("has_code"))
+    d["is_starred"] = bool(d.get("is_starred"))
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Context CRUD
+# ---------------------------------------------------------------------------
 
 def create_context(
     title: str,
@@ -136,10 +298,13 @@ def create_context(
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json, status),
     )
+    context_id = cursor.lastrowid
+    if embedding:
+        _sync_context_vec(conn, context_id, embedding)
     conn.commit()
-    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
     conn.close()
-    return _row_to_dict(row)  # type: ignore[return-value]
+    return _row_to_dict(row)
 
 
 def set_context_embedding(context_id: int, embedding: list[float]) -> None:
@@ -149,6 +314,7 @@ def set_context_embedding(context_id: int, embedding: list[float]) -> None:
         "UPDATE contexts SET embedding = ? WHERE id = ?",
         (json.dumps(embedding), context_id),
     )
+    _sync_context_vec(conn, context_id, embedding)
     conn.commit()
     conn.close()
 
@@ -158,14 +324,11 @@ def get_all_contexts() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM contexts ORDER BY created_at DESC").fetchall()
     conn.close()
-    return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
+    return [_row_to_dict(r) for r in rows]
 
 
 def get_contexts_paginated(page: int = 1, per_page: int = 50, sort: str = "newest") -> dict:
-    """Return a page of contexts with total count for pagination.
-
-    sort options: newest (default), oldest, alpha, starred-first is always applied.
-    """
+    """Return a page of contexts with total count for pagination."""
     conn = _get_conn()
     total = conn.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
     offset = (page - 1) * per_page
@@ -199,7 +362,7 @@ def get_context(context_id: int) -> dict | None:
 
 
 def update_context(context_id: int, **kwargs) -> dict | None:
-    """Update fields of a context. Accepts title, summary, tags, status."""
+    """Update fields of a context. Accepts title, summary, tags, status, important_notes."""
     conn = _get_conn()
     now = datetime.now(timezone.utc).isoformat()
 
@@ -256,10 +419,34 @@ def toggle_context_starred(context_id: int) -> dict | None:
 def delete_context(context_id: int) -> bool:
     """Delete a context. Returns True if a row was deleted."""
     conn = _get_conn()
+    # Clean up vec table entry
+    try:
+        conn.execute("DELETE FROM context_vecs WHERE rowid = ?", (context_id,))
+    except Exception:
+        pass
     cursor = conn.execute("DELETE FROM contexts WHERE id = ?", (context_id,))
     conn.commit()
     conn.close()
     return cursor.rowcount > 0
+
+
+def search_chunks_keyword(query: str, top_k: int = 20) -> list[dict]:
+    """Full-text keyword search across all chunk text. Returns chunks with context_id."""
+    conn = _get_conn()
+    like = f"%{query}%"
+    rows = conn.execute(
+        """SELECT c.id, c.context_id, c.chunk_index, c.text, c.role_hint, c.has_code, c.is_starred
+           FROM chunks c
+           WHERE lower(c.text) LIKE lower(?)
+           ORDER BY c.created_at DESC
+           LIMIT ?""",
+        (like, top_k),
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "context_id": r[1], "chunk_index": r[2],
+             "text": r[3], "role_hint": r[4], "has_code": bool(r[5]),
+             "is_starred": bool(r[6]), "_score": None, "_keyword_match": True}
+            for r in rows]
 
 
 def search_contexts(query: str) -> list[dict]:
@@ -273,10 +460,12 @@ def search_contexts(query: str) -> list[dict]:
         (like, like, like, like),
     ).fetchall()
     conn.close()
-    return [_row_to_dict(r) for r in rows]  # type: ignore[return-value]
+    return [_row_to_dict(r) for r in rows]
 
 
-## ── Chunk CRUD ────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Chunk CRUD
+# ---------------------------------------------------------------------------
 
 def create_chunks(context_id: int, chunks: list[dict]) -> list[int]:
     """Bulk-insert chunks for a context. Returns list of inserted IDs."""
@@ -284,6 +473,7 @@ def create_chunks(context_id: int, chunks: list[dict]) -> list[int]:
     conn = _get_conn()
     ids = []
     for ch in chunks:
+        embedding = ch.get("embedding")
         cur = conn.execute(
             """INSERT INTO chunks
                (context_id, chunk_index, text, role_hint, has_code, is_starred, embedding, created_at)
@@ -295,11 +485,14 @@ def create_chunks(context_id: int, chunks: list[dict]) -> list[int]:
                 ch.get("role_hint", ""),
                 1 if ch.get("has_code") else 0,
                 1 if ch.get("is_starred") else 0,
-                json.dumps(ch["embedding"]) if ch.get("embedding") else None,
+                json.dumps(embedding) if embedding else None,
                 now,
             ),
         )
-        ids.append(cur.lastrowid)
+        chunk_id = cur.lastrowid
+        ids.append(chunk_id)
+        if embedding:
+            _sync_chunk_vec(conn, chunk_id, embedding)
     conn.commit()
     conn.close()
     return ids
@@ -316,12 +509,39 @@ def get_chunks_by_context(context_id: int) -> list[dict]:
     return [_chunk_row_to_dict(r) for r in rows]
 
 
-def _chunk_row_to_dict(row) -> dict:
-    d = dict(row)
-    d["has_code"] = bool(d.get("has_code"))
-    d["is_starred"] = bool(d.get("is_starred"))
-    return d
+def update_chunk_embedding(chunk_id: int, embedding: list[float]) -> None:
+    """Update the embedding for an existing chunk and sync to vec table."""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE chunks SET embedding = ? WHERE id = ?",
+        (json.dumps(embedding), chunk_id),
+    )
+    _sync_chunk_vec(conn, chunk_id, embedding)
+    conn.commit()
+    conn.close()
 
+
+def delete_chunks_by_context(context_id: int) -> int:
+    """Delete all chunks for a context. Returns count deleted."""
+    conn = _get_conn()
+    # Get chunk IDs to clean up vec table
+    chunk_ids = [r[0] for r in conn.execute(
+        "SELECT id FROM chunks WHERE context_id = ?", (context_id,)
+    ).fetchall()]
+    for cid in chunk_ids:
+        try:
+            conn.execute("DELETE FROM chunk_vecs WHERE rowid = ?", (cid,))
+        except Exception:
+            pass
+    cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Semantic search via sqlite-vec
+# ---------------------------------------------------------------------------
 
 def search_chunks_semantic(
     query_vec: list[float],
@@ -329,81 +549,111 @@ def search_chunks_semantic(
     top_k: int = 10,
     star_boost: float = 0.15,
 ) -> list[dict]:
-    """Return top_k chunks ranked by cosine similarity.
+    """Return top_k chunks ranked by cosine similarity via sqlite-vec.
 
     If context_id is given, search within that context only.
     Starred chunks get +star_boost added to their score.
     """
     conn = _get_conn()
-    if context_id is not None:
-        rows = conn.execute(
-            "SELECT * FROM chunks WHERE context_id = ? AND embedding IS NOT NULL",
-            (context_id,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM chunks WHERE embedding IS NOT NULL"
-        ).fetchall()
-    conn.close()
 
-    if not rows:
+    # Check vec table exists
+    try:
+        conn.execute("SELECT rowid FROM chunk_vecs LIMIT 0")
+    except Exception:
+        conn.close()
         return []
 
-    scored = []
-    for row in rows:
-        ch = _chunk_row_to_dict(row)
+    q_blob = _vec_to_blob(query_vec)
+
+    if context_id is not None:
+        # Context-filtered: use vec_distance_cosine scalar function via JOIN.
+        # This is exact (not ANN) but fast for the small number of chunks per context.
         try:
-            vec = json.loads(ch.get("embedding") or "null")
-            if vec:
-                score = _cosine_similarity(query_vec, vec)
-                if ch.get("is_starred"):
-                    score += star_boost
-                ch["_score"] = score
-                scored.append(ch)
+            vec_rows = conn.execute(
+                """SELECT c.id, vec_distance_cosine(cv.embedding, ?) AS dist
+                   FROM chunks c
+                   JOIN chunk_vecs cv ON cv.rowid = c.id
+                   WHERE c.context_id = ?
+                   ORDER BY dist ASC
+                   LIMIT ?""",
+                (q_blob, context_id, top_k * 3),
+            ).fetchall()
         except Exception:
-            continue
+            conn.close()
+            return []
 
-    scored.sort(key=lambda x: x.get("_score", 0.0), reverse=True)
-    return scored[:top_k]
+        scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
+    else:
+        # Global search
+        try:
+            vec_rows = conn.execute(
+                "SELECT rowid, distance FROM chunk_vecs WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+                (q_blob, top_k * 3),
+            ).fetchall()
+        except Exception:
+            conn.close()
+            return []
+        scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
 
+    if not scored_ids:
+        conn.close()
+        return []
 
-def delete_chunks_by_context(context_id: int) -> int:
-    """Delete all chunks for a context. Returns count deleted."""
-    conn = _get_conn()
-    cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
-    conn.commit()
-    conn.close()
-    return cur.rowcount
-
-
-def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[dict]:
-    """Return up to top_k contexts ranked by cosine similarity to query_vec.
-
-    Only considers contexts that have a stored embedding. Falls back gracefully
-    to an empty list if none exist (caller should then use keyword search).
-    """
-    conn = _get_conn()
+    # Fetch full chunk data for the matched IDs
+    id_list = [sid[0] for sid in scored_ids]
+    score_map = {sid[0]: sid[1] for sid in scored_ids}
+    placeholders = ",".join("?" * len(id_list))
     rows = conn.execute(
-        "SELECT * FROM contexts WHERE embedding IS NOT NULL ORDER BY created_at DESC"
+        f"SELECT * FROM chunks WHERE id IN ({placeholders})", id_list
     ).fetchall()
     conn.close()
 
-    if not rows:
+    chunks = []
+    for row in rows:
+        ch = _chunk_row_to_dict(row)
+        score = score_map.get(ch["id"], 0.0)
+        if ch.get("is_starred"):
+            score += star_boost
+        ch["_score"] = score
+        chunks.append(ch)
+
+    chunks.sort(key=lambda x: x["_score"], reverse=True)
+    return chunks[:top_k]
+
+
+def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[dict]:
+    """Return up to top_k contexts ranked by cosine similarity via sqlite-vec."""
+    conn = _get_conn()
+
+    try:
+        conn.execute("SELECT rowid FROM context_vecs LIMIT 0")
+    except Exception:
+        conn.close()
         return []
 
-    scored = []
-    for row in rows:
-        ctx = _row_to_dict(row)
-        try:
-            vec: list[float] = json.loads(ctx.get("embedding") or "null")  # type: ignore[union-attr]
-            if vec:
-                ctx["_score"] = _cosine_similarity(query_vec, vec)  # type: ignore[index]
-                scored.append(ctx)
-        except Exception:
-            continue
+    q_blob = _vec_to_blob(query_vec)
+    try:
+        vec_rows = conn.execute(
+            "SELECT rowid, distance FROM context_vecs WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+            (q_blob, top_k),
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return []
 
-    scored.sort(key=lambda x: x.get("_score", 0.0), reverse=True)  # type: ignore[union-attr]
-    # Remove internal scoring field before returning
-    for ctx in scored:
-        ctx.pop("_score", None)  # type: ignore[union-attr]
-    return scored[:top_k]  # type: ignore[index]
+    if not vec_rows:
+        conn.close()
+        return []
+
+    id_list = [r[0] for r in vec_rows]
+    placeholders = ",".join("?" * len(id_list))
+    rows = conn.execute(
+        f"SELECT * FROM contexts WHERE id IN ({placeholders})", id_list
+    ).fetchall()
+    conn.close()
+
+    # Preserve score-based ordering from vec search
+    order = {rid: idx for idx, rid in enumerate(id_list)}
+    contexts = [_row_to_dict(r) for r in rows]
+    contexts.sort(key=lambda c: order.get(c["id"], 999))
+    return contexts

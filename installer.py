@@ -166,7 +166,7 @@ def run_installation():
         if EMBEDDED_MODE:
             state.log("Dependencies pre-installed — verifying...")
             try:
-                import fastapi, uvicorn, webview  # noqa: F401
+                import fastapi, uvicorn, webview, numpy, sqlite_vec  # noqa: F401
                 state.log("  All dependencies verified ✓")
                 return True
             except ImportError as e:

@@ -264,6 +264,7 @@ function transitionToApp() {
         $('#app').style.display = 'flex';
         $('#app').style.animation = 'fadeIn 0.5s ease';
         loadCollections();
+        _prefetchSettingsConfig();
     }, 500);
 }
 
@@ -1658,6 +1659,23 @@ async function rebuildEmbeddings() {
 
 // ─── Settings Modal ──────────────────────────────────────────────
 let _settingsConfig = null; // last loaded config from backend
+let _settingsConfigPromise = null; // in-flight fetch (deduplicated)
+
+function _prefetchSettingsConfig() {
+    if (_settingsConfig || _settingsConfigPromise) return;
+    _settingsConfigPromise = fetch(`${API}/api/setup/config`)
+        .then(r => r.json())
+        .then(data => { _settingsConfig = data; _settingsConfigPromise = null; })
+        .catch(() => { _settingsConfigPromise = null; });
+}
+
+function _showSettingsSkeletons() {
+    const llmGrid   = $('#settings-llm-grid');
+    const embedGrid = $('#settings-embed-grid');
+    const skels = n => Array.from({length: n}, () => '<div class="settings-skeleton-card"></div>').join('');
+    llmGrid.innerHTML   = skels(3);
+    embedGrid.innerHTML = skels(4);
+}
 
 async function openSettingsModal() {
     const modal = $('#settings-modal');
@@ -1669,9 +1687,27 @@ async function openSettingsModal() {
     // Keyboard trap — keep focus inside while open
     trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
 
+    // If already cached, render instantly — no loading state needed
+    if (_settingsConfig) {
+        _renderSettingsCards();
+        // Refresh in background to pick up any install changes
+        fetch(`${API}/api/setup/config`)
+            .then(r => r.json())
+            .then(data => { _settingsConfig = data; _renderSettingsCards(); })
+            .catch(() => {});
+        return;
+    }
+
+    // Show skeleton cards while loading
+    _showSettingsSkeletons();
+
     try {
-        const res = await fetch(`${API}/api/setup/config`);
-        _settingsConfig = await res.json();
+        // Reuse the in-flight prefetch if it's already running
+        if (_settingsConfigPromise) await _settingsConfigPromise;
+        if (!_settingsConfig) {
+            const res = await fetch(`${API}/api/setup/config`);
+            _settingsConfig = await res.json();
+        }
         _renderSettingsCards();
     } catch {
         showToast('Could not load config', 'error');

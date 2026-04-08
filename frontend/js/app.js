@@ -1159,6 +1159,7 @@ async function showDetail(id) {
 
 function renderDetail(ctx) {
     _chunksLoaded = false; // Reset chunk viewer for new context
+    _currentSnippets = _extractFinalCodeSnippets(ctx.original_chat || '');
     const container = $('#detail-content');
     const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
     const tags = (ctx.tags || []).map(t =>
@@ -1254,6 +1255,22 @@ function renderDetail(ctx) {
             <ul class="summary-list">${unresolved}</ul>
         </div>` : ''}
 
+        ${_currentSnippets.length ? `
+        <div class="summary-section code-snippets-section">
+            <h3 class="section-title">Final Code Snippets <span class="snippets-count">${_currentSnippets.length}</span></h3>
+            <div class="code-snippets-list">
+                ${_currentSnippets.map((s, i) => `
+                <div class="code-snippet-card">
+                    <div class="code-snippet-header">
+                        <span class="code-snippet-lang">${escapeHtml(s.label)}</span>
+                        <span class="code-snippet-lines">${s.code.split('\n').filter(l => l.trim()).length} lines</span>
+                        <button class="code-snippet-copy" data-idx="${i}" onclick="copyCodeSnippet(${i})">Copy</button>
+                    </div>
+                    <pre class="code-snippet-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
+                </div>`).join('')}
+            </div>
+        </div>` : ''}
+
         <div class="original-chat-section">
             <button class="original-chat-toggle" onclick="toggleOriginalChat()">
                 <span id="chat-toggle-icon">▶</span> View Original Conversation
@@ -1295,6 +1312,48 @@ function renderDetail(ctx) {
 
     // Hide prompt section
     $('#prompt-section').style.display = 'none';
+}
+
+// ─── Final Code Snippets ─────────────────────────────────────────
+let _currentSnippets = [];
+
+/**
+ * Parse all fenced code blocks from a chat string.
+ * Returns the LAST occurrence for each language/filename key,
+ * preserving order of last appearance.
+ */
+function _extractFinalCodeSnippets(text) {
+    const regex = /```([^\n`]*)\n([\s\S]*?)```/g;
+    const order = [];           // keys in order of last appearance
+    const byKey = new Map();    // key -> {lang, label, code}
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+        const rawLang = m[1].trim();
+        const code = m[2];
+        if (!code.trim()) continue;
+        // Use the full "lang:filename" as dedup key; fall back to 'text'
+        const key = rawLang.replace(/\s+/g, '') || 'text';
+        const lang = (rawLang.split(/[\s:/]/)[0] || 'text').toLowerCase();
+        if (!order.includes(key)) order.push(key);
+        byKey.set(key, { lang, label: rawLang || 'text', code });
+    }
+    return order.map(k => byKey.get(k));
+}
+
+async function copyCodeSnippet(idx) {
+    const s = _currentSnippets[idx];
+    if (!s) return;
+    try {
+        await navigator.clipboard.writeText(s.code);
+        const btn = document.querySelector(`.code-snippet-copy[data-idx="${idx}"]`);
+        if (btn) {
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+        }
+    } catch {
+        showToast('Copy failed', 'error');
+    }
 }
 
 // ─── P2-4: Chunk Viewer ──────────────────────────────────────────
@@ -2538,3 +2597,4 @@ window.deleteFromLibrary = deleteFromLibrary;
 window.toggleOriginalChat = toggleOriginalChat;
 window.generatePrompt = generatePrompt;
 window.retrySummarize = retrySummarize;
+window.copyCodeSnippet = copyCodeSnippet;

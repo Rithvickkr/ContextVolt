@@ -2078,6 +2078,102 @@ body {
     word-break: break-all;
 }
 
+/* ─── Final Code Snippets ───────────────────────────────────────── */
+.code-snippets-section .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.snippets-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: rgba(99, 102, 241, 0.25);
+    color: #a5b4fc;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.code-snippets-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.code-snippet-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.code-snippet-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border);
+}
+
+.code-snippet-lang {
+    font-family: "SF Mono", "Fira Code", Consolas, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a5b4fc;
+    flex: 1;
+}
+
+.code-snippet-lines {
+    font-size: 10px;
+    color: var(--text-faint);
+}
+
+.code-snippet-copy {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.15);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.code-snippet-copy:hover {
+    background: rgba(99, 102, 241, 0.3);
+}
+
+.code-snippet-copy.copied {
+    background: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+    border-color: rgba(16, 185, 129, 0.35);
+}
+
+.code-snippet-pre {
+    margin: 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+    background: transparent;
+}
+
+.code-snippet-pre code {
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre;
+    display: block;
+}
+
 /* ================================================================
    Settings Modal
    ================================================================ */

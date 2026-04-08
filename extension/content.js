@@ -53,6 +53,92 @@ setInterval(() => {
     }
 }, 1000);
 
+// ─── DOM → Markdown text converter ───────────────────────────────
+/**
+ * Walk a DOM element and return markdown-like plain text.
+ * Crucially, <pre><code class="language-*"> blocks are reconstructed
+ * as fenced code blocks (```lang\n…\n```) so language info survives.
+ * All other text is extracted the same way as .innerText would.
+ */
+function _elementToText(el) {
+    const buf = [];
+    _nodeToText(el, buf);
+    return buf.join('').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function _nodeToText(node, buf) {
+    // Text node — emit raw text
+    if (node.nodeType === Node.TEXT_NODE) {
+        buf.push(node.textContent);
+        return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const tag = node.tagName.toLowerCase();
+
+    // Skip our own injected UI and aria-hidden decorations
+    if (node.classList.contains('cv-star-btn')) return;
+    if (node.getAttribute('aria-hidden') === 'true') return;
+    // Skip copy-button toolbars that LLM UIs inject above code blocks
+    if (node.getAttribute('data-state') === 'closed') return;
+    if (/\b(copy|CopyButton|code-block__actions|code-copy|toolbar)\b/.test(node.className || '')) return;
+
+    // ── <pre> — reconstruct fenced code block ─────────────────────
+    if (tag === 'pre') {
+        const codeEl = node.querySelector('code');
+        if (codeEl) {
+            // language-python, language-js, language-typescript, etc.
+            // Falls back to data-lang (used by some Gemini builds) then empty string.
+            let lang = '';
+            const langMatch = codeEl.className.match(/\blanguage-([\w-]+)/);
+            if (langMatch) {
+                lang = langMatch[1];
+            } else {
+                // Some platforms set data-lang / data-language on <code> or parent <div>
+                lang = codeEl.getAttribute('data-lang') ||
+                       codeEl.getAttribute('data-language') ||
+                       node.getAttribute('data-lang') ||
+                       node.getAttribute('data-language') ||
+                       '';
+            }
+            // textContent is correct here — preserves raw whitespace, no layout effects
+            const code = codeEl.textContent.replace(/\n$/, '');
+            buf.push('\n```' + lang + '\n' + code + '\n```\n');
+        } else {
+            // <pre> with no <code> child (rare) — plain preformatted text
+            buf.push('\n' + node.textContent.trim() + '\n');
+        }
+        return; // never recurse into <pre>
+    }
+
+    // ── Inline <code> (not inside <pre>) — emit as plain text ─────
+    if (tag === 'code' && !node.closest('pre')) {
+        buf.push(node.textContent);
+        return;
+    }
+
+    // ── <br> ───────────────────────────────────────────────────────
+    if (tag === 'br') {
+        buf.push('\n');
+        return;
+    }
+
+    // ── Block-level elements — surround with newlines ──────────────
+    const BLOCK_TAGS = new Set([
+        'p', 'div', 'li', 'ol', 'ul',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'blockquote', 'section', 'article', 'tr', 'td', 'th',
+    ]);
+    const isBlock = BLOCK_TAGS.has(tag);
+    if (isBlock) buf.push('\n');
+
+    for (const child of node.childNodes) {
+        _nodeToText(child, buf);
+    }
+
+    if (isBlock) buf.push('\n');
+}
+
 // ─── Marked snippets state ────────────────────────────────────────
 // key: first 100 chars of text (dedup key), value: full message text
 const _markedSnippets = new Map();
@@ -149,7 +235,7 @@ function injectStarButtons() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
-            const fullText = textEl.innerText.trim();
+            const fullText = _elementToText(textEl);
             if (!fullText) return;
             const key = fullText.substring(0, 100);
             const isStarred = btn.getAttribute('data-cv-starred') === 'true';
@@ -203,8 +289,8 @@ function _extractChatFromDOM() {
         messages.forEach(msg => {
             const role = msg.getAttribute('data-message-author-role');
             if (role !== 'user' && role !== 'assistant') return;
-            const prose = msg.querySelector('.markdown, .whitespace-pre-wrap, .text-message');
-            const text = prose ? prose.innerText.trim() : msg.innerText.trim();
+            const prose = msg.querySelector('.markdown, .whitespace-pre-wrap, .text-message') || msg;
+            const text = _elementToText(prose);
             if (!text) return;
             chatLog += (role === 'user' ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
         });
@@ -231,7 +317,7 @@ function _extractChatFromDOM() {
             });
 
             allTurns.forEach(({ el, role }) => {
-                const text = el.innerText.trim();
+                const text = _elementToText(el);
                 if (!text) return;
                 chatLog += role + ':\n' + text + '\n\n';
             });
@@ -248,7 +334,7 @@ function _extractChatFromDOM() {
                     return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
                 });
                 allTurns.forEach(({ el, role }) => {
-                    const text = el.innerText.trim();
+                    const text = _elementToText(el);
                     if (!text) return;
                     chatLog += role + ':\n' + text + '\n\n';
                 });
@@ -271,7 +357,7 @@ function _extractChatFromDOM() {
         });
 
         allTurns.forEach(({ el, role }) => {
-            let text = el.innerText.trim();
+            let text = _elementToText(el);
             if (!text) return;
             // Strip "You said" / "Gemini said" prefixes added by the UI
             text = text.replace(/^You said\s*\n+/i, '').replace(/^Gemini said\s*\n+/i, '');
@@ -283,7 +369,7 @@ function _extractChatFromDOM() {
         const messages = document.querySelectorAll('.message-bubble');
         if (messages.length === 0) return null;
         messages.forEach((msg) => {
-            const text = msg.innerText.trim();
+            const text = _elementToText(msg);
             if (!text) return;
 
             // Detect role from parent container alignment
@@ -300,7 +386,7 @@ function _extractChatFromDOM() {
         
         allTurns.forEach((msg) => {
             const contentEl = msg.querySelector('.ds-markdown') || msg;
-            const text = contentEl.innerText.trim();
+            const text = _elementToText(contentEl);
             if (!text) return;
 
             // User messages usually have different classes than assistant
@@ -334,7 +420,9 @@ function _extractChatFromDOM() {
 
         if (allTurns.length === 0) return null;
         allTurns.forEach(({ el, role }) => {
-            chatLog += role + ':\n' + el.innerText.trim() + '\n\n';
+            const text = _elementToText(el);
+            if (!text) return;
+            chatLog += role + ':\n' + text + '\n\n';
         });
     } else if (domain.includes("copilot.microsoft.com")) {
         // Copilot
@@ -344,15 +432,15 @@ function _extractChatFromDOM() {
         if (messages.length === 0) return null;
         
         messages.forEach((msg) => {
-             const text = msg.innerText.trim();
-             if (!text) return;
-             
-             // Copilot messages usually have a type attribute like type="text" or source="user"
-             const isUser = msg.getAttribute('type') === 'text' || 
-                            msg.getAttribute('source') === 'user' ||
-                            msg.classList.contains('user-message');
-                            
-             chatLog += (isUser ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
+            const text = _elementToText(msg);
+            if (!text) return;
+
+            // Copilot messages usually have a type attribute like type="text" or source="user"
+            const isUser = msg.getAttribute('type') === 'text' ||
+                           msg.getAttribute('source') === 'user' ||
+                           msg.classList.contains('user-message');
+
+            chatLog += (isUser ? 'USER' : 'ASSISTANT') + ':\n' + text + '\n\n';
         });
     }
 

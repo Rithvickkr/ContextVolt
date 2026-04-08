@@ -106,6 +106,8 @@ def _ensure_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
 
 def _backfill_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
     """Populate vec tables from JSON embedding columns in chunks/contexts."""
+    # Tables were just dropped+recreated in _ensure_vec_tables before this call,
+    # so plain INSERT is safe — no existing rows to conflict with.
     # Chunks
     rows = conn.execute("SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL").fetchall()
     count = 0
@@ -114,7 +116,7 @@ def _backfill_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
             vec = json.loads(row["embedding"])
             if len(vec) == dim:
                 conn.execute(
-                    "INSERT OR REPLACE INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
+                    "INSERT INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
                     (row["id"], _vec_to_blob(vec)),
                 )
                 count += 1
@@ -130,7 +132,7 @@ def _backfill_vec_tables(conn: sqlite3.Connection, dim: int) -> None:
             vec = json.loads(row["embedding"])
             if len(vec) == dim:
                 conn.execute(
-                    "INSERT OR REPLACE INTO context_vecs (rowid, embedding) VALUES (?, ?)",
+                    "INSERT INTO context_vecs (rowid, embedding) VALUES (?, ?)",
                     (row["id"], _vec_to_blob(vec)),
                 )
                 count += 1
@@ -228,10 +230,16 @@ def _sync_chunk_vec(conn: sqlite3.Connection, chunk_id: int, embedding: list[flo
             pass
         return
     dim = len(embedding)
+    # _ensure_vec_tables may call _backfill_vec_tables which inserts this row,
+    # so DELETE must come AFTER ensure — not before — to avoid UNIQUE conflicts.
     _ensure_vec_tables(conn, dim)
     try:
+        conn.execute("DELETE FROM chunk_vecs WHERE rowid = ?", (chunk_id,))
+    except Exception:
+        pass
+    try:
         conn.execute(
-            "INSERT OR REPLACE INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
+            "INSERT INTO chunk_vecs (rowid, embedding) VALUES (?, ?)",
             (chunk_id, _vec_to_blob(embedding)),
         )
     except Exception as e:
@@ -247,10 +255,16 @@ def _sync_context_vec(conn: sqlite3.Connection, context_id: int, embedding: list
             pass
         return
     dim = len(embedding)
+    # _ensure_vec_tables may call _backfill_vec_tables which inserts this row,
+    # so DELETE must come AFTER ensure — not before — to avoid UNIQUE conflicts.
     _ensure_vec_tables(conn, dim)
     try:
+        conn.execute("DELETE FROM context_vecs WHERE rowid = ?", (context_id,))
+    except Exception:
+        pass
+    try:
         conn.execute(
-            "INSERT OR REPLACE INTO context_vecs (rowid, embedding) VALUES (?, ?)",
+            "INSERT INTO context_vecs (rowid, embedding) VALUES (?, ?)",
             (context_id, _vec_to_blob(embedding)),
         )
     except Exception as e:

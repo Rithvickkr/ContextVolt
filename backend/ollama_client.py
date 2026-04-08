@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 import requests
 
 OLLAMA_BASE = "http://localhost:11434"
@@ -21,6 +22,29 @@ if not _log.handlers:
     _handler = _RFH(_LOG_PATH, maxBytes=5_000_000, backupCount=2, encoding="utf-8")
     _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
     _log.addHandler(_handler)
+
+
+def _ollama_post(url: str, **kwargs) -> requests.Response:
+    """POST to Ollama with exponential-backoff retry on connection/timeout errors.
+
+    Retries up to 3 times (delays: 1s, 2s, 4s) for transient connectivity
+    issues (Ollama restarting, brief busy states). Non-retryable errors
+    (HTTP 4xx/5xx after a successful connection) propagate immediately.
+    """
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            return requests.post(url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            if attempt == max_retries:
+                _log.error("Ollama unreachable after %d retries: %s", max_retries, exc)
+                raise
+            delay = 2 ** attempt  # 1s, 2s, 4s
+            _log.warning("Ollama connection error (attempt %d/%d), retrying in %ds: %s",
+                         attempt + 1, max_retries, delay, exc)
+            time.sleep(delay)
+
+
 def _load_default_model() -> str:
     """Priority: OLLAMA_MODEL env var → config.json → hardcoded default."""
     env = os.getenv("OLLAMA_MODEL")
@@ -76,7 +100,7 @@ def _get_embed_max_chars(model: str) -> int:
     if model in _embed_ctx_cache:
         return _embed_ctx_cache[model]
     try:
-        r = requests.post(f"{OLLAMA_BASE}/api/show", json={"name": model}, timeout=10)
+        r = _ollama_post(f"{OLLAMA_BASE}/api/show", json={"name": model}, timeout=10)
         r.raise_for_status()
         info = r.json().get("model_info", {})
         # Different model families use different keys
@@ -469,7 +493,7 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     max_chars = _get_embed_max_chars(_model)
     texts = [ch["text"][:max_chars] for ch in chunks]
     try:
-        r = requests.post(
+        r = _ollama_post(
             f"{OLLAMA_BASE}/api/embed",
             json={"model": _model, "input": texts},
             timeout=60,
@@ -1429,7 +1453,7 @@ def embed_text(text: str, model: str | None = None) -> list[float] | None:
     """
     _model = model or _get_embed_model()
     try:
-        r = requests.post(
+        r = _ollama_post(
             f"{OLLAMA_BASE}/api/embed",
             json={"model": _model, "input": text[:_get_embed_max_chars(_model)]},
             timeout=30,
@@ -1467,7 +1491,7 @@ def _call_generate(model: str, prompt: str, options: dict, timeout: int = 180) -
             opts.pop("num_ctx", None)
         else:
             opts["num_ctx"] = ctx_val
-        r = requests.post(
+        r = _ollama_post(
             f"{OLLAMA_BASE}/api/generate",
             json={"model": model, "prompt": prompt, "stream": False, "options": opts},
             timeout=timeout,
@@ -1481,7 +1505,7 @@ def _call_generate(model: str, prompt: str, options: dict, timeout: int = 180) -
     cpu_opts = dict(options)
     cpu_opts["num_gpu"] = 0
     cpu_opts["num_ctx"] = 4096
-    r = requests.post(
+    r = _ollama_post(
         f"{OLLAMA_BASE}/api/generate",
         json={"model": model, "prompt": prompt, "stream": False, "options": cpu_opts},
         timeout=timeout * 3,  # CPU is slower — triple the timeout

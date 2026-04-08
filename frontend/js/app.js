@@ -47,6 +47,9 @@ const state = {
     selectMode: false,
     selectedIds: new Set(),
     pendingDeletes: new Map(),  // id -> { timer, ctx }
+    collections: [],           // [{id, name, color, count}]
+    activeCollection: null,    // collection id or null (all)
+    newCollectionColor: '#6366f1',
 };
 
 // ─── P2-2: Source badge constants ────────────────────────────────
@@ -260,6 +263,7 @@ function transitionToApp() {
         wizard.style.display = 'none';
         $('#app').style.display = 'flex';
         $('#app').style.animation = 'fadeIn 0.5s ease';
+        loadCollections();
     }, 500);
 }
 
@@ -480,6 +484,118 @@ function generateTags(summary) {
     return [...tags].slice(0, 5);
 }
 
+// ─── Collections ─────────────────────────────────────────────────
+async function loadCollections() {
+    try {
+        const res = await fetch(`${API}/api/collections`);
+        state.collections = await res.json();
+        renderCollections();
+    } catch { /* non-fatal */ }
+}
+
+function renderCollections() {
+    const list = $('#collections-list');
+    if (!list) return;
+
+    const allActive = state.activeCollection === null;
+    const totalAll = state.contexts.length;
+
+    let html = `<button class="collection-item${allActive ? ' active' : ''}" onclick="filterByCollection(null)">
+        <span class="collection-dot" style="background:var(--text-faint)"></span>
+        <span class="collection-item-name">All</span>
+        <span class="collection-item-count">${totalAll}</span>
+    </button>`;
+
+    for (const col of state.collections) {
+        const active = state.activeCollection === col.id;
+        html += `<button class="collection-item${active ? ' active' : ''}" onclick="filterByCollection(${col.id})">
+            <span class="collection-dot" style="background:${escapeHtml(col.color)}"></span>
+            <span class="collection-item-name">${escapeHtml(col.name)}</span>
+            <span class="collection-item-count">${col.count}</span>
+            <button class="collection-item-delete" onclick="event.stopPropagation(); confirmDeleteCollection(${col.id}, '${escapeHtml(col.name)}')" title="Delete collection" aria-label="Delete ${escapeHtml(col.name)}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </button>`;
+    }
+    list.innerHTML = html;
+}
+
+function filterByCollection(id) {
+    state.activeCollection = id;
+    state.activeTagFilter = null;
+    renderCollections();
+    loadContexts('', false);
+}
+
+function openCollectionCreate() {
+    const row = $('#collection-create-row');
+    row.style.display = 'flex';
+    $('#collection-name-input').focus();
+}
+
+function closeCollectionCreate() {
+    $('#collection-create-row').style.display = 'none';
+    $('#collection-name-input').value = '';
+    state.newCollectionColor = '#6366f1';
+    document.querySelectorAll('.color-swatch').forEach(s => {
+        s.classList.toggle('active', s.dataset.color === '#6366f1');
+    });
+}
+
+async function submitCollectionCreate() {
+    const name = $('#collection-name-input').value.trim();
+    if (!name) return;
+    try {
+        const res = await fetch(`${API}/api/collections`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, color: state.newCollectionColor }),
+        });
+        if (!res.ok) throw new Error();
+        const col = await res.json();
+        state.collections.push(col);
+        closeCollectionCreate();
+        renderCollections();
+        showToast(`Collection "${col.name}" created`, 'success');
+    } catch { showToast('Failed to create collection', 'error'); }
+}
+
+async function confirmDeleteCollection(id, name) {
+    if (!confirm(`Delete collection "${name}"?\n\nContexts inside will not be deleted — they'll just become uncollected.`)) return;
+    try {
+        const res = await fetch(`${API}/api/collections/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error();
+        state.collections = state.collections.filter(c => c.id !== id);
+        if (state.activeCollection === id) state.activeCollection = null;
+        renderCollections();
+        loadContexts('', false);
+        showToast(`Collection "${name}" deleted`, 'success');
+    } catch { showToast('Failed to delete collection', 'error'); }
+}
+
+async function setContextCollection(contextId, collectionId) {
+    try {
+        const res = await fetch(`${API}/api/contexts/${contextId}/collection`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ collection_id: collectionId }),
+        });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        // Update local state
+        const idx = state.contexts.findIndex(c => c.id === contextId);
+        if (idx !== -1) state.contexts[idx] = updated;
+        if (state.currentContext && state.currentContext.id === contextId) state.currentContext = updated;
+        // Refresh collection counts
+        await loadCollections();
+        return updated;
+    } catch { showToast('Failed to update collection', 'error'); return null; }
+}
+
+function _getCollectionForContext(collectionId) {
+    return state.collections.find(c => c.id === collectionId) || null;
+}
+
 // ─── Context Library ─────────────────────────────────────────────
 function _renderContextCard(ctx) {
     const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
@@ -493,6 +609,8 @@ function _renderContextCard(ctx) {
     const starred = ctx.starred;
     const checked = state.selectedIds.has(ctx.id) ? ' checked' : '';
     const sourceBadge = _getSourceBadge(ctx.tags);
+    const _cardCol = ctx.collection_id ? _getCollectionForContext(ctx.collection_id) : null;
+    const colDot = _cardCol ? `<span class="card-collection-dot" style="background:${escapeHtml(_cardCol.color)}" title="${escapeHtml(_cardCol.name)}"></span>` : '';
     return `
         <div class="context-card${starred ? ' starred' : ''}" data-id="${ctx.id}" onclick="${state.selectMode ? `toggleSelectCard(${ctx.id})` : `showDetail(${ctx.id})`}">
             ${state.selectMode ? `<input type="checkbox" class="card-checkbox" ${checked} onclick="event.stopPropagation(); toggleSelectCard(${ctx.id})" />` : ''}
@@ -500,6 +618,7 @@ function _renderContextCard(ctx) {
             <div class="card-header-row">
                 <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
                 <div style="display:flex;align-items:center;gap:6px;">
+                    ${colDot}
                     ${sourceBadge}
                     ${!state.selectMode ? `<button class="card-star${starred ? ' active' : ''}" onclick="event.stopPropagation(); toggleStar(${ctx.id})" title="${starred ? 'Unpin' : 'Pin'}" aria-label="${starred ? 'Unpin context' : 'Pin context'}">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="${starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -533,9 +652,10 @@ async function loadContexts(query = '', append = false) {
     }
 
     try {
+        const colParam = state.activeCollection !== null ? `&collection_id=${state.activeCollection}` : '';
         let url = query
-            ? `${API}/api/contexts?q=${encodeURIComponent(query)}`
-            : `${API}/api/contexts?page=${state.libraryPage}&per_page=50&sort=${state.sortOrder}`;
+            ? `${API}/api/contexts?q=${encodeURIComponent(query)}${colParam}`
+            : `${API}/api/contexts?page=${state.libraryPage}&per_page=50&sort=${state.sortOrder}${colParam}`;
 
         const res = await fetch(url);
         const data = await res.json();
@@ -999,6 +1119,15 @@ function renderDetail(ctx) {
         ${statusInfo}
         <div class="detail-meta">
             <span>${date}</span>
+        </div>
+        <div class="detail-collection-row">
+            <span class="detail-collection-label">Collection</span>
+            <select class="collection-select" id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
+                <option value="">— None —</option>
+                ${state.collections.map(c =>
+                    `<option value="${c.id}"${ctx.collection_id === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`
+                ).join('')}
+            </select>
         </div>
         <div class="detail-tags">${tags || '<span style="color:var(--text-faint);font-size:12px;">No tags</span>'}</div>
 
@@ -1907,6 +2036,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('#btn-rebuild-embeddings')) $('#btn-rebuild-embeddings').addEventListener('click', rebuildEmbeddings);
     if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
     if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
+    if ($('#btn-backup')) $('#btn-backup').addEventListener('click', downloadBackup);
+
+    // Collections
+    if ($('#btn-add-collection')) {
+        $('#btn-add-collection').addEventListener('click', () => {
+            const row = $('#collection-create-row');
+            if (row.style.display === 'none' || !row.style.display) openCollectionCreate();
+            else closeCollectionCreate();
+        });
+    }
+    if ($('#collection-name-input')) {
+        $('#collection-name-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') submitCollectionCreate();
+            if (e.key === 'Escape') closeCollectionCreate();
+        });
+    }
+    document.querySelectorAll('.color-swatch').forEach(swatch => {
+        swatch.addEventListener('click', () => {
+            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+            swatch.classList.add('active');
+            state.newCollectionColor = swatch.dataset.color;
+        });
+    });
 
     // Sort control
     if ($('#sort-select')) {
@@ -2055,6 +2207,43 @@ async function restartBackend() {
         setTimeout(poll, 800);
     };
     setTimeout(poll, 1200);
+}
+
+// ─── Detail Collection Change ────────────────────────────────────
+async function handleDetailCollectionChange(contextId, value) {
+    const collectionId = value === '' ? null : parseInt(value, 10);
+    const updated = await setContextCollection(contextId, collectionId);
+    if (updated) {
+        const col = collectionId ? _getCollectionForContext(collectionId) : null;
+        showToast(col ? `Moved to "${col.name}"` : 'Removed from collection', 'success');
+    }
+}
+
+// ─── Backup Vault ────────────────────────────────────────────────
+async function downloadBackup() {
+    const btn = $('#btn-backup');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backing up…`;
+    try {
+        const res = await fetch(`${API}/api/backup/download`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+        a.href = url;
+        a.download = `contextvolt_backup_${ts}.db`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Backup downloaded', 'success');
+    } catch (e) {
+        showToast('Backup failed: ' + e.message, 'error');
+    } finally {
+        btn.innerHTML = original;
+        btn.disabled = false;
+    }
 }
 
 // ─── Retry Summarization ────────────────────────────────────────

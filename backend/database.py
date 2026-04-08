@@ -156,12 +156,24 @@ def init_db():
     """)
     conn.commit()
 
+    # Collections table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS collections (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            color      TEXT NOT NULL DEFAULT '#6366f1',
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+
     # Column migrations (safe to run every startup — ALTER TABLE ADD is a no-op if exists)
     _migrations = [
         "ALTER TABLE contexts ADD COLUMN embedding TEXT DEFAULT NULL",
         "ALTER TABLE contexts ADD COLUMN important_notes TEXT DEFAULT NULL",
         "ALTER TABLE contexts ADD COLUMN status TEXT DEFAULT 'completed'",
         "ALTER TABLE contexts ADD COLUMN starred INTEGER DEFAULT 0",
+        "ALTER TABLE contexts ADD COLUMN collection_id INTEGER DEFAULT NULL",
     ]
     for sql in _migrations:
         try:
@@ -195,6 +207,11 @@ def init_db():
     if dim > 0:
         _ensure_vec_tables(conn, dim)
 
+    # Any context stuck in "summarizing" from a previous crashed run → mark failed
+    conn.execute(
+        "UPDATE contexts SET status = 'failed' WHERE status = 'summarizing'"
+    )
+    conn.commit()
     conn.close()
 
 
@@ -265,6 +282,7 @@ def _row_to_dict(row):
     else:
         d["important_notes"] = []
     d["starred"] = bool(d.get("starred"))
+    d["collection_id"] = d.get("collection_id")
     return d
 
 
@@ -327,10 +345,18 @@ def get_all_contexts() -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
-def get_contexts_paginated(page: int = 1, per_page: int = 50, sort: str = "newest") -> dict:
+def get_contexts_paginated(
+    page: int = 1,
+    per_page: int = 50,
+    sort: str = "newest",
+    collection_id: int | None = None,
+) -> dict:
     """Return a page of contexts with total count for pagination."""
     conn = _get_conn()
-    total = conn.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
+
+    where = "WHERE collection_id = ?" if collection_id is not None else ""
+    params_count = (collection_id,) if collection_id is not None else ()
+    total = conn.execute(f"SELECT COUNT(*) FROM contexts {where}", params_count).fetchone()[0]
     offset = (page - 1) * per_page
 
     order_clause = {
@@ -339,9 +365,10 @@ def get_contexts_paginated(page: int = 1, per_page: int = 50, sort: str = "newes
         "alpha":  "starred DESC, title COLLATE NOCASE ASC",
     }.get(sort, "starred DESC, created_at DESC")
 
+    params = (*params_count, per_page, offset)
     rows = conn.execute(
-        f"SELECT * FROM contexts ORDER BY {order_clause} LIMIT ? OFFSET ?",
-        (per_page, offset),
+        f"SELECT * FROM contexts {where} ORDER BY {order_clause} LIMIT ? OFFSET ?",
+        params,
     ).fetchall()
     conn.close()
     return {
@@ -657,3 +684,84 @@ def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[di
     contexts = [_row_to_dict(r) for r in rows]
     contexts.sort(key=lambda c: order.get(c["id"], 999))
     return contexts
+
+
+# ---------------------------------------------------------------------------
+# Collections CRUD
+# ---------------------------------------------------------------------------
+
+def get_all_collections() -> list[dict]:
+    """Return all collections with a context count for each."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, name, color, created_at FROM collections ORDER BY created_at ASC"
+    ).fetchall()
+    counts = {
+        r[0]: r[1]
+        for r in conn.execute(
+            "SELECT collection_id, COUNT(*) FROM contexts WHERE collection_id IS NOT NULL GROUP BY collection_id"
+        ).fetchall()
+    }
+    conn.close()
+    return [
+        {"id": r[0], "name": r[1], "color": r[2], "created_at": r[3], "count": counts.get(r[0], 0)}
+        for r in rows
+    ]
+
+
+def create_collection(name: str, color: str = "#6366f1") -> dict:
+    """Create a new collection and return it."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT INTO collections (name, color, created_at) VALUES (?, ?, ?)",
+        (name.strip(), color, now),
+    )
+    cid = cur.lastrowid
+    conn.commit()
+    row = conn.execute("SELECT id, name, color, created_at FROM collections WHERE id = ?", (cid,)).fetchone()
+    conn.close()
+    return {"id": row[0], "name": row[1], "color": row[2], "created_at": row[3], "count": 0}
+
+
+def update_collection(collection_id: int, name: str | None = None, color: str | None = None) -> dict | None:
+    """Rename or recolor a collection."""
+    conn = _get_conn()
+    updates, params = [], []
+    if name is not None:
+        updates.append("name = ?"); params.append(name.strip())
+    if color is not None:
+        updates.append("color = ?"); params.append(color)
+    if updates:
+        params.append(collection_id)
+        conn.execute(f"UPDATE collections SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    row = conn.execute("SELECT id, name, color, created_at FROM collections WHERE id = ?", (collection_id,)).fetchone()
+    count = conn.execute("SELECT COUNT(*) FROM contexts WHERE collection_id = ?", (collection_id,)).fetchone()[0]
+    conn.close()
+    if not row:
+        return None
+    return {"id": row[0], "name": row[1], "color": row[2], "created_at": row[3], "count": count}
+
+
+def delete_collection(collection_id: int) -> bool:
+    """Delete a collection. Contexts in it become uncollected (collection_id → NULL)."""
+    conn = _get_conn()
+    conn.execute("UPDATE contexts SET collection_id = NULL WHERE collection_id = ?", (collection_id,))
+    cur = conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def set_context_collection(context_id: int, collection_id: int | None) -> dict | None:
+    """Assign (or unassign with None) a context to a collection."""
+    conn = _get_conn()
+    conn.execute(
+        "UPDATE contexts SET collection_id = ? WHERE id = ?",
+        (collection_id, context_id),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
+    conn.close()
+    return _row_to_dict(row)

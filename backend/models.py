@@ -70,3 +70,17 @@ class ModelSelect(BaseModel):
     """Request body for selecting the main LLM model."""
     model: str
 
+
+class CollectionCreate(BaseModel):
+    name: str
+    color: str = "#6366f1"
+
+
+class CollectionUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+
+
+class ContextCollectionSet(BaseModel):
+    collection_id: int | None = None
+

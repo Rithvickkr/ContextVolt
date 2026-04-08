@@ -9,7 +9,8 @@ import os
 import subprocess
 import sys
 import threading
-from fastapi import FastAPI, HTTPException, Query
+import time
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -32,8 +33,17 @@ from backend.database import (
     toggle_context_starred,
     update_chunk_embedding,
     search_chunks_keyword,
+    get_all_collections,
+    create_collection,
+    update_collection,
+    delete_collection,
+    set_context_collection,
 )
-from backend.models import SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest, PromptRequest, EmbedModelSelect, ModelSelect
+from backend.models import (
+    SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
+    PromptRequest, EmbedModelSelect, ModelSelect,
+    CollectionCreate, CollectionUpdate, ContextCollectionSet,
+)
 from backend.ollama_client import (
     summarize_conversation,
     summarize_conversation_streaming,
@@ -52,17 +62,63 @@ from backend.ollama_client import (
 )
 
 # ---------------------------------------------------------------------------
+# Rate limiting (in-memory, per-IP, sliding window)
+# ---------------------------------------------------------------------------
+
+_rate_limit_store: dict[str, list[float]] = {}
+_rate_limit_lock = threading.Lock()
+
+# Limits per route prefix (requests / window_seconds)
+_RATE_LIMITS: list[tuple[str, int, int]] = [
+    ("/api/capture",          30,  60),   # extension capture: 30 req/min
+    ("/api/summarize",        10,  60),   # summarization: 10 req/min
+    ("/api/retrieve",         60,  60),   # search/retrieve: 60 req/min
+    ("/api/setup/pull-model", 5,   300),  # model pulls: 5 per 5 min
+    ("/api/",                 200, 60),   # all other API calls: 200 req/min
+]
+
+
+def _check_rate_limit(client: str, path: str) -> None:
+    now = time.monotonic()
+    for prefix, limit, window in _RATE_LIMITS:
+        if path.startswith(prefix):
+            key = f"{client}:{prefix}"
+            with _rate_limit_lock:
+                timestamps = _rate_limit_store.get(key, [])
+                timestamps = [t for t in timestamps if now - t < window]
+                if len(timestamps) >= limit:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Rate limit exceeded. Max {limit} requests per {window}s.",
+                    )
+                timestamps.append(now)
+                _rate_limit_store[key] = timestamps
+            break
+
+
+# ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="ContextVolt", version="1.0.0")
 
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client = request.client.host if request.client else "unknown"
+    _check_rate_limit(client, request.url.path)
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
 # Initialize database on startup
@@ -541,6 +597,7 @@ def api_list_contexts(
     page: int = Query(default=1, ge=1, description="Page number"),
     per_page: int = Query(default=50, ge=1, le=200, description="Items per page"),
     sort: str = Query(default="newest", description="Sort order: newest, oldest, alpha"),
+    collection_id: int = Query(default=None, description="Filter by collection ID"),
 ):
     """List contexts with pagination. Uses semantic search when query provided."""
     if q:
@@ -548,10 +605,14 @@ def api_list_contexts(
         if vec:
             results = search_contexts_semantic(vec)
             if results:
+                if collection_id is not None:
+                    results = [r for r in results if r.get("collection_id") == collection_id]
                 return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False, "search_mode": "semantic"}
         results = search_contexts(q)
+        if collection_id is not None:
+            results = [r for r in results if r.get("collection_id") == collection_id]
         return {"contexts": results, "total": len(results), "page": 1, "per_page": len(results), "has_more": False, "search_mode": "keyword"}
-    return get_contexts_paginated(page, per_page, sort=sort)
+    return get_contexts_paginated(page, per_page, sort=sort, collection_id=collection_id)
 
 
 @app.post("/api/contexts/{context_id}/star")
@@ -1091,6 +1152,84 @@ def api_export_markdown_download(context_id: int):
     return Response(
         content=data["markdown"],
         media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Collections
+# ---------------------------------------------------------------------------
+
+@app.get("/api/collections")
+def api_list_collections():
+    return get_all_collections()
+
+
+@app.post("/api/collections")
+def api_create_collection(body: CollectionCreate):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Collection name required")
+    return create_collection(body.name, body.color)
+
+
+@app.put("/api/collections/{collection_id}")
+def api_update_collection(collection_id: int, body: CollectionUpdate):
+    result = update_collection(collection_id, name=body.name, color=body.color)
+    if not result:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    return result
+
+
+@app.delete("/api/collections/{collection_id}")
+def api_delete_collection(collection_id: int):
+    if not delete_collection(collection_id):
+        raise HTTPException(status_code=404, detail="Collection not found")
+    return {"success": True}
+
+
+@app.post("/api/contexts/{context_id}/collection")
+def api_set_context_collection(context_id: int, body: ContextCollectionSet):
+    result = set_context_collection(context_id, body.collection_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Context not found")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Database Backup
+# ---------------------------------------------------------------------------
+
+@app.get("/api/backup/download")
+def api_backup_download():
+    """Stream a safe hot-backup of the SQLite database as a downloadable file.
+
+    Uses sqlite3's built-in online backup API so the file is always consistent,
+    even while the app is running and writing to the database.
+    """
+    import sqlite3
+    import tempfile
+    from backend.database import DB_PATH
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    src = sqlite3.connect(DB_PATH)
+    try:
+        dst = sqlite3.connect(tmp_path)
+        src.backup(dst)
+        dst.close()
+        with open(tmp_path, "rb") as f:
+            data = f.read()
+    finally:
+        src.close()
+        os.unlink(tmp_path)
+
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"contextvolt_backup_{ts}.db"
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

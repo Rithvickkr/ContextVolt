@@ -50,6 +50,7 @@ const state = {
     collections: [],           // [{id, name, color, count}]
     activeCollection: null,    // collection id or null (all)
     newCollectionColor: '#6366f1',
+    totalContextCount: 0,      // global unfiltered total, for the "All" badge
 };
 
 // ─── P2-2: Source badge constants ────────────────────────────────
@@ -499,24 +500,28 @@ function renderCollections() {
     if (!list) return;
 
     const allActive = state.activeCollection === null;
-    const totalAll = state.contexts.length;
+    const totalAll = state.totalContextCount;
 
-    let html = `<button class="collection-item${allActive ? ' active' : ''}" onclick="filterByCollection(null)">
+    let html = `<div class="collection-item${allActive ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(null)" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(null)">
         <span class="collection-dot" style="background:var(--text-faint)"></span>
         <span class="collection-item-name">All</span>
         <span class="collection-item-count">${totalAll}</span>
-    </button>`;
+    </div>`;
 
     for (const col of state.collections) {
         const active = state.activeCollection === col.id;
-        html += `<button class="collection-item${active ? ' active' : ''}" onclick="filterByCollection(${col.id})">
+        const safeName = escapeHtml(col.name).replace(/'/g, '&#39;');
+        html += `<div class="collection-item${active ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(${col.id})" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(${col.id})" data-col-id="${col.id}">
             <span class="collection-dot" style="background:${escapeHtml(col.color)}"></span>
             <span class="collection-item-name">${escapeHtml(col.name)}</span>
             <span class="collection-item-count">${col.count}</span>
-            <button class="collection-item-delete" onclick="event.stopPropagation(); confirmDeleteCollection(${col.id}, '${escapeHtml(col.name)}')" title="Delete collection" aria-label="Delete ${escapeHtml(col.name)}">
+            <span class="collection-item-rename" onclick="event.stopPropagation(); startRenameCollection(${col.id})" title="Rename" aria-label="Rename ${escapeHtml(col.name)}" role="button" tabindex="0">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </span>
+            <span class="collection-item-delete" onclick="event.stopPropagation(); confirmDeleteCollection(${col.id}, '${safeName}')" title="Delete" aria-label="Delete ${escapeHtml(col.name)}" role="button" tabindex="0">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-        </button>`;
+            </span>
+        </div>`;
     }
     list.innerHTML = html;
 }
@@ -559,6 +564,71 @@ async function submitCollectionCreate() {
         renderCollections();
         showToast(`Collection "${col.name}" created`, 'success');
     } catch { showToast('Failed to create collection', 'error'); }
+}
+
+function startRenameCollection(id) {
+    const col = state.collections.find(c => c.id === id);
+    if (!col) return;
+
+    const row = document.querySelector(`.collection-item[data-col-id="${id}"]`);
+    if (!row) return;
+
+    const nameSpan = row.querySelector('.collection-item-name');
+    const currentName = col.name;
+
+    // Replace the name span with an inline input
+    const input = document.createElement('input');
+    input.className = 'collection-rename-input';
+    input.value = currentName;
+    input.maxLength = 40;
+    nameSpan.replaceWith(input);
+
+    // Disable the row's click-to-filter while editing
+    row.onclick = null;
+
+    input.focus();
+    input.select();
+
+    const finish = async (save) => {
+        const newName = input.value.trim();
+        if (save && newName && newName !== currentName) {
+            await submitRenameCollection(id, newName);
+        } else {
+            // Restore original name span without a fetch
+            const span = document.createElement('span');
+            span.className = 'collection-item-name';
+            span.textContent = currentName;
+            input.replaceWith(span);
+            row.onclick = () => filterByCollection(id);
+        }
+    };
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        e.stopPropagation();
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.onclick = (e) => e.stopPropagation();
+}
+
+async function submitRenameCollection(id, newName) {
+    try {
+        const res = await fetch(`${API}/api/collections/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName }),
+        });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        const idx = state.collections.findIndex(c => c.id === id);
+        if (idx !== -1) state.collections[idx] = { ...state.collections[idx], ...updated };
+        renderCollections();
+        showToast(`Renamed to "${newName}"`, 'success');
+    } catch {
+        showToast('Failed to rename collection', 'error');
+        renderCollections(); // restore original name
+    }
 }
 
 async function confirmDeleteCollection(id, name) {
@@ -662,6 +732,12 @@ async function loadContexts(query = '', append = false) {
         const data = await res.json();
         const contexts = data.contexts || data;
         state.libraryHasMore = !!data.has_more;
+
+        // Keep the global total up to date (only when not filtered by collection)
+        if (state.activeCollection === null && !query && data.total != null) {
+            state.totalContextCount = data.total;
+            renderCollections();
+        }
 
         // Notify user when semantic search fell back to keyword
         if (query && data.search_mode === 'keyword') {
@@ -2007,7 +2083,9 @@ document.addEventListener('keydown', (e) => {
     const editModal      = $('#edit-modal');
     const settingsModal  = $('#settings-modal');
     const shortcutsModal = $('#shortcuts-modal');
+    const systemModal    = $('#system-modal');
     if (shortcutsModal && shortcutsModal.style.display !== 'none') { closeShortcutsModal(); return; }
+    if (systemModal    && systemModal.style.display    !== 'none') { closeSystemModal();    return; }
     if (editModal      && editModal.style.display      !== 'none') closeEditModal();
     if (settingsModal  && settingsModal.style.display   !== 'none') closeSettingsModal();
 });
@@ -2073,6 +2151,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
     if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
     if ($('#btn-backup')) $('#btn-backup').addEventListener('click', downloadBackup);
+
+    // System modal
+    if ($('#btn-system'))       $('#btn-system').addEventListener('click', openSystemModal);
+    if ($('#system-modal-close')) $('#system-modal-close').addEventListener('click', closeSystemModal);
+    if ($('#system-modal'))     $('#system-modal').addEventListener('click', e => { if (e.target === $('#system-modal')) closeSystemModal(); });
+    document.querySelectorAll('.system-tab').forEach(tab => {
+        tab.addEventListener('click', () => _switchSystemTab(tab.dataset.tab));
+    });
+    if ($('#btn-refresh-logs'))  $('#btn-refresh-logs').addEventListener('click', loadSystemLogs);
+    if ($('#logs-lines-select')) $('#logs-lines-select').addEventListener('change', loadSystemLogs);
+    if ($('#btn-copy-logs')) {
+        $('#btn-copy-logs').addEventListener('click', () => {
+            const text = Array.from($('#logs-viewer').querySelectorAll('.log-line')).map(el => el.textContent).join('\n');
+            navigator.clipboard.writeText(text).then(() => showToast('Logs copied', 'success')).catch(() => showToast('Copy failed', 'error'));
+        });
+    }
 
     // Collections
     if ($('#btn-add-collection')) {
@@ -2221,28 +2315,38 @@ async function restartBackend() {
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     btn.classList.add('restarting');
-    const originalHTML = btn.innerHTML;
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restarting…`;
+
+    // Snapshot the current server token before restarting
+    let startedAt = null;
+    try {
+        const r = await fetch(`${API}/api/health`);
+        startedAt = (await r.json()).started_at ?? null;
+    } catch { /* server already offline */ }
 
     try {
         await fetch(`${API}/api/restart`, { method: 'POST' });
-    } catch { /* expected — server drops */ }
+    } catch { /* server may drop before sending a response — fine */ }
 
-    // Poll until backend is back
+    // Hard fallback: reload after 10 s no matter what (prevents infinite spin)
+    const hardTimeout = setTimeout(() => window.location.reload(), 10000);
+
+    // Poll every 500 ms — reload as soon as started_at changes (new server instance)
     const poll = async () => {
         try {
-            const res = await fetch(`${API}/api/setup/status`);
-            if (res.ok) {
-                showToast('Backend restarted', 'success');
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
-                btn.classList.remove('restarting');
-                return;
+            const r = await fetch(`${API}/api/health`);
+            if (r.ok) {
+                const d = await r.json();
+                if (d.started_at !== startedAt) {
+                    clearTimeout(hardTimeout);
+                    window.location.reload();
+                    return;
+                }
             }
-        } catch { /* still down */ }
-        setTimeout(poll, 800);
+        } catch { /* still cycling */ }
+        setTimeout(poll, 500);
     };
-    setTimeout(poll, 1200);
+    setTimeout(poll, 800);
 }
 
 // ─── Detail Collection Change ────────────────────────────────────
@@ -2252,6 +2356,136 @@ async function handleDetailCollectionChange(contextId, value) {
     if (updated) {
         const col = collectionId ? _getCollectionForContext(collectionId) : null;
         showToast(col ? `Moved to "${col.name}"` : 'Removed from collection', 'success');
+    }
+}
+
+// ─── System Status Modal ─────────────────────────────────────────
+let _sysAutoRefresh = null;
+
+function openSystemModal() {
+    const modal = $('#system-modal');
+    modal.style.display = 'flex';
+    _switchSystemTab('health');
+    loadSystemHealth();
+    // Auto-refresh health every 10 s while modal is open
+    _sysAutoRefresh = setInterval(loadSystemHealth, 10000);
+}
+
+function closeSystemModal() {
+    $('#system-modal').style.display = 'none';
+    if (_sysAutoRefresh) { clearInterval(_sysAutoRefresh); _sysAutoRefresh = null; }
+}
+
+function _switchSystemTab(tab) {
+    document.querySelectorAll('.system-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    $('#panel-health').style.display = tab === 'health' ? 'block' : 'none';
+    $('#panel-logs').style.display   = tab === 'logs'   ? 'flex'  : 'none';
+    if (tab === 'logs') {
+        $('#panel-logs').style.flexDirection = 'column';
+        loadSystemLogs();
+    }
+}
+
+function _fmtUptime(s) {
+    if (s < 60)   return `${Math.round(s)}s`;
+    if (s < 3600) return `${Math.floor(s/60)}m ${Math.round(s%60)}s`;
+    return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+}
+
+async function loadSystemHealth() {
+    const grid = $('#sys-status-grid');
+    if (!grid) return;
+    try {
+        const res = await fetch(`${API}/api/system/status`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+
+        const ollamaDot  = d.ollama.running  ? 'ok'   : 'err';
+        const modelDot   = d.model.ready     ? 'ok'   : (d.ollama.running ? 'warn' : 'err');
+        const modelSub   = d.model.ready     ? 'Ready' : (d.ollama.running ? 'Not downloaded' : 'Ollama offline');
+
+        const modelsHtml = d.installed_models.length
+            ? `<ul class="sys-models-list">${d.installed_models.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`
+            : `<span style="color:var(--text-faint);font-size:11px;">None installed</span>`;
+
+        grid.innerHTML = `
+            <div class="sys-card">
+                <div class="sys-card-header">
+                    <span class="sys-card-label">Backend</span>
+                    <span class="sys-dot ok"></span>
+                </div>
+                <div class="sys-card-value">Online</div>
+                <div class="sys-card-sub">Uptime: ${_fmtUptime(d.backend.uptime_s)}</div>
+            </div>
+            <div class="sys-card">
+                <div class="sys-card-header">
+                    <span class="sys-card-label">Ollama</span>
+                    <span class="sys-dot ${ollamaDot}"></span>
+                </div>
+                <div class="sys-card-value">${d.ollama.running ? 'Running' : 'Offline'}</div>
+                <div class="sys-card-sub">${escapeHtml(d.ollama.url)}</div>
+            </div>
+            <div class="sys-card">
+                <div class="sys-card-header">
+                    <span class="sys-card-label">LLM Model</span>
+                    <span class="sys-dot ${modelDot}"></span>
+                </div>
+                <div class="sys-card-value" style="font-size:13px;line-height:1.3">${escapeHtml(d.model.name)}</div>
+                <div class="sys-card-sub">${modelSub}</div>
+            </div>
+            <div class="sys-card">
+                <div class="sys-card-header">
+                    <span class="sys-card-label">Embed Model</span>
+                    <span class="sys-dot ok"></span>
+                </div>
+                <div class="sys-card-value" style="font-size:13px;line-height:1.3">${escapeHtml(d.embed.name)}</div>
+                <div class="sys-card-sub">Embedding model</div>
+            </div>
+            <div class="sys-card">
+                <div class="sys-card-header">
+                    <span class="sys-card-label">Database</span>
+                    <span class="sys-dot ok"></span>
+                </div>
+                <div class="sys-card-value">${d.database.contexts}</div>
+                <div class="sys-card-sub">${d.database.chunks} chunks · ${d.database.collections} collections · ${d.database.size_mb} MB</div>
+            </div>
+            <div class="sys-card" style="grid-column: span 2;">
+                <div class="sys-card-header" style="margin-bottom:6px;">
+                    <span class="sys-card-label">Installed Ollama Models</span>
+                </div>
+                ${modelsHtml}
+            </div>`;
+    } catch (e) {
+        grid.innerHTML = `<div class="sys-status-loading" style="color:var(--danger)">Could not reach backend: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function loadSystemLogs() {
+    const viewer = $('#logs-viewer');
+    if (!viewer) return;
+    const lines = parseInt($('#logs-lines-select')?.value || '100', 10);
+    viewer.innerHTML = '<div class="sys-status-loading">Loading…</div>';
+    try {
+        const res = await fetch(`${API}/api/debug/logs?lines=${lines}`);
+        if (!res.ok) throw new Error();
+        const d = await res.json();
+        if (!d.exists || !d.lines.length) {
+            viewer.innerHTML = '<div class="log-empty">No log entries found.</div>';
+            return;
+        }
+        viewer.innerHTML = d.lines.map(line => {
+            const l = line.trimEnd();
+            let cls = 'log-line';
+            const u = l.toUpperCase();
+            if (u.includes('[ERROR]')   || u.includes('ERROR:'))   cls += ' log-error';
+            else if (u.includes('[WARNING]') || u.includes('WARNING:')) cls += ' log-warning';
+            else if (u.includes('[DEBUG]'))                              cls += ' log-debug';
+            else                                                          cls += ' log-info';
+            return `<div class="${cls}">${escapeHtml(l)}</div>`;
+        }).join('');
+        if ($('#logs-autoscroll')?.checked) viewer.scrollTop = viewer.scrollHeight;
+    } catch {
+        viewer.innerHTML = '<div class="sys-status-loading" style="color:var(--danger)">Failed to load logs.</div>';
     }
 }
 

@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 
 from backend.database import (
     init_db,
+    get_db_stats,
     create_context,
     create_chunks,
     get_all_contexts,
@@ -57,7 +58,6 @@ from backend.ollama_client import (
     check_ollama_running,
     check_model_available,
     DEFAULT_MODEL,
-    _parse_messages,
     _USER_TURN,
 )
 
@@ -161,9 +161,11 @@ def serve_frontend():
 # Health & Setup Status
 # ---------------------------------------------------------------------------
 
+_server_token: dict = {"started_at": time.time()}  # mutable — run.py updates this on each launch
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "started_at": _server_token["started_at"]}
 
 
 @app.get("/api/setup/status")
@@ -1235,7 +1237,7 @@ def api_backup_download():
 
 
 # ---------------------------------------------------------------------------
-# Debug
+# Debug + System Status
 # ---------------------------------------------------------------------------
 
 @app.get("/api/debug/ollama")
@@ -1258,24 +1260,84 @@ def api_debug_logs(lines: int = 100):
         return {"lines": [], "path": log_path, "exists": False}
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         all_lines = f.readlines()
-    return {"lines": all_lines[-lines:], "path": log_path, "exists": True}  # type: ignore[index]
+    return {"lines": all_lines[-lines:], "path": log_path, "exists": True}
+
+
+@app.get("/api/system/status")
+def api_system_status():
+    """Combined health snapshot for the system status dashboard."""
+    from backend.ollama_client import _get_default_model, _get_embed_model
+    import requests as _req
+
+    uptime_s = round(time.time() - _server_token["started_at"], 1)
+
+    try:
+        current_model  = _get_default_model()
+    except Exception:
+        current_model  = "unknown"
+
+    try:
+        embed_model = _get_embed_model()
+    except Exception:
+        embed_model = "unknown"
+
+    try:
+        ollama_running = check_ollama_running()
+    except Exception:
+        ollama_running = False
+
+    try:
+        model_ready = check_model_available(current_model) if ollama_running else False
+    except Exception:
+        model_ready = False
+
+    installed_models: list[str] = []
+    if ollama_running:
+        try:
+            r = _req.get("http://localhost:11434/api/tags", timeout=5)
+            installed_models = [m.get("name", "") for m in r.json().get("models", [])]
+        except Exception:
+            pass
+
+    try:
+        db = get_db_stats()
+    except Exception:
+        db = {"contexts": 0, "chunks": 0, "collections": 0, "size_mb": 0.0}
+
+    return {
+        "backend":          {"status": "ok", "uptime_s": uptime_s},
+        "ollama":           {"running": ollama_running, "url": "http://localhost:11434"},
+        "model":            {"name": current_model, "ready": model_ready},
+        "embed":            {"name": embed_model},
+        "installed_models": installed_models,
+        "database":         db,
+    }
 
 
 # ---------------------------------------------------------------------------
 # Restart
 # ---------------------------------------------------------------------------
 
+# Populated by run.py after each server launch. Calling it stops the current
+# uvicorn instance and starts a fresh one without touching the pywebview window.
+_restart_uvicorn: "callable | None" = None
+
+
 @app.post("/api/restart")
 def api_restart():
-    """Restart the backend process."""
-    def _do_restart() -> None:
-        import time
-        time.sleep(0.4)
-        kwargs: dict = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        subprocess.Popen([sys.executable] + sys.argv, **kwargs)
-        os._exit(0)
+    """Restart only the uvicorn/FastAPI layer in-process.
 
-    threading.Thread(target=_do_restart, daemon=True).start()
+    The pywebview window stays open. The HTTP server stops, releases the port,
+    then a new uvicorn instance starts on the same port ~1.2 s later.
+    The frontend polls /api/setup/status until the new server responds.
+    """
+    cb = _restart_uvicorn
+    if cb is None:
+        raise HTTPException(status_code=503, detail="Restart callback not available")
+
+    def _trigger() -> None:
+        time.sleep(0.25)  # let the HTTP response reach the client first
+        cb()
+
+    threading.Thread(target=_trigger, daemon=True).start()
     return {"status": "restarting"}

@@ -687,6 +687,27 @@ def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[di
 
 
 # ---------------------------------------------------------------------------
+# System stats
+# ---------------------------------------------------------------------------
+
+def get_db_stats() -> dict:
+    """Return row counts and file size for the status dashboard."""
+    conn = _get_conn()
+    contexts  = conn.execute("SELECT COUNT(*) FROM contexts").fetchone()[0]
+    chunks    = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    try:
+        collections = conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
+    except Exception:
+        collections = 0
+    conn.close()
+    try:
+        size_mb = round(os.path.getsize(DB_PATH) / 1_048_576, 2)
+    except Exception:
+        size_mb = 0.0
+    return {"contexts": contexts, "chunks": chunks, "collections": collections, "size_mb": size_mb}
+
+
+# ---------------------------------------------------------------------------
 # Collections CRUD
 # ---------------------------------------------------------------------------
 

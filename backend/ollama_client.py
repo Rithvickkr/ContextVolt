@@ -283,7 +283,7 @@ def check_ollama_running() -> bool:
     try:
         r = requests.get(f"{OLLAMA_BASE}/api/tags", timeout=3)
         return r.status_code == 200
-    except requests.ConnectionError:
+    except Exception:
         return False
 
 
@@ -301,7 +301,7 @@ def check_model_available(model: str | None = None) -> bool:
             n == model or n.split(":")[0] == model or model.split(":")[0] == n
             for n in names
         )
-    except (requests.ConnectionError, ValueError):
+    except Exception:
         return False
 
 

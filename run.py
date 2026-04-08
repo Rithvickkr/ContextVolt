@@ -21,30 +21,62 @@ os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_DIR
 import uvicorn
 import webview
 
-# Import to trigger DB init
-from backend.main import app  # noqa: F401
+import backend.main as _main_module
+from backend.main import app  # noqa: F401  — triggers DB init
+
+_current_server: uvicorn.Server | None = None
+_server_lock = threading.Lock()
 
 
-def start_server():
-    """Run the FastAPI server in a background thread."""
-    uvicorn.run(
-        "backend.main:app",
-        host="127.0.0.1",
-        port=8000,
-        log_level="warning",
-    )
+def _launch_server() -> None:
+    """Create and run a fresh uvicorn server instance. Blocks until server exits."""
+    global _current_server
+    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="warning")
+    srv = uvicorn.Server(config)
+
+    with _server_lock:
+        _current_server = srv
+
+    # Update the mutable start-time token so /api/health returns a new value
+    # after each restart (the module-level dict persists across restarts).
+    _main_module._server_token["started_at"] = time.time()
+
+    # Expose restart callback so the API endpoint can trigger it
+    _main_module._restart_uvicorn = _restart_uvicorn
+
+    srv.run()  # blocks until force_exit / should_exit is set
+
+
+def _restart_uvicorn() -> None:
+    """Stop the running uvicorn instance and start a fresh one (in-process).
+
+    Called from the /api/restart endpoint via _main_module._restart_uvicorn().
+    The pywebview window is untouched — only the HTTP server cycles.
+    """
+    with _server_lock:
+        old = _current_server
+
+    if old:
+        old.force_exit = True  # immediate shutdown, don't wait for keep-alive connections
+
+    def _delayed_relaunch() -> None:
+        time.sleep(0.8)  # brief pause for OS to release the port
+        thread = threading.Thread(target=_launch_server, daemon=True)
+        thread.start()
+
+    threading.Thread(target=_delayed_relaunch, daemon=True).start()
 
 
 def main():
-    # Start FastAPI in background
-    server_thread = threading.Thread(target=start_server, daemon=True)
+    # Start the first server instance
+    server_thread = threading.Thread(target=_launch_server, daemon=True)
     server_thread.start()
 
-    # Give the server a moment to boot
+    # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)
 
-    # Open native window
-    window = webview.create_window(
+    # Open native window — blocks until the window is closed
+    webview.create_window(
         title="ContextVolt",
         url="http://127.0.0.1:8000",
         width=1200,
@@ -53,11 +85,7 @@ def main():
         background_color="#0a0a0f",
         text_select=True,
     )
-
-    # Start the webview event loop (blocks until window is closed)
     webview.start(debug=False)
-
-    # When window is closed, exit
     sys.exit(0)
 
 

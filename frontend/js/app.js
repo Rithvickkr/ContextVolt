@@ -7,6 +7,16 @@
 
 const API = 'http://localhost:8000';
 
+// ─── Global error handler — prevents silent freezes in pywebview ──
+window.addEventListener('error', e => {
+    console.error('Uncaught error:', e.message, e.filename, e.lineno);
+    try { showToast(`JS Error: ${e.message}`, 'error'); } catch (_) {}
+});
+window.addEventListener('unhandledrejection', e => {
+    console.error('Unhandled promise rejection:', e.reason);
+    try { showToast(`Error: ${e.reason?.message || e.reason}`, 'error'); } catch (_) {}
+});
+
 // ─── Theme ──────────────────────────────────────────────────────
 function _applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
@@ -51,6 +61,7 @@ const state = {
     activeCollection: null,    // collection id or null (all)
     newCollectionColor: '#6366f1',
     totalContextCount: 0,      // global unfiltered total, for the "All" badge
+    searchQuery: '',           // current search query for highlighting
 };
 
 // ─── P2-2: Source badge constants ────────────────────────────────
@@ -273,19 +284,23 @@ function transitionToApp() {
 function navigateTo(view) {
     state.view = view;
 
-    // Fade-transition views
+    // Hide all views, show target with fade-in
     $$('.view').forEach(v => {
         if (v.id === `view-${view}`) {
             v.style.display = 'block';
-            v.classList.add('view-fade');
-            // Double rAF ensures the display:block paint happens before adding active
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-                v.classList.add('view-active');
-            }));
+            // Trigger fade-in: start invisible, paint, then transition to visible
+            v.style.opacity = '0';
+            v.style.transform = 'translateY(6px)';
+            v.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+            requestAnimationFrame(() => {
+                v.style.opacity = '1';
+                v.style.transform = 'translateY(0)';
+            });
         } else {
-            v.classList.remove('view-active');
-            v.classList.remove('view-fade');
             v.style.display = 'none';
+            v.style.opacity = '';
+            v.style.transform = '';
+            v.style.transition = '';
         }
     });
 
@@ -682,8 +697,19 @@ function _getCollectionForContext(collectionId) {
 }
 
 // ─── Context Library ─────────────────────────────────────────────
+
+/** Wrap matched search terms in <span class="search-highlight"> */
+function _highlightText(text, query) {
+    if (!query || query.length < 2) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const queryEscaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${queryEscaped})`, 'gi');
+    return escaped.replace(regex, '<span class="search-highlight">$1</span>');
+}
+
 function _renderContextCard(ctx) {
     const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
+    const q = state.searchQuery;
     const tags = (ctx.tags || []).map(t =>
         `<span class="tag">${escapeHtml(t)}</span>`
     ).join('');
@@ -701,7 +727,7 @@ function _renderContextCard(ctx) {
             ${state.selectMode ? `<input type="checkbox" class="card-checkbox" ${checked} onclick="event.stopPropagation(); toggleSelectCard(${ctx.id})" />` : ''}
             ${statusBadge}
             <div class="card-header-row">
-                <h3 class="card-title">${escapeHtml(ctx.title)}</h3>
+                <h3 class="card-title">${_highlightText(ctx.title, q)}</h3>
                 <div style="display:flex;align-items:center;gap:6px;">
                     ${colDot}
                     ${sourceBadge}
@@ -713,7 +739,7 @@ function _renderContextCard(ctx) {
             ${(() => {
                 const ideas = summary.key_ideas || [];
                 const sub = ideas.length > 0 ? ideas[0] : (summary.snapshot || '');
-                return sub ? `<p class="card-topic">${escapeHtml(sub)}</p>` : '';
+                return sub ? `<p class="card-topic">${_highlightText(sub, q)}</p>` : '';
             })()}
             <div class="card-tags">${tags}</div>
             <div class="card-meta">
@@ -727,6 +753,7 @@ function _renderContextCard(ctx) {
 }
 
 async function loadContexts(query = '', append = false) {
+    state.searchQuery = query; // Track for highlighting
     const grid = $('#contexts-grid');
     const emptyState = $('#empty-state');
     const loadMoreContainer = $('#load-more-container');
@@ -736,6 +763,8 @@ async function loadContexts(query = '', append = false) {
         state.contexts = [];
         // Show skeleton loaders while fetching
         grid.style.display = 'grid';
+        grid.style.opacity = '1';
+        grid.style.transition = '';
         emptyState.style.display = 'none';
         grid.innerHTML = Array(6).fill('<div class="skeleton-card"></div>').join('');
     }
@@ -786,12 +815,7 @@ async function loadContexts(query = '', append = false) {
         if (append && !state.activeTagFilter) {
             grid.insertAdjacentHTML('beforeend', _staggeredCards(contexts));
         } else {
-            // Fade out, swap content, fade in
-            grid.style.transition = 'opacity 0.15s ease';
-            grid.style.opacity = '0';
-            await new Promise(r => setTimeout(r, 150));
             grid.innerHTML = _staggeredCards(filtered);
-            grid.style.opacity = '1';
         }
 
         // Build tag filter bar
@@ -1180,8 +1204,8 @@ function _updateBulkCount() {
 function _staggeredCards(items) {
     return items.map((ctx, i) =>
         _renderContextCard(ctx).replace(
-            'class="context-card',
-            `class="context-card" style="--card-delay:${Math.min(i * 40, 400)}ms"`
+            /class="context-card([^"]*)"/,
+            `class="context-card$1" style="--card-delay:${Math.min(i * 40, 400)}ms"`
         )
     ).join('');
 }
@@ -1247,6 +1271,12 @@ function renderDetail(ctx) {
     const starFill = ctx.starred ? 'currentColor' : 'none';
 
     container.innerHTML = `
+        <div class="detail-sticky-header" id="detail-sticky-header">
+            <button class="btn btn-ghost" onclick="navigateTo('library')" style="padding:6px 8px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span class="detail-sticky-title">${escapeHtml(ctx.title)}</span>
+        </div>
         <div class="detail-title-row">
             <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
             <button class="detail-star${starredClass}" onclick="toggleStarDetail(${ctx.id})" title="${ctx.starred ? 'Unpin' : 'Pin'}" aria-label="${ctx.starred ? 'Unpin context' : 'Pin context'}">
@@ -2358,6 +2388,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Theme toggle
     if ($('#btn-theme-toggle')) $('#btn-theme-toggle').addEventListener('click', toggleTheme);
 
+    // Sidebar collapse
+    if ($('#sidebar-collapse-btn')) $('#sidebar-collapse-btn').addEventListener('click', toggleSidebar);
+
+    // Sticky detail header
+    _initStickyDetailHeader();
+
     // Shortcuts modal
     if ($('#btn-shortcuts')) $('#btn-shortcuts').addEventListener('click', openShortcutsModal);
     if ($('#shortcuts-modal-close')) $('#shortcuts-modal-close').addEventListener('click', closeShortcutsModal);
@@ -2678,3 +2714,45 @@ window.toggleOriginalChat = toggleOriginalChat;
 window.generatePrompt = generatePrompt;
 window.retrySummarize = retrySummarize;
 window.copyCodeSnippet = copyCodeSnippet;
+
+// ─── Feature 1: Collapsible Sidebar ─────────────────────────────
+function toggleSidebar() {
+    const app = document.getElementById('app');
+    app.classList.toggle('sidebar-collapsed');
+    const collapsed = app.classList.contains('sidebar-collapsed');
+    localStorage.setItem('cv-sidebar-collapsed', collapsed ? '1' : '0');
+}
+
+function _restoreSidebarState() {
+    const saved = localStorage.getItem('cv-sidebar-collapsed');
+    if (saved === '1') {
+        const app = document.getElementById('app');
+        if (app) app.classList.add('sidebar-collapsed');
+    }
+}
+
+// Run immediately
+_restoreSidebarState();
+
+// ─── Feature 4: Sticky Detail Header ────────────────────────────
+let _stickyObserver = null;
+
+function _initStickyDetailHeader() {
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent) return;
+
+    mainContent.addEventListener('scroll', () => {
+        const stickyEl = document.getElementById('detail-sticky-header');
+        const titleRow = document.querySelector('.detail-title-row');
+        if (!stickyEl || !titleRow) return;
+
+        const titleRect = titleRow.getBoundingClientRect();
+        const mainRect = mainContent.getBoundingClientRect();
+
+        if (titleRect.bottom < mainRect.top + 10) {
+            stickyEl.classList.add('visible');
+        } else {
+            stickyEl.classList.remove('visible');
+        }
+    });
+}

@@ -15,6 +15,7 @@ context_volt.db
 .installed
 .env
 .cv_lock
+.cv_installer_lock
 
 # ─── Windows installer build artifacts ───────────
 installer/build/

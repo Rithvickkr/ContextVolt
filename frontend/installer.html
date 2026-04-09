@@ -9,7 +9,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-        rel="stylesheet">
+        rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet"></noscript>
     <link rel="stylesheet" href="css/installer.css">
 </head>
 
@@ -377,63 +380,78 @@
             }
         }
 
+        let _polling = false;
         async function pollState() {
             if (!window.pywebview?.api) return;
+            if (_polling) return; // don't stack calls — skip if previous hasn't returned
+            _polling = true;
             try { updateUI(await window.pywebview.api.get_state()); }
             catch (err) { console.error('Polling error:', err); }
+            finally { _polling = false; }
         }
 
         function startPolling() {
             if (pollingInterval) return;
-            pollingInterval = setInterval(pollState, 200);
+            pollingInterval = setInterval(pollState, 800);
         }
 
         function stopPolling() {
             if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
         }
 
+        // ── Default model data (used immediately; overridden by API if available) ──
+
+        const DEFAULT_MODELS = [
+            { id: 'qwen2.5:3b',   name: 'Qwen 2.5 3B',   size: '~2 GB',  description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
+            { id: 'qwen2.5:7b',   name: 'Qwen 2.5 7B',   size: '~5 GB',  description: 'Best quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
+            { id: 'qwen2.5:1.5b', name: 'Qwen 2.5 1.5B', size: '~1 GB',  description: 'Lightweight — minimal hardware needed, basic summary quality', recommended: false },
+        ];
+
+        const DEFAULT_EMBED_MODELS = [
+            { id: 'nomic-embed-text',     name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
+            { id: 'mxbai-embed-large',    name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
+            { id: 'nomic-embed-text:v1.5',name: 'Nomic Embed v1.5',  size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
+            { id: 'bge-m3',               name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual support — best for non-English content', recommended: false },
+        ];
+
         // ── Initialization ────────────────────────────────────────────────
 
-        async function initialize() {
-            if (!window.pywebview?.api) {
-                setTimeout(initialize, 100);
-                return;
-            }
+        // Render defaults immediately so cards are visible before pywebview is ready
+        renderModelCards(DEFAULT_MODELS);
+        renderEmbedModelCards(DEFAULT_EMBED_MODELS);
 
-            // Load saved config first so we can pre-select existing choices
+        let _apiInitDone = false;
+        async function initialize() {
+            if (_apiInitDone) return;
+            if (!window.pywebview?.api) return; // will be retried by event / interval
+
+            _apiInitDone = true;
+
+            // Refresh selection from persisted config
             try {
                 const saved = await window.pywebview.api.get_saved_config();
                 if (saved.model)       selectedModel      = saved.model;
                 if (saved.embed_model) selectedEmbedModel = saved.embed_model;
-            } catch (e) { /* no config yet, use defaults */ }
+            } catch (e) { /* no config yet, keep defaults */ }
 
-            // Load AI model options
+            // Reload model lists from API (may contain updated data)
             try {
                 const models = await window.pywebview.api.get_available_models();
                 renderModelCards(models);
-            } catch (e) {
-                renderModelCards([
-                    { id: 'qwen2.5:3b',  name: 'Qwen 2.5 3B',  size: '~2 GB', description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
-                    { id: 'qwen2.5:7b',  name: 'Qwen 2.5 7B',  size: '~5 GB', description: 'Best quality — needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
-                    { id: 'qwen2.5:1.5b',name: 'Qwen 2.5 1.5B',size: '~1 GB', description: 'Lightweight — minimal hardware, basic quality', recommended: false },
-                ]);
-            }
-            // Load embedding model options
+            } catch (e) { /* keep defaults already rendered */ }
+
             try {
                 const embedModels = await window.pywebview.api.get_available_embed_models();
                 renderEmbedModelCards(embedModels);
-            } catch (e) {
-                renderEmbedModelCards([
-                    { id: 'nomic-embed-text',   name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
-                    { id: 'mxbai-embed-large',  name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
-                    { id: 'nomic-embed-text:v1.5', name: 'Nomic Embed v1.5', size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
-                    { id: 'bge-m3',             name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual support — best for non-English content', recommended: false },
-                ]);
-            }
+            } catch (e) { /* keep defaults already rendered */ }
         }
 
         window.addEventListener('pywebviewready', initialize);
-        setTimeout(() => { if (!installationStarted) initialize(); }, 1000);
+        // Fallback poll: pywebviewready sometimes doesn't fire in WinForms/Chromium
+        const _initPoll = setInterval(() => {
+            if (_apiInitDone || installationStarted) { clearInterval(_initPoll); return; }
+            initialize();
+        }, 300);
 
     </script>
 </body>

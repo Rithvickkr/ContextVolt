@@ -16,6 +16,14 @@ from pathlib import Path
 
 import webview
 
+# ─── Windows taskbar icon fix ─────────────────────────────────────
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ContextVolt.App.1")
+    except Exception:
+        pass
+
 # ─────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────
@@ -791,7 +799,12 @@ class Api:
     def launch_app(self):
         """Launch the main application."""
         state.log("Launching ContextVolt...")
-        python_exe = sys.executable if EMBEDDED_MODE else str(VENV_PYTHON)
+        if EMBEDDED_MODE:
+            python_exe = sys.executable
+        else:
+            # Prefer pythonw.exe (windowless) so no console appears when launching the app
+            pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
+            python_exe = str(pythonw) if pythonw.exists() else str(VENV_PYTHON)
         popen_kwargs = {"cwd": str(PROJECT_ROOT)}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -819,9 +832,20 @@ def main():
         background_color="#09090b",
         js_api=api,
     )
-    
+
     state.window = window
-    webview.start()
+
+    _icon = str(PROJECT_ROOT / "icon.ico")
+    if IS_WINDOWS and os.path.exists(_icon):
+        def _set_icon():
+            try:
+                from System.Drawing import Icon  # type: ignore
+                window.native.Icon = Icon(_icon)
+            except Exception:
+                pass
+        window.events.shown += _set_icon
+
+    webview.start(icon=_icon if os.path.exists(_icon) else None)
 
 
 if __name__ == "__main__":

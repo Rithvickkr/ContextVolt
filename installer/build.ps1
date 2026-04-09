@@ -121,6 +121,19 @@ call start.bat
 
 Set-Content -Path "$BuildDir\ContextVolt.bat" -Value $launcherContent -Encoding ASCII
 
+# Also create the silent VBS launcher (no console window for end users)
+$vbsContent = @'
+'' ContextVolt — Silent Launcher
+'' Runs start.bat with no visible console window.
+Dim shell, appDir
+Set shell = CreateObject("WScript.Shell")
+appDir = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
+shell.Run "cmd /c """ & appDir & "\app\start.bat""", 0, False
+'@
+
+Set-Content -Path "$BuildDir\ContextVolt.vbs" -Value $vbsContent -Encoding ASCII
+Write-Host "         Created: ContextVolt.vbs (silent launcher)" -ForegroundColor DarkGray
+
 Write-Host ""
 Write-Host "  ═══════════════════════════════════════════" -ForegroundColor Green
 Write-Host "  ✅ Build complete!" -ForegroundColor Green

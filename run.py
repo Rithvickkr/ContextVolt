@@ -9,10 +9,68 @@ import sys
 import os
 import threading
 import time
+import traceback
+import logging
 
 # Ensure project root is on the path
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
+
+# ─── Crash logging (pythonw.exe has no console) ──────────────────
+_LOG_FILE = os.path.join(PROJECT_ROOT, "cv_error.log")
+logging.basicConfig(
+    filename=_LOG_FILE,
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    logging.error("Unhandled exception:\n" + "".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _excepthook
+
+# ─── Single instance enforcement ─────────────────────────────────
+import atexit
+
+_LOCK_FILE = os.path.join(PROJECT_ROOT, ".cv_lock")
+
+def _pid_alive(pid: int) -> bool:
+    """Non-destructive PID existence check — Windows-safe via OpenProcess."""
+    if sys.platform == "win32":
+        import ctypes
+        SYNCHRONIZE = 0x00100000
+        handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+def _acquire_lock() -> bool:
+    if os.path.exists(_LOCK_FILE):
+        try:
+            with open(_LOCK_FILE) as f:
+                pid = int(f.read().strip())
+            if _pid_alive(pid):
+                return False  # another instance is running
+        except Exception:
+            pass  # stale or unreadable lock — proceed
+    with open(_LOCK_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    atexit.register(_release_lock)
+    return True
+
+def _release_lock():
+    try:
+        os.remove(_LOCK_FILE)
+    except Exception:
+        pass
 
 # Configure Ollama models path
 OLLAMA_MODELS_DIR = os.path.join(PROJECT_ROOT, ".ollama", "models")
@@ -23,6 +81,16 @@ import webview
 
 import backend.main as _main_module
 from backend.main import app  # noqa: F401  — triggers DB init
+
+# ─── Windows taskbar icon fix ─────────────────────────────────────
+# Without this, Windows groups the window under the Python taskbar icon.
+# Setting a unique AppUserModelID tells Windows to treat this as its own app.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ContextVolt.App.1")
+    except Exception:
+        pass
 
 _current_server: uvicorn.Server | None = None
 _server_lock = threading.Lock()
@@ -68,6 +136,10 @@ def _restart_uvicorn() -> None:
 
 
 def main():
+    if not _acquire_lock():
+        # Another instance is already running — just exit silently
+        sys.exit(0)
+
     # Start the first server instance
     server_thread = threading.Thread(target=_launch_server, daemon=True)
     server_thread.start()
@@ -75,8 +147,12 @@ def main():
     # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)
 
+    # Resolve icon path (works both from source and installed builds)
+    _icon = os.path.join(PROJECT_ROOT, "icon.ico")
+    _icon_arg = _icon if os.path.exists(_icon) else None
+
     # Open native window — blocks until the window is closed
-    webview.create_window(
+    window = webview.create_window(
         title="ContextVolt",
         url="http://127.0.0.1:8000",
         width=1200,
@@ -85,7 +161,19 @@ def main():
         background_color="#0a0a0f",
         text_select=True,
     )
-    webview.start(debug=False)
+
+    # pywebview on Windows hardcodes sys.executable as the icon source and ignores
+    # the icon= parameter. Override via the shown event using System.Drawing.Icon.
+    if _icon_arg and sys.platform == "win32":
+        def _set_icon():
+            try:
+                from System.Drawing import Icon  # type: ignore
+                window.native.Icon = Icon(_icon_arg)
+            except Exception:
+                pass
+        window.events.shown += _set_icon
+
+    webview.start(debug=False, icon=_icon_arg)
     sys.exit(0)
 
 

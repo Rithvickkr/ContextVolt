@@ -57,8 +57,13 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: ─── Launch the GUI installer ────────────────────────────────────
-:: The professional installer UI takes over from here
-"%VENV_PYTHON%" installer.py
+:: Use pythonw.exe (windowless) so no console window appears
+set "VENV_PYTHONW=%~dp0venv\Scripts\pythonw.exe"
+if exist "%VENV_PYTHONW%" (
+    "%VENV_PYTHONW%" installer.py
+) else (
+    "%VENV_PYTHON%" installer.py
+)
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo  Installer encountered an error.

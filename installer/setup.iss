@@ -13,7 +13,7 @@
 #define MyAppVersion "1.1"
 #define MyAppPublisher "ContextVolt"
 #define MyAppURL "https://github.com/Rithvickkr/ContextVolt"
-#define MyAppExeName "ContextVolt.bat"
+#define MyAppExeName "ContextVolt.vbs"
 
 [Setup]
 AppId={{A3B8D1B6-0B3B-4B1A-9C1A-CONTEXTVOLT-2026}}
@@ -58,14 +58,15 @@ Source: "build\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs
 
 ; Launcher
 Source: "build\ContextVolt.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\ContextVolt.vbs"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Start Menu
-Name: "{group}\ContextVolt"; Filename: "{app}\ContextVolt.bat"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
+Name: "{group}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 Name: "{group}\Uninstall ContextVolt"; Filename: "{uninstallexe}"
 
 ; Desktop (always created)
-Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.bat"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
+Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a Desktop shortcut"; GroupDescription: "Additional shortcuts:"

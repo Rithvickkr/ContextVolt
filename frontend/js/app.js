@@ -273,11 +273,21 @@ function transitionToApp() {
 function navigateTo(view) {
     state.view = view;
 
-    // Hide all views
-    $$('.view').forEach(v => v.style.display = 'none');
-
-    // Show target view
-    $(`#view-${view}`).style.display = 'block';
+    // Fade-transition views
+    $$('.view').forEach(v => {
+        if (v.id === `view-${view}`) {
+            v.style.display = 'block';
+            v.classList.add('view-fade');
+            // Double rAF ensures the display:block paint happens before adding active
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                v.classList.add('view-active');
+            }));
+        } else {
+            v.classList.remove('view-active');
+            v.classList.remove('view-fade');
+            v.style.display = 'none';
+        }
+    });
 
     // Update nav
     $$('.nav-item').forEach(n => n.classList.remove('active'));
@@ -330,12 +340,13 @@ async function summarizeAndSave() {
 
     try {
         // Step 1: Summarize via Ollama (streaming progress)
-        const _setProgress = (msg) => {
-            const loader = btn.querySelector('.btn-loader');
-            const textNode = loader.querySelector('.spinner').nextSibling;
-            if (textNode) textNode.textContent = ' ' + msg;
+        const _setProgress = (msg, pct = null) => {
+            const textEl = document.getElementById('summarize-progress-text');
+            const fillEl = document.getElementById('summarize-progress-fill');
+            if (textEl) textEl.textContent = ' ' + msg;
+            if (fillEl && pct !== null) fillEl.style.width = pct + '%';
         };
-        _setProgress('Summarizing…');
+        _setProgress('Summarizing…', 5);
 
         const summaryRes = await fetch(`${API}/api/summarize/stream`, {
             method: 'POST',
@@ -365,8 +376,8 @@ async function summarizeAndSave() {
                     const evt = JSON.parse(line);
                     if (evt.error) throw new Error(evt.error);
                     if (evt.step) {
-                        const pct = evt.total > 0 ? Math.round((evt.done / evt.total) * 100) : 0;
-                        _setProgress(`${evt.step} (${pct}%)`);
+                        const pct = evt.total > 0 ? Math.round((evt.done / evt.total) * 85) : 0;
+                        _setProgress(evt.step, pct);
                     }
                     if (evt.result) summary = evt.result;
                 } catch (e) { if (e.message !== line) throw e; }
@@ -382,7 +393,7 @@ async function summarizeAndSave() {
         const tags = generateTags(summary);
 
         // Step 4: Save to database
-        btn.querySelector('.btn-loader').querySelector('.spinner').nextSibling.textContent = ' Saving…';
+        _setProgress('Saving…', 90);
         const createRes = await fetch(`${API}/api/contexts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -401,7 +412,7 @@ async function summarizeAndSave() {
         const created = await createRes.json();
 
         // Step 5: Chunk and embed the conversation
-        btn.querySelector('.btn-loader').querySelector('.spinner').nextSibling.textContent = ' Chunking & embedding…';
+        _setProgress('Embedding…', 97);
         try {
             const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
             if (chunkRes.ok) {
@@ -436,6 +447,9 @@ async function summarizeAndSave() {
         btn.querySelector('.btn-text').style.display = 'inline-flex';
         btn.querySelector('.btn-loader').style.display = 'none';
         btn.disabled = false;
+        // Reset progress bar
+        const fillEl = document.getElementById('summarize-progress-fill');
+        if (fillEl) fillEl.style.width = '0%';
     }
 }
 
@@ -720,6 +734,10 @@ async function loadContexts(query = '', append = false) {
     if (!append) {
         state.libraryPage = 1;
         state.contexts = [];
+        // Show skeleton loaders while fetching
+        grid.style.display = 'grid';
+        emptyState.style.display = 'none';
+        grid.innerHTML = Array(6).fill('<div class="skeleton-card"></div>').join('');
     }
 
     try {
@@ -766,9 +784,14 @@ async function loadContexts(query = '', append = false) {
             : state.contexts;
 
         if (append && !state.activeTagFilter) {
-            grid.insertAdjacentHTML('beforeend', contexts.map(_renderContextCard).join(''));
+            grid.insertAdjacentHTML('beforeend', _staggeredCards(contexts));
         } else {
-            grid.innerHTML = filtered.map(_renderContextCard).join('');
+            // Fade out, swap content, fade in
+            grid.style.transition = 'opacity 0.15s ease';
+            grid.style.opacity = '0';
+            await new Promise(r => setTimeout(r, 150));
+            grid.innerHTML = _staggeredCards(filtered);
+            grid.style.opacity = '1';
         }
 
         // Build tag filter bar
@@ -843,7 +866,7 @@ function _applyTagFilter() {
         ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
         : state.contexts;
 
-    grid.innerHTML = filtered.map(_renderContextCard).join('');
+    grid.innerHTML = _staggeredCards(filtered);
 }
 
 let _deepSearchMode = false;
@@ -1034,14 +1057,41 @@ async function _commitDelete(id) {
 
 // ─── Star / Select / Bulk ────────────────────────────────────────
 async function toggleStar(id) {
+    const ctx = state.contexts.find(c => c.id === id);
+    if (!ctx) return;
+
+    // Optimistic DOM update — no full re-render
+    const wasStarred = ctx.starred;
+    ctx.starred = !wasStarred;
+
+    const card = document.querySelector(`.context-card[data-id="${id}"]`);
+    const starBtn = card?.querySelector('.card-star');
+    if (starBtn) {
+        starBtn.classList.toggle('active', ctx.starred);
+        const svg = starBtn.querySelector('svg');
+        if (svg) svg.setAttribute('fill', ctx.starred ? 'currentColor' : 'none');
+        // Pop animation
+        starBtn.classList.remove('popping');
+        requestAnimationFrame(() => starBtn.classList.add('popping'));
+        starBtn.addEventListener('animationend', () => starBtn.classList.remove('popping'), { once: true });
+    }
+    if (card) card.classList.toggle('starred', ctx.starred);
+
     try {
         const res = await fetch(`${API}/api/contexts/${id}/star`, { method: 'POST' });
         if (!res.ok) throw new Error();
         const updated = await res.json();
         const idx = state.contexts.findIndex(c => c.id === id);
         if (idx !== -1) state.contexts[idx] = updated;
-        _rerenderGrid();
     } catch {
+        // Revert optimistic update
+        ctx.starred = wasStarred;
+        if (starBtn) {
+            starBtn.classList.toggle('active', wasStarred);
+            const svg = starBtn.querySelector('svg');
+            if (svg) svg.setAttribute('fill', wasStarred ? 'currentColor' : 'none');
+        }
+        if (card) card.classList.toggle('starred', wasStarred);
         showToast('Failed to toggle pin', 'error');
     }
 }
@@ -1127,12 +1177,21 @@ function _updateBulkCount() {
     if (el) el.textContent = `${state.selectedIds.size} selected`;
 }
 
+function _staggeredCards(items) {
+    return items.map((ctx, i) =>
+        _renderContextCard(ctx).replace(
+            'class="context-card',
+            `class="context-card" style="--card-delay:${Math.min(i * 40, 400)}ms"`
+        )
+    ).join('');
+}
+
 function _rerenderGrid() {
     const grid = $('#contexts-grid');
     const filtered = state.activeTagFilter
         ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
         : state.contexts;
-    grid.innerHTML = filtered.map(_renderContextCard).join('');
+    grid.innerHTML = _staggeredCards(filtered);
 }
 
 // ─── Context Detail ──────────────────────────────────────────────
@@ -1510,9 +1569,16 @@ function openEditModal() {
 }
 
 function closeEditModal() {
-    const modal = $('#edit-modal');
-    releaseFocus(modal.querySelector('.modal'));
-    modal.style.display = 'none';
+    const overlay = $('#edit-modal');
+    const inner = overlay.querySelector('.modal');
+    releaseFocus(inner);
+    inner.style.animation = 'shellOut 0.18s var(--ease) forwards';
+    overlay.style.animation = 'fadeOut 0.18s var(--ease) forwards';
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        inner.style.animation = '';
+        overlay.style.animation = '';
+    }, 180);
 }
 
 async function saveEdit() {
@@ -1850,9 +1916,16 @@ async function openSettingsModal() {
 }
 
 function closeSettingsModal() {
-    const modal = $('#settings-modal');
-    releaseFocus(modal.querySelector('.settings-modal'));
-    modal.style.display = 'none';
+    const overlay = $('#settings-modal');
+    const inner = overlay.querySelector('.settings-modal');
+    releaseFocus(inner);
+    inner.style.animation = 'shellOut 0.18s var(--ease) forwards';
+    overlay.style.animation = 'fadeOut 0.18s var(--ease) forwards';
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        inner.style.animation = '';
+        overlay.style.animation = '';
+    }, 180);
 }
 
 function _makeSettingsCard(item, selectedId, containerId, onSelect) {
@@ -2157,9 +2230,16 @@ function openShortcutsModal() {
 }
 
 function closeShortcutsModal() {
-    const modal = $('#shortcuts-modal');
-    releaseFocus(modal.querySelector('.shortcuts-modal'));
-    modal.style.display = 'none';
+    const overlay = $('#shortcuts-modal');
+    const inner = overlay.querySelector('.shortcuts-modal');
+    releaseFocus(inner);
+    inner.style.animation = 'shellOut 0.18s var(--ease) forwards';
+    overlay.style.animation = 'fadeOut 0.18s var(--ease) forwards';
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        inner.style.animation = '';
+        overlay.style.animation = '';
+    }, 180);
 }
 
 // ─── Init ────────────────────────────────────────────────────────

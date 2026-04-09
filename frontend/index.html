@@ -214,7 +214,10 @@
                                 aria-describedby="chat-textarea-desc">
                             <span class="btn-text">Summarize &amp; Save</span>
                             <span class="btn-loader" style="display:none;" aria-hidden="true">
-                                <span class="spinner"></span> Processing...
+                                <span class="summarize-progress-bar">
+                                    <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
+                                </span>
+                                <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
                             </span>
                         </button>
                     </div>

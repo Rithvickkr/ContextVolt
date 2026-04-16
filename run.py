@@ -152,7 +152,7 @@ def main():
     _icon_arg = _icon if os.path.exists(_icon) else None
 
     # Open native window — blocks until the window is closed
-    window = webview.create_window(
+    webview.create_window(
         title="ContextVolt",
         url="http://127.0.0.1:8000",
         width=1200,
@@ -161,17 +161,6 @@ def main():
         background_color="#0a0a0f",
         text_select=True,
     )
-
-    # pywebview on Windows hardcodes sys.executable as the icon source and ignores
-    # the icon= parameter. Override via the shown event using System.Drawing.Icon.
-    if _icon_arg and sys.platform == "win32":
-        def _set_icon():
-            try:
-                from System.Drawing import Icon  # type: ignore
-                window.native.Icon = Icon(_icon_arg)
-            except Exception:
-                pass
-        window.events.shown += _set_icon
 
     webview.start(debug=False, icon=_icon_arg)
     sys.exit(0)

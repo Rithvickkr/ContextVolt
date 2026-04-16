@@ -836,15 +836,6 @@ def main():
     state.window = window
 
     _icon = str(PROJECT_ROOT / "icon.ico")
-    if IS_WINDOWS and os.path.exists(_icon):
-        def _set_icon():
-            try:
-                from System.Drawing import Icon  # type: ignore
-                window.native.Icon = Icon(_icon)
-            except Exception:
-                pass
-        window.events.shown += _set_icon
-
     webview.start(icon=_icon if os.path.exists(_icon) else None)
 
 

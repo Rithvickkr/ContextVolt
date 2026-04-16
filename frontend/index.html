@@ -115,7 +115,7 @@
                     </svg>
                     <span class="sidebar-brand">ContextVolt</span>
                 </div>
-                <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" data-tooltip="Toggle sidebar">
+                <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" data-tooltip="Collapse or expand the sidebar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="m15 18-6-6 6-6"/>
                     </svg>
@@ -123,18 +123,23 @@
             </div>
             <nav class="sidebar-nav" aria-label="Main navigation">
                 <button class="nav-item active" data-view="input" id="nav-input"
-                        aria-current="page" aria-label="New Chat — paste a conversation" data-tooltip="New Chat">
+                        aria-current="page" aria-label="New Chat — paste a conversation" data-tooltip="Paste an AI conversation to summarize & save">
                     <span class="nav-icon" aria-hidden="true">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
                     </span>
                     <span class="nav-label">New Chat</span>
                 </button>
                 <button class="nav-item" data-view="library" id="nav-library"
-                        aria-current="false" aria-label="Library — browse saved conversations" data-tooltip="Library">
+                        aria-current="false" aria-label="Library — browse saved conversations" data-tooltip="Browse & search your saved conversations">
                     <span class="nav-icon" aria-hidden="true">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                     </span>
                     <span class="nav-label">Library</span>
+                </button>
+                <button class="nav-item" data-view="ask" id="nav-ask"
+                        aria-current="false" aria-label="Ask your vault — get answers from saved conversations" data-tooltip="Ask questions about your saved conversations">
+                    <span class="nav-icon" aria-hidden="true">❇️</span>
+                    <span class="nav-label">Ask Vault</span>
                 </button>
             </nav>
             <!-- Collections -->
@@ -165,12 +170,12 @@
             <div class="sidebar-footer">
                 <!-- Preferences -->
                 <div class="sidebar-section-label">Preferences</div>
-                <button class="btn-settings" id="btn-theme-toggle" aria-label="Toggle light/dark theme" data-tooltip="Toggle theme">
+                <button class="btn-settings" id="btn-theme-toggle" aria-label="Toggle light/dark theme" data-tooltip="Switch between light and dark mode">
                     <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     <svg id="theme-icon-light" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
                     <span id="theme-label">Light Mode</span>
                 </button>
-                <button class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection" data-tooltip="Settings &amp; Models">
+                <button class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection" data-tooltip="Choose your AI summarization & embedding models">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
                     Settings &amp; Models
                 </button>
@@ -181,29 +186,29 @@
                 <button class="btn-embed-all" id="btn-rebuild-embeddings"
                         title="Re-chunk and re-embed all contexts using the current embedding model. Use after switching embedding models."
                         aria-label="Rebuild embeddings — re-chunk and re-embed all contexts with the current model"
-                        data-tooltip="Re-embed all contexts">
+                        data-tooltip="Re-chunk & re-embed all contexts with the current model">
                     Rebuild Embeddings
                 </button>
-                <button class="btn-shortcuts" id="btn-shortcuts" aria-label="Keyboard shortcuts" data-tooltip="Keyboard shortcuts">
+                <button class="btn-shortcuts" id="btn-shortcuts" aria-label="Keyboard shortcuts" data-tooltip="View all keyboard shortcuts">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M18 12h.01M8 16h8"/></svg>
                     Shortcuts <kbd>?</kbd>
                 </button>
 
                 <!-- System -->
                 <div class="sidebar-section-label">System</div>
-                <button class="btn-settings" id="btn-system" aria-haspopup="dialog" aria-label="System status and logs" data-tooltip="System status &amp; logs">
+                <button class="btn-settings" id="btn-system" aria-haspopup="dialog" aria-label="System status and logs" data-tooltip="View server health, Ollama status & logs">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 8h2M7 12h4M13 8h4M13 12h4"/></svg>
                     System
                 </button>
-                <button class="btn-settings" id="btn-backup" aria-label="Download a backup of your vault" data-tooltip="Download vault backup">
+                <button class="btn-settings" id="btn-backup" aria-label="Download a backup of your vault" data-tooltip="Download a .db backup of your entire vault">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Backup Vault
                 </button>
-                <button class="btn-restart" id="btn-restart" aria-label="Restart the backend server" data-tooltip="Restart backend server">
+                <button class="btn-restart" id="btn-restart" aria-label="Restart the backend server" data-tooltip="Restart the ContextVolt backend server">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                     Restart Backend
                 </button>
-                <div class="status-indicator" id="status-indicator" aria-live="polite" aria-label="Backend connection status" data-tooltip="Connection status">
+                <div class="status-indicator" id="status-indicator" aria-live="polite" aria-label="Backend connection status" data-tooltip="Backend connection status">
                     <span class="status-dot" aria-hidden="true"></span>
                     <span class="status-text">Offline</span>
                 </div>
@@ -243,6 +248,39 @@
                                 <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
                             </span>
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ask Vault View -->
+            <div class="view" id="view-ask" style="display:none;" role="region" aria-labelledby="view-ask-heading">
+                <div class="ask-container">
+                    <div class="ask-messages" id="ask-messages">
+                        <!-- Empty state -->
+                        <div class="ask-empty" id="ask-empty">
+                            <div class="ask-empty-icon" aria-hidden="true">❇️</div>
+                            <h1 id="view-ask-heading">Ask Your Vault</h1>
+                            <p class="ask-empty-desc">Ask any question and get answers sourced from your saved conversations. Powered by local RAG.</p>
+                            <div class="ask-suggestions">
+                                <button class="ask-suggestion" data-q="What topics have I discussed most?">💡 What topics have I discussed most?</button>
+                                <button class="ask-suggestion" data-q="Summarize my recent conversations">📋 Summarize my recent conversations</button>
+                                <button class="ask-suggestion" data-q="What code patterns have I explored?">🔧 What code patterns have I explored?</button>
+                            </div>
+                        </div>
+                        <!-- Messages rendered by JS -->
+                    </div>
+                    <div class="ask-input-bar" id="ask-input-bar">
+                        <div class="ask-input-row">
+                            <label for="ask-input" class="sr-only">Ask a question</label>
+                            <input type="text" id="ask-input" class="ask-input" placeholder="Ask anything about your saved conversations…" autocomplete="off" spellcheck="false" />
+                            <button class="ask-send-btn" id="ask-send-btn" aria-label="Send question" disabled>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            </button>
+                        </div>
+                        <div class="ask-input-hint">
+                            <span>Answers are sourced from your vault using RAG</span>
+                            <button class="ask-clear-btn" id="ask-clear-btn" style="display:none;">Clear chat</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -491,7 +529,7 @@
             <!-- Health tab -->
             <div class="system-tab-panel" id="panel-health">
                 <div class="sys-status-grid" id="sys-status-grid">
-                    <div class="sys-status-loading">Loading…</div>
+                    <div class="sys-status-loading"><div class="sys-loader-spinner" aria-hidden="true"></div><span class="sys-loader-text">Loading status…</span></div>
                 </div>
             </div>
 
@@ -514,10 +552,16 @@
                     </label>
                 </div>
                 <div class="logs-viewer" id="logs-viewer">
-                    <div class="sys-status-loading">Loading…</div>
+                    <div class="sys-status-loading"><div class="sys-loader-spinner" aria-hidden="true"></div><span class="sys-loader-text">Loading logs…</span></div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Sidebar Tooltip (appended to body to avoid overflow clipping) -->
+    <div id="sidebar-tooltip" role="tooltip" aria-hidden="true">
+        <div id="sidebar-tooltip-arrow"></div>
+        <div id="sidebar-tooltip-content"></div>
     </div>
 
     <script src="/static/js/app.js"></script>

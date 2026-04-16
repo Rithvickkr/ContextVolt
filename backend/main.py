@@ -6,6 +6,7 @@ Serves the REST API and static frontend files.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -23,6 +24,7 @@ from backend.database import (
     get_all_contexts,
     get_contexts_paginated,
     get_context,
+    get_contexts_by_ids,
     get_chunks_by_context,
     update_context,
     delete_context,
@@ -831,6 +833,268 @@ def api_chunk_all(force: bool = Query(default=False, description="Delete and re-
 
 
 # ---------------------------------------------------------------------------
+# Hybrid keyword search helpers (used by Ask Vault + Deep Search)
+# ---------------------------------------------------------------------------
+
+_KNOWN_SOURCES_SET = {"ChatGPT", "Claude", "Gemini", "Grok", "DeepSeek", "Perplexity", "Copilot"}
+
+_STOP_WORDS = frozenset({
+    "what", "which", "where", "when", "how", "who", "why", "does",
+    "do", "did", "is", "are", "was", "were", "have", "has", "had",
+    "can", "could", "would", "should", "about", "the", "a", "an",
+    "my", "your", "i", "me", "you", "we", "our", "this", "that",
+    "it", "its", "any", "some", "context", "tell", "give", "show",
+    "find", "get", "know", "information", "info", "details",
+})
+
+
+def _extract_key_terms(text: str) -> list[str]:
+    """Extract meaningful search terms from a question, stripping punctuation and stopwords."""
+    words = re.findall(r"[a-zA-Z0-9]+", text.lower())
+    return [w for w in words if w not in _STOP_WORDS and len(w) > 1]
+
+
+def _is_whole_word_match(text_lower: str, term: str) -> bool:
+    """Check if term appears as a whole word in text (not as substring of another word)."""
+    return bool(re.search(r'(?<![a-zA-Z])' + re.escape(term) + r'(?![a-zA-Z])', text_lower))
+
+
+def _keyword_search_hybrid(question: str) -> list[dict]:
+    """Run keyword search with key-term extraction, whole-word filtering, and phrase boosting.
+
+    1. Search for the combined key phrase first (most specific).
+    2. Search for individual terms, filtering to whole-word matches only.
+    3. Chunks matching more terms rank higher.
+    """
+    key_terms = _extract_key_terms(question)
+    if not key_terms:
+        return []
+
+    seen_ids: set = set()
+    scored: dict[int, dict] = {}  # chunk_id -> chunk (with _score)
+
+    # Phase 1: Search for the full phrase (all key terms together) — most specific
+    phrase = " ".join(key_terms)
+    for kch in search_chunks_keyword(phrase, top_k=10):
+        cid = kch.get("id")
+        if cid not in seen_ids:
+            kch["_score"] = 0.75  # phrase match = highest signal
+            scored[cid] = kch
+            seen_ids.add(cid)
+
+    # Phase 2: Search individual terms, require whole-word match, count term hits
+    term_hits: dict[int, int] = {}  # chunk_id -> number of terms matched
+    for term in key_terms:
+        for kch in search_chunks_keyword(term, top_k=10):
+            cid = kch.get("id")
+            # Only keep if the term is a whole word (not "goa" inside "goal")
+            if not _is_whole_word_match(kch.get("text", "").lower(), term):
+                continue
+            if cid not in seen_ids:
+                kch["_score"] = 0.6
+                scored[cid] = kch
+                seen_ids.add(cid)
+            term_hits[cid] = term_hits.get(cid, 0) + 1
+
+    # Boost chunks that match multiple terms
+    for cid, hit_count in term_hits.items():
+        if cid in scored and hit_count > 1:
+            scored[cid]["_score"] = min(scored[cid]["_score"] + 0.05 * (hit_count - 1), 0.85)
+
+    # Return sorted by score descending
+    results = sorted(scored.values(), key=lambda c: c.get("_score", 0), reverse=True)
+    return results
+
+
+def _hybrid_retrieve(question: str, query_vec: list[float] | None, top_k: int = 12) -> list[dict]:
+    """Run hybrid retrieval: semantic + keyword with merge and deduplication."""
+    # Semantic search
+    semantic_chunks = []
+    if query_vec:
+        semantic_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=top_k)
+        if len(question.split()) <= 2:
+            semantic_chunks = [ch for ch in semantic_chunks if ch.get("_score", 0) >= 0.35]
+
+    # Keyword search (whole-word, phrase-boosted)
+    kw_chunks = _keyword_search_hybrid(question)
+
+    # Merge: keyword matches first (exact hits), then semantic
+    seen_ids: set = set()
+    merged: list = []
+    for kch in kw_chunks:
+        if kch.get("id") not in seen_ids:
+            merged.append(kch)
+            seen_ids.add(kch.get("id"))
+    for sch in semantic_chunks:
+        if sch.get("id") not in seen_ids:
+            merged.append(sch)
+            seen_ids.add(sch.get("id"))
+
+    return merged[:top_k]
+
+
+# ---------------------------------------------------------------------------
+# Ask Your Vault — RAG Chat
+# ---------------------------------------------------------------------------
+
+@app.post("/api/vault/ask")
+def api_vault_ask(body: dict):
+    """RAG chat: answer a question using the user's saved conversation vault.
+
+    Streams NDJSON lines:
+      {"token": "..."} — during generation
+      {"done": true, "sources": [...]} — final line with citations
+
+    Body: {"question": "...", "history": [{"role": "user"|"assistant", "content": "..."}]}
+    """
+    import requests as _req
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    history = body.get("history") or []
+
+    # Check Ollama is available
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+
+    from backend.ollama_client import _get_default_model, _get_embed_model, OLLAMA_BASE, _NUM_CTX
+
+    model = _get_default_model()
+
+    # 1. Embed the question
+    query_vec = embed_text(question)
+
+    # 2. Hybrid retrieval: semantic + keyword, merged
+    top_chunks = _hybrid_retrieve(question, query_vec, top_k=12)
+
+    # Also search at context level if still thin
+    if len(top_chunks) < 5:
+        seen_ids = {ch.get("id") for ch in top_chunks}
+        ctx_matches = search_contexts(question)
+        if ctx_matches:
+            matched_cids = [c["id"] for c in ctx_matches[:3]]
+            for mcid in matched_cids:
+                ctx_chunks = get_chunks_by_context(mcid)[:2]
+                for cch in ctx_chunks:
+                    if cch.get("id") not in seen_ids:
+                        cch["_score"] = 0.45
+                        top_chunks.append(cch)
+                        seen_ids.add(cch.get("id"))
+            top_chunks = top_chunks[:12]
+
+    # 3. Gather source context metadata
+    sources = []
+    context_text_parts = []
+
+    if top_chunks:
+        unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
+        ctx_map = get_contexts_by_ids(unique_cids)
+
+        seen_contexts = set()
+        for ch in top_chunks:
+            cid = ch.get("context_id")
+            ctx = ctx_map.get(cid, {})
+            tags = ctx.get("tags", [])
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",")]
+            source_llm = next((t for t in tags if t in _KNOWN_SOURCES_SET), "")
+            title = ctx.get("title", "Unknown")
+            created_at = ctx.get("created_at", "")[:10]
+            score = round(ch.get("_score", 0), 2)
+
+            # Build context line
+            header = f'[From "{title}"'
+            if source_llm:
+                header += f" ({source_llm})"
+            header += f" — {created_at}, relevance {score}]"
+            context_text_parts.append(f"{header}:\n{ch['text'][:1500]}")
+
+            # Add to sources (deduplicate by context_id)
+            if cid and cid not in seen_contexts:
+                seen_contexts.add(cid)
+                sources.append({
+                    "context_id": cid,
+                    "title": title,
+                    "score": score,
+                    "created_at": created_at,
+                    "source": source_llm,
+                })
+
+    retrieved_context = "\n\n".join(context_text_parts) if context_text_parts else "No relevant context found in your vault."
+
+    # 4. Build the RAG prompt
+    history_text = ""
+    if history:
+        turns = []
+        for msg in history[-6:]:  # last 6 messages for context window
+            role = msg.get("role", "user").upper()
+            turns.append(f"{role}: {msg.get('content', '')}")
+        history_text = "\n".join(turns)
+
+    system_prompt = f"""You are ContextVolt Assistant — an AI that answers questions using the user's saved conversation history.
+
+RULES:
+- Answer using ONLY the retrieved context below. Do not make up information.
+- If the context doesn't have relevant information, say: "I don't have information about that in your vault."
+- When citing information, mention which conversation it came from (use the title in quotes).
+- Be concise but thorough. Use markdown formatting for code blocks, lists, etc.
+- If multiple conversations discuss the same topic, synthesize the information.
+
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+"""
+
+    if history_text:
+        system_prompt += f"""
+<conversation_history>
+{history_text}
+</conversation_history>
+"""
+
+    full_prompt = f"{system_prompt}\n\nUSER: {question}\nASSISTANT:"
+
+    # 5. Stream the response from Ollama
+    def _stream():
+        try:
+            r = _req.post(
+                f"{OLLAMA_BASE}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": full_prompt,
+                    "stream": True,
+                    "options": {"num_ctx": min(_NUM_CTX, 16384), "temperature": 0.3},
+                },
+                stream=True,
+                timeout=180,
+            )
+            r.raise_for_status()
+
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    token = data.get("response", "")
+                    if token:
+                        yield json.dumps({"token": token}) + "\n"
+                    if data.get("done"):
+                        break
+                except json.JSONDecodeError:
+                    continue
+
+        except Exception as e:
+            yield json.dumps({"error": str(e)}) + "\n"
+
+        # Final line with sources
+        yield json.dumps({"done": True, "sources": sources}) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------------------
 # Cross-conversation retrieval
 # ---------------------------------------------------------------------------
 
@@ -852,22 +1116,19 @@ def api_cross_retrieve(body: PromptRequest):
     if not top_chunks:
         return {"prompt": None, "mode": "retrieval", "chunks_found": 0}
 
-    # Group by context to add source info
-    from backend.database import get_context as _get_ctx
+    # Batch fetch context metadata (single query instead of N+1)
+    unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
+    ctx_map = get_contexts_by_ids(unique_cids)
     context_cache: dict = {}
-    for ch in top_chunks:
-        cid = ch.get("context_id")
-        if cid and cid not in context_cache:
-            ctx = _get_ctx(cid)
-            if ctx:
-                tags = ctx.get("tags", [])
-                if isinstance(tags, str):
-                    tags = [t.strip() for t in tags.split(",")]
-                context_cache[cid] = {
-                    "title": ctx.get("title", ""),
-                    "source": next((t for t in tags if t in _KNOWN_SOURCES), ""),
-                    "created_at": ctx.get("created_at", ""),
-                }
+    for cid, ctx in ctx_map.items():
+        tags = ctx.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",")]
+        context_cache[cid] = {
+            "title": ctx.get("title", ""),
+            "source": next((t for t in tags if t in _KNOWN_SOURCES_SET), ""),
+            "created_at": ctx.get("created_at", ""),
+        }
 
     # Enrich chunks with context metadata for the prompt
     for ch in top_chunks:
@@ -894,39 +1155,34 @@ def api_cross_search(body: PromptRequest):
     if not body.query or not body.query.strip():
         raise HTTPException(status_code=400, detail="Query is required")
 
-    query_words = len(body.query.strip().split())
-    MIN_SCORE = 0.65 if query_words <= 2 else 0.55
-    search_mode = "semantic"
+    search_mode = "hybrid"
 
+    # Hybrid retrieval: semantic + keyword
     query_vec = embed_text(body.query.strip())
-    if query_vec:
-        top_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=20)
-        top_chunks = [ch for ch in top_chunks if ch.get("_score", 0) >= MIN_SCORE]
+    top_chunks = _hybrid_retrieve(body.query.strip(), query_vec, top_k=20)
 
-    if not query_vec or not top_chunks:
-        # Semantic unavailable or scored below threshold — fall back to keyword search
-        top_chunks = search_chunks_keyword(body.query.strip(), top_k=20)
+    if not top_chunks:
+        search_mode = "none"
+    elif not query_vec:
         search_mode = "keyword"
 
     if not top_chunks:
         return {"results": [], "query": body.query.strip(), "total_chunks": 0, "low_confidence": True, "search_mode": search_mode}
 
-    from backend.database import get_context as _get_ctx
+    # Batch fetch context metadata
+    unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
+    ctx_map = get_contexts_by_ids(unique_cids)
     context_cache: dict = {}
-    for ch in top_chunks:
-        cid = ch.get("context_id")
-        if cid and cid not in context_cache:
-            ctx = _get_ctx(cid)
-            if ctx:
-                tags = ctx.get("tags", [])
-                if isinstance(tags, str):
-                    tags = [t.strip() for t in tags.split(",")]
-                context_cache[cid] = {
-                    "id": cid,
-                    "title": ctx.get("title", ""),
-                    "tags": tags,
-                    "created_at": ctx.get("created_at", ""),
-                }
+    for cid, ctx in ctx_map.items():
+        tags = ctx.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",")]
+        context_cache[cid] = {
+            "id": cid,
+            "title": ctx.get("title", ""),
+            "tags": tags,
+            "created_at": ctx.get("created_at", ""),
+        }
 
     # Group chunks by context
     groups: dict = {}
@@ -962,7 +1218,7 @@ def api_cross_search(body: PromptRequest):
 # Prompt Builder
 # ---------------------------------------------------------------------------
 
-_KNOWN_SOURCES = {"ChatGPT", "Claude", "Gemini", "Grok", "DeepSeek", "Perplexity", "Copilot"}
+_KNOWN_SOURCES = _KNOWN_SOURCES_SET  # alias for backward compat
 
 
 @app.post("/api/contexts/{context_id}/prompt")

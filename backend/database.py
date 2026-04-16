@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import struct
+import threading
 from datetime import datetime, timezone
 
 import sqlite_vec
@@ -19,10 +20,25 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contex
 _log = logging.getLogger("contextvolt")
 
 # ---------------------------------------------------------------------------
-# Connection helper
+# Connection helper — thread-local pooling
 # ---------------------------------------------------------------------------
 
+_thread_local = threading.local()
+
+
 def _get_conn() -> sqlite3.Connection:
+    """Return a thread-local SQLite connection, reusing it across calls in the same thread."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")
+            return conn
+        except Exception:
+            # Connection is broken, discard and create a new one
+            try:
+                conn.close()
+            except Exception:
+                pass
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -30,6 +46,7 @@ def _get_conn() -> sqlite3.Connection:
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
+    _thread_local.conn = conn
     return conn
 
 
@@ -202,6 +219,18 @@ def init_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chunks_context ON chunks(context_id, chunk_index)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chunks_starred ON chunks(is_starred)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contexts_status ON contexts(status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contexts_starred ON contexts(starred)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_contexts_collection ON contexts(collection_id)"
+    )
     conn.commit()
 
     # sqlite-vec virtual tables
@@ -214,7 +243,7 @@ def init_db():
         "UPDATE contexts SET status = 'failed' WHERE status = 'summarizing'"
     )
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +364,7 @@ def create_context(
         _sync_context_vec(conn, context_id, embedding)
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return _row_to_dict(row)
 
 
@@ -348,14 +377,14 @@ def set_context_embedding(context_id: int, embedding: list[float]) -> None:
     )
     _sync_context_vec(conn, context_id, embedding)
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
 
 
 def get_all_contexts() -> list[dict]:
     """Return all contexts, newest first."""
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM contexts ORDER BY created_at DESC").fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
     return [_row_to_dict(r) for r in rows]
 
 
@@ -384,7 +413,7 @@ def get_contexts_paginated(
         f"SELECT * FROM contexts {where} ORDER BY {order_clause} LIMIT ? OFFSET ?",
         params,
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
     return {
         "contexts": [_row_to_dict(r) for r in rows],
         "total": total,
@@ -398,8 +427,26 @@ def get_context(context_id: int) -> dict | None:
     """Return a single context by ID."""
     conn = _get_conn()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return _row_to_dict(row)
+
+
+def get_contexts_by_ids(context_ids: list[int]) -> dict[int, dict]:
+    """Batch fetch contexts by IDs. Returns a dict mapping id -> context dict."""
+    if not context_ids:
+        return {}
+    conn = _get_conn()
+    placeholders = ",".join("?" * len(context_ids))
+    rows = conn.execute(
+        f"SELECT * FROM contexts WHERE id IN ({placeholders})", context_ids
+    ).fetchall()
+    # connection reused (thread-local pool)
+    result = {}
+    for row in rows:
+        ctx = _row_to_dict(row)
+        if ctx:
+            result[ctx["id"]] = ctx
+    return result
 
 
 def update_context(context_id: int, **kwargs) -> dict | None:
@@ -430,7 +477,7 @@ def update_context(context_id: int, **kwargs) -> dict | None:
         params.append(json.dumps(notes) if isinstance(notes, list) else notes)
 
     if not updates:
-        conn.close()
+        # connection reused (thread-local pool)
         return get_context(context_id)
 
     updates.append("updated_at = ?")
@@ -440,7 +487,7 @@ def update_context(context_id: int, **kwargs) -> dict | None:
     conn.execute(f"UPDATE contexts SET {', '.join(updates)} WHERE id = ?", params)
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return _row_to_dict(row)
 
 
@@ -453,7 +500,7 @@ def toggle_context_starred(context_id: int) -> dict | None:
     )
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return _row_to_dict(row)
 
 
@@ -467,7 +514,7 @@ def delete_context(context_id: int) -> bool:
         pass
     cursor = conn.execute("DELETE FROM contexts WHERE id = ?", (context_id,))
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
     return cursor.rowcount > 0
 
 
@@ -483,7 +530,7 @@ def search_chunks_keyword(query: str, top_k: int = 20) -> list[dict]:
            LIMIT ?""",
         (like, top_k),
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
     return [{"id": r[0], "context_id": r[1], "chunk_index": r[2],
              "text": r[3], "role_hint": r[4], "has_code": bool(r[5]),
              "is_starred": bool(r[6]), "_score": None, "_keyword_match": True}
@@ -500,7 +547,7 @@ def search_contexts(query: str) -> list[dict]:
            ORDER BY created_at DESC""",
         (like, like, like, like),
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
     return [_row_to_dict(r) for r in rows]
 
 
@@ -535,7 +582,7 @@ def create_chunks(context_id: int, chunks: list[dict]) -> list[int]:
         if embedding:
             _sync_chunk_vec(conn, chunk_id, embedding)
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
     return ids
 
 
@@ -546,7 +593,7 @@ def get_chunks_by_context(context_id: int) -> list[dict]:
         "SELECT * FROM chunks WHERE context_id = ? ORDER BY chunk_index",
         (context_id,),
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
     return [_chunk_row_to_dict(r) for r in rows]
 
 
@@ -559,7 +606,7 @@ def update_chunk_embedding(chunk_id: int, embedding: list[float]) -> None:
     )
     _sync_chunk_vec(conn, chunk_id, embedding)
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
 
 
 def delete_chunks_by_context(context_id: int) -> int:
@@ -576,7 +623,7 @@ def delete_chunks_by_context(context_id: int) -> int:
             pass
     cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
     return cur.rowcount
 
 
@@ -601,7 +648,7 @@ def search_chunks_semantic(
     try:
         conn.execute("SELECT rowid FROM chunk_vecs LIMIT 0")
     except Exception:
-        conn.close()
+        # connection reused (thread-local pool)
         return []
 
     q_blob = _vec_to_blob(query_vec)
@@ -620,7 +667,7 @@ def search_chunks_semantic(
                 (q_blob, context_id, top_k * 3),
             ).fetchall()
         except Exception:
-            conn.close()
+            # connection reused (thread-local pool)
             return []
 
         scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
@@ -632,12 +679,12 @@ def search_chunks_semantic(
                 (q_blob, top_k * 3),
             ).fetchall()
         except Exception:
-            conn.close()
+            # connection reused (thread-local pool)
             return []
         scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
 
     if not scored_ids:
-        conn.close()
+        # connection reused (thread-local pool)
         return []
 
     # Fetch full chunk data for the matched IDs
@@ -647,7 +694,7 @@ def search_chunks_semantic(
     rows = conn.execute(
         f"SELECT * FROM chunks WHERE id IN ({placeholders})", id_list
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
 
     chunks = []
     for row in rows:
@@ -669,7 +716,7 @@ def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[di
     try:
         conn.execute("SELECT rowid FROM context_vecs LIMIT 0")
     except Exception:
-        conn.close()
+        # connection reused (thread-local pool)
         return []
 
     q_blob = _vec_to_blob(query_vec)
@@ -679,11 +726,11 @@ def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[di
             (q_blob, top_k),
         ).fetchall()
     except Exception:
-        conn.close()
+        # connection reused (thread-local pool)
         return []
 
     if not vec_rows:
-        conn.close()
+        # connection reused (thread-local pool)
         return []
 
     id_list = [r[0] for r in vec_rows]
@@ -691,7 +738,7 @@ def search_contexts_semantic(query_vec: list[float], top_k: int = 20) -> list[di
     rows = conn.execute(
         f"SELECT * FROM contexts WHERE id IN ({placeholders})", id_list
     ).fetchall()
-    conn.close()
+    # connection reused (thread-local pool)
 
     # Preserve score-based ordering from vec search
     order = {rid: idx for idx, rid in enumerate(id_list)}
@@ -713,7 +760,7 @@ def get_db_stats() -> dict:
         collections = conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
     except Exception:
         collections = 0
-    conn.close()
+    # connection reused (thread-local pool)
     try:
         size_mb = round(os.path.getsize(DB_PATH) / 1_048_576, 2)
     except Exception:
@@ -737,7 +784,7 @@ def get_all_collections() -> list[dict]:
             "SELECT collection_id, COUNT(*) FROM contexts WHERE collection_id IS NOT NULL GROUP BY collection_id"
         ).fetchall()
     }
-    conn.close()
+    # connection reused (thread-local pool)
     return [
         {"id": r[0], "name": r[1], "color": r[2], "created_at": r[3], "count": counts.get(r[0], 0)}
         for r in rows
@@ -755,7 +802,7 @@ def create_collection(name: str, color: str = "#6366f1") -> dict:
     cid = cur.lastrowid
     conn.commit()
     row = conn.execute("SELECT id, name, color, created_at FROM collections WHERE id = ?", (cid,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return {"id": row[0], "name": row[1], "color": row[2], "created_at": row[3], "count": 0}
 
 
@@ -773,7 +820,7 @@ def update_collection(collection_id: int, name: str | None = None, color: str | 
         conn.commit()
     row = conn.execute("SELECT id, name, color, created_at FROM collections WHERE id = ?", (collection_id,)).fetchone()
     count = conn.execute("SELECT COUNT(*) FROM contexts WHERE collection_id = ?", (collection_id,)).fetchone()[0]
-    conn.close()
+    # connection reused (thread-local pool)
     if not row:
         return None
     return {"id": row[0], "name": row[1], "color": row[2], "created_at": row[3], "count": count}
@@ -785,7 +832,7 @@ def delete_collection(collection_id: int) -> bool:
     conn.execute("UPDATE contexts SET collection_id = NULL WHERE collection_id = ?", (collection_id,))
     cur = conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
     conn.commit()
-    conn.close()
+    # connection reused (thread-local pool)
     return cur.rowcount > 0
 
 
@@ -798,5 +845,5 @@ def set_context_collection(context_id: int, collection_id: int | None) -> dict |
     )
     conn.commit()
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
-    conn.close()
+    # connection reused (thread-local pool)
     return _row_to_dict(row)

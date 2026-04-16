@@ -885,12 +885,28 @@ function _applyTagFilter() {
         chip.classList.toggle('active', chip.dataset.tag === state.activeTagFilter);
     });
 
-    // Re-render grid with filter
-    const filtered = state.activeTagFilter
-        ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
-        : state.contexts;
-
-    grid.innerHTML = _staggeredCards(filtered);
+    // Show/hide cards via CSS instead of full DOM re-render
+    const tag = state.activeTagFilter;
+    const cards = grid.querySelectorAll('.context-card');
+    if (cards.length > 0 && cards.length === state.contexts.length) {
+        // Cards match state — toggle visibility in-place
+        const ctxById = new Map(state.contexts.map(c => [c.id, c]));
+        cards.forEach(card => {
+            const id = parseInt(card.dataset.id, 10);
+            const ctx = ctxById.get(id);
+            if (!tag || (ctx && (ctx.tags || []).includes(tag))) {
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    } else {
+        // Cards out of sync — fall back to full re-render
+        const filtered = tag
+            ? state.contexts.filter(c => (c.tags || []).includes(tag))
+            : state.contexts;
+        grid.innerHTML = _staggeredCards(filtered);
+    }
 }
 
 let _deepSearchMode = false;
@@ -1210,8 +1226,24 @@ function _staggeredCards(items) {
     ).join('');
 }
 
-function _rerenderGrid() {
+function _rerenderGrid(changedId) {
     const grid = $('#contexts-grid');
+    // Targeted update: if a single card changed, replace just that card
+    if (changedId != null) {
+        const existing = grid.querySelector(`.context-card[data-id="${changedId}"]`);
+        const ctx = state.contexts.find(c => c.id === changedId);
+        if (existing && ctx) {
+            const temp = document.createElement('div');
+            temp.innerHTML = _renderContextCard(ctx);
+            existing.replaceWith(temp.firstElementChild);
+            return;
+        } else if (existing && !ctx) {
+            // Card was deleted
+            existing.remove();
+            return;
+        }
+    }
+    // Full re-render fallback
     const filtered = state.activeTagFilter
         ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
         : state.contexts;
@@ -1660,7 +1692,7 @@ function deleteCurrentContext() {
 
     // Remove from visible list immediately
     state.contexts = state.contexts.filter(c => c.id !== ctx.id);
-    _rerenderGrid();
+    _rerenderGrid(ctx.id);
 
     _showUndoToast(`"${ctx.title}" deleted`, () => {
         clearTimeout(timer);
@@ -2272,12 +2304,373 @@ function closeShortcutsModal() {
     }, 180);
 }
 
+// ─── Sidebar Tooltips (JS-positioned) ───────────────────────────
+function _initSidebarTooltips() {
+    const sidebar = document.getElementById('sidebar');
+    const tooltip = document.getElementById('sidebar-tooltip');
+    const tooltipContent = document.getElementById('sidebar-tooltip-content');
+    if (!sidebar || !tooltip || !tooltipContent) return;
+
+    let showTimeout = null;
+
+    function showTooltip(target) {
+        const text = target.getAttribute('data-tooltip');
+        if (!text) return;
+
+        tooltipContent.textContent = text;
+
+        // Position: to the right of the button, vertically centered
+        const rect = target.getBoundingClientRect();
+        const tooltipGap = 10;
+
+        tooltip.style.left = (rect.right + tooltipGap) + 'px';
+        tooltip.style.top = (rect.top + rect.height / 2) + 'px';
+        tooltip.style.transform = 'translateY(-50%)';
+
+        // Show with tiny delay to prevent flicker
+        showTimeout = setTimeout(() => {
+            tooltip.classList.add('visible');
+        }, 200);
+    }
+
+    function hideTooltip() {
+        if (showTimeout) { clearTimeout(showTimeout); showTimeout = null; }
+        tooltip.classList.remove('visible');
+    }
+
+    // Delegate on sidebar
+    sidebar.addEventListener('mouseenter', (e) => {
+        const target = e.target.closest('[data-tooltip]');
+        if (!target) return;
+        hideTooltip();
+        showTooltip(target);
+    }, true);
+
+    sidebar.addEventListener('mouseleave', (e) => {
+        const target = e.target.closest('[data-tooltip]');
+        if (!target) return;
+        hideTooltip();
+    }, true);
+
+    // Also hide if we click (button activates, tooltip should disappear)
+    sidebar.addEventListener('click', () => hideTooltip());
+}
+
+// ─── Ask Your Vault — RAG Chat ───────────────────────────────────
+state.askHistory = [];     // [{role: 'user'|'assistant', content: ''}]
+state.askStreaming = false; // true while streaming response
+
+function _initAskVault() {
+    const input = $('#ask-input');
+    const sendBtn = $('#ask-send-btn');
+    const clearBtn = $('#ask-clear-btn');
+    if (!input || !sendBtn) return;
+
+    // Enable/disable send
+    input.addEventListener('input', () => {
+        sendBtn.disabled = !input.value.trim() || state.askStreaming;
+    });
+
+    // Enter to send
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && input.value.trim() && !state.askStreaming) {
+            e.preventDefault();
+            askVault(input.value.trim());
+        }
+    });
+
+    // Send button
+    sendBtn.addEventListener('click', () => {
+        if (input.value.trim() && !state.askStreaming) {
+            askVault(input.value.trim());
+        }
+    });
+
+    // Clear chat
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            state.askHistory = [];
+            const container = $('#ask-messages');
+            const empty = $('#ask-empty');
+            // Remove all messages
+            container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
+            if (empty) empty.style.display = '';
+            clearBtn.style.display = 'none';
+        });
+    }
+
+    // Suggestion pills
+    $$('.ask-suggestion').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const q = btn.getAttribute('data-q');
+            if (q && !state.askStreaming) {
+                input.value = q;
+                askVault(q);
+            }
+        });
+    });
+}
+
+function _askRenderUserMsg(text) {
+    const container = $('#ask-messages');
+    const empty = $('#ask-empty');
+    if (empty) empty.style.display = 'none';
+
+    const div = document.createElement('div');
+    div.className = 'ask-msg ask-msg-user';
+    div.innerHTML = `
+        <div class="ask-msg-avatar">U</div>
+        <div class="ask-msg-body">
+            <div class="ask-msg-content">${escapeHtml(text)}</div>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function _askRenderThinking() {
+    const container = $('#ask-messages');
+    const div = document.createElement('div');
+    div.className = 'ask-thinking';
+    div.id = 'ask-thinking-indicator';
+    div.innerHTML = `
+        <div class="ask-thinking-dots"><span></span><span></span><span></span></div>
+        <span>Searching your vault…</span>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function _askRemoveThinking() {
+    const el = $('#ask-thinking-indicator');
+    if (el) el.remove();
+}
+
+function _askSimpleMarkdown(text) {
+    // Convert basic markdown to HTML
+    let html = escapeHtml(text);
+
+    // Code blocks: ```lang\n...\n```
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+        return `<pre><code class="language-${lang}">${code}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (but not if part of a list marker **)
+    html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+
+    // Unordered lists
+    html = html.replace(/^[-•*]\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+
+    // Numbered lists
+    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+    // Line breaks → paragraphs
+    html = html.replace(/\n\n+/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+    html = `<p>${html}</p>`;
+
+    // Clean up empty paragraphs
+    html = html.replace(/<p><\/p>/g, '');
+    html = html.replace(/<p>(<pre>)/g, '$1');
+    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+
+    return html;
+}
+
+function _askRenderAssistantMsg() {
+    const container = $('#ask-messages');
+    const div = document.createElement('div');
+    div.className = 'ask-msg ask-msg-assistant';
+    div.id = 'ask-streaming-msg';
+    div.innerHTML = `
+        <div class="ask-msg-avatar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="ask-msg-body">
+            <div class="ask-msg-content" id="ask-streaming-content"><span class="ask-cursor"></span></div>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function _askAppendToken(token) {
+    const content = $('#ask-streaming-content');
+    if (!content) return;
+
+    // Remove cursor, append token, add cursor back
+    const cursor = content.querySelector('.ask-cursor');
+    if (cursor) cursor.remove();
+
+    // Store raw text in a data attribute for final markdown rendering
+    const rawAttr = content.getAttribute('data-raw') || '';
+    content.setAttribute('data-raw', rawAttr + token);
+
+    // For streaming: just append as text with cursor
+    content.textContent = rawAttr + token;
+    const newCursor = document.createElement('span');
+    newCursor.className = 'ask-cursor';
+    content.appendChild(newCursor);
+
+    // Auto-scroll
+    const container = $('#ask-messages');
+    container.scrollTop = container.scrollHeight;
+}
+
+function _askFinalizeMsg(sources) {
+    const content = $('#ask-streaming-content');
+    if (!content) return;
+
+    // Remove cursor
+    const cursor = content.querySelector('.ask-cursor');
+    if (cursor) cursor.remove();
+
+    // Convert raw text to markdown HTML
+    const raw = content.getAttribute('data-raw') || content.textContent || '';
+    content.innerHTML = _askSimpleMarkdown(raw);
+
+    // Remove streaming ID
+    const msg = $('#ask-streaming-msg');
+    if (msg) msg.removeAttribute('id');
+    if (content) content.removeAttribute('id');
+
+    // Render source chips
+    if (sources && sources.length > 0) {
+        const body = content.parentElement; // .ask-msg-body
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.className = 'ask-sources';
+        sourcesDiv.innerHTML = `
+            <span class="ask-sources-label">Sources from your vault</span>
+            ${sources.map(s => `
+                <button class="ask-source-chip" onclick="showDetail(${s.context_id})" title="${escapeHtml(s.title)}">
+                    📄 ${escapeHtml(s.title.length > 40 ? s.title.slice(0, 37) + '…' : s.title)}
+                    <span class="ask-source-score">${s.score}</span>
+                </button>
+            `).join('')}
+        `;
+        body.appendChild(sourcesDiv);
+    }
+
+    // Auto-scroll
+    const container = $('#ask-messages');
+    container.scrollTop = container.scrollHeight;
+}
+
+async function askVault(question) {
+    if (state.askStreaming || !question) return;
+    state.askStreaming = true;
+
+    const input = $('#ask-input');
+    const sendBtn = $('#ask-send-btn');
+    const clearBtn = $('#ask-clear-btn');
+    if (input) input.value = '';
+    if (sendBtn) sendBtn.disabled = true;
+    if (clearBtn) clearBtn.style.display = '';
+
+    // Add user message to history & render
+    state.askHistory.push({ role: 'user', content: question });
+    _askRenderUserMsg(question);
+    _askRenderThinking();
+
+    let fullResponse = '';
+
+    try {
+        const res = await fetch(`${API}/api/vault/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question,
+                history: state.askHistory.slice(-6),
+            }),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Server error ${res.status}`);
+        }
+
+        _askRemoveThinking();
+        _askRenderAssistantMsg();
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done: streamDone } = await reader.read();
+            if (streamDone) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // keep incomplete line
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const data = JSON.parse(line);
+                    if (data.token) {
+                        fullResponse += data.token;
+                        _askAppendToken(data.token);
+                    }
+                    if (data.error) {
+                        fullResponse += `\n\n⚠️ Error: ${data.error}`;
+                        _askAppendToken(`\n\n⚠️ Error: ${data.error}`);
+                    }
+                    if (data.done) {
+                        _askFinalizeMsg(data.sources || []);
+                    }
+                } catch (_) { /* skip bad lines */ }
+            }
+        }
+
+        // Process remaining buffer
+        if (buffer.trim()) {
+            try {
+                const data = JSON.parse(buffer);
+                if (data.token) {
+                    fullResponse += data.token;
+                    _askAppendToken(data.token);
+                }
+                if (data.done) {
+                    _askFinalizeMsg(data.sources || []);
+                }
+            } catch (_) {}
+        }
+
+    } catch (err) {
+        _askRemoveThinking();
+        // Show error as assistant message
+        if (!$('#ask-streaming-msg')) {
+            _askRenderAssistantMsg();
+        }
+        _askAppendToken(`⚠️ ${err.message}`);
+        _askFinalizeMsg([]);
+        fullResponse = `Error: ${err.message}`;
+    }
+
+    // Save assistant response to history
+    state.askHistory.push({ role: 'assistant', content: fullResponse });
+    state.askStreaming = false;
+    if (sendBtn && input) sendBtn.disabled = !input.value.trim();
+}
+
 // ─── Init ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     // Setup wizard
     setupInterval = setInterval(checkSetup, 2000);
     checkSetup(); // Immediate first check
     _initSettingsHint(); // Show active models in sidebar hint
+    _initSidebarTooltips(); // Sidebar hover tooltips
+    _initAskVault(); // Ask Your Vault chat
 
 
     // Skip setup button (service phase)
@@ -2639,7 +3032,7 @@ async function loadSystemLogs() {
     const viewer = $('#logs-viewer');
     if (!viewer) return;
     const lines = parseInt($('#logs-lines-select')?.value || '100', 10);
-    viewer.innerHTML = '<div class="sys-status-loading">Loading…</div>';
+    viewer.innerHTML = '<div class="sys-status-loading"><div class="sys-loader-spinner" aria-hidden="true"></div><span class="sys-loader-text">Loading logs\u2026</span></div>';
     try {
         const res = await fetch(`${API}/api/debug/logs?lines=${lines}`);
         if (!res.ok) throw new Error();

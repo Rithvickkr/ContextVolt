@@ -9,10 +9,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet"></noscript>
     <link rel="stylesheet" href="/static/css/styles.css">
     <style>
@@ -125,9 +125,9 @@
                 <button class="nav-item active" data-view="input" id="nav-input"
                         aria-current="page" aria-label="New Chat — paste a conversation" data-tooltip="Paste an AI conversation to summarize & save">
                     <span class="nav-icon" aria-hidden="true">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                     </span>
-                    <span class="nav-label">New Chat</span>
+                    <span class="nav-label">Dashboard</span>
                 </button>
                 <button class="nav-item" data-view="library" id="nav-library"
                         aria-current="false" aria-label="Library — browse saved conversations" data-tooltip="Browse & search your saved conversations">
@@ -217,37 +217,104 @@
 
         <!-- Main Content -->
         <main class="main-content" id="main-content" aria-label="Main content">
-            <!-- Chat Input View -->
+            <!-- Dashboard View -->
             <div class="view" id="view-input" role="region" aria-labelledby="view-input-heading">
-                <div class="view-header input-hero">
-                    <div class="hero-icon" aria-hidden="true">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                            <path d="M8 9h8M8 13h5" opacity="0.5"/>
-                        </svg>
+                <!-- Dashboard Header: Greeting + Quick Capture Button -->
+                <div class="dashboard-header">
+                    <div class="dashboard-greeting-area">
+                        <h1 id="view-input-heading" class="dashboard-greeting">Good afternoon,<br><span class="dashboard-greeting-name">User</span></h1>
                     </div>
-                    <h1 id="view-input-heading">Paste a Conversation</h1>
-                    <p class="view-desc" id="chat-textarea-desc">Drop any AI conversation below — it'll be summarized, chunked, and embedded into your personal knowledge vault.</p>
+                    <button class="btn btn-primary quick-capture-btn" id="quick-capture-toggle" aria-label="Quick Capture">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Quick Capture
+                    </button>
                 </div>
-                <div class="input-area">
-                    <label for="chat-textarea" class="sr-only">Conversation text</label>
-                    <textarea id="chat-textarea" class="chat-textarea"
-                        placeholder="Paste your AI conversation here..."
-                        aria-describedby="chat-textarea-desc char-count"
-                        spellcheck="false"></textarea>
-                    <div class="input-actions">
-                        <span class="char-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
-                        <button class="btn btn-primary" id="summarize-btn" disabled
-                                aria-disabled="true" aria-busy="false"
-                                aria-describedby="chat-textarea-desc">
-                            <span class="btn-text">Summarize &amp; Save</span>
-                            <span class="btn-loader" style="display:none;" aria-hidden="true">
-                                <span class="summarize-progress-bar">
-                                    <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
-                                </span>
-                                <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
-                            </span>
+
+                <!-- Stats Cards -->
+                <div class="dashboard-stats" id="dashboard-stats">
+                    <div class="stat-card" id="stat-contexts">
+                        <div class="stat-label">Total Contexts</div>
+                        <div class="stat-bottom">
+                            <div class="stat-value" id="stat-contexts-val">—</div>
+                            <div class="stat-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="stat-chunks">
+                        <div class="stat-label">Chats Saved</div>
+                        <div class="stat-bottom">
+                            <div class="stat-value" id="stat-chunks-val">—</div>
+                            <div class="stat-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.5"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stat-card" id="stat-storage">
+                        <div class="stat-label">Storage</div>
+                        <div class="stat-bottom">
+                            <div class="stat-value" id="stat-storage-val">—</div>
+                            <div class="stat-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Contexts -->
+                <div class="dashboard-recent-section" id="dashboard-recent-section">
+                    <div class="dashboard-section-header">
+                        <h2 class="dashboard-section-title">Recent Contexts</h2>
+                        <button class="btn btn-ghost dashboard-see-all" id="dashboard-see-all" aria-label="See all contexts">
+                            See all
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
+                    </div>
+                    <div class="dashboard-recent-grid" id="dashboard-recent-grid">
+                        <!-- Recent context cards rendered by JS -->
+                        <div class="dashboard-recent-empty" id="dashboard-recent-empty">
+                            <p>No contexts yet. Use Quick Capture to save your first conversation!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Capture View (separate page) -->
+            <div class="view" id="view-capture" style="display:none;" role="region" aria-labelledby="view-capture-heading">
+                <div class="capture-view-header">
+                    <button class="btn btn-ghost" id="capture-back-btn" aria-label="Back to Dashboard">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                        Dashboard
+                    </button>
+                </div>
+                <div class="capture-view-content">
+                    <div class="capture-hero">
+                        <div class="capture-hero-icon" aria-hidden="true">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.5"/></svg>
+                        </div>
+                        <h1 id="view-capture-heading" class="capture-title">Quick Capture</h1>
+                        <p class="capture-desc" id="chat-textarea-desc">Paste any AI conversation below — it'll be summarized, chunked, and embedded into your vault.</p>
+                    </div>
+                    <div class="input-area">
+                        <label for="chat-textarea" class="sr-only">Conversation text</label>
+                        <textarea id="chat-textarea" class="chat-textarea"
+                            placeholder="Paste your AI conversation here..."
+                            aria-describedby="chat-textarea-desc char-count"
+                            spellcheck="false"></textarea>
+                        <div class="input-actions">
+                            <span class="char-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
+                            <button class="btn btn-primary" id="summarize-btn" disabled
+                                    aria-disabled="true" aria-busy="false"
+                                    aria-describedby="chat-textarea-desc">
+                                <span class="btn-text">Summarize &amp; Save</span>
+                                <span class="btn-loader" style="display:none;" aria-hidden="true">
+                                    <span class="summarize-progress-bar">
+                                        <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
+                                    </span>
+                                    <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
+                                </span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -496,11 +563,11 @@
                     </tr>
                     <tr>
                         <td><div class="shortcut-keys"><kbd>Ctrl</kbd><span class="shortcut-plus">+</span><kbd>Enter</kbd></div></td>
-                        <td>Summarize &amp; Save (in New Chat)</td>
+                        <td>Summarize &amp; Save (in Quick Capture)</td>
                     </tr>
                     <tr>
                         <td><div class="shortcut-keys"><kbd>N</kbd></div></td>
-                        <td>Go to New Chat</td>
+                        <td>Go to Dashboard</td>
                     </tr>
                     <tr>
                         <td><div class="shortcut-keys"><kbd>L</kbd></div></td>

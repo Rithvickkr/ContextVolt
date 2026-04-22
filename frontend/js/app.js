@@ -1,5 +1,5 @@
 /**
- * ContextVolt — Frontend SPA
+ * ContextVolt â€” Frontend SPA
  *
  * Vanilla JS single-page application.
  * Handles: Setup Wizard, Chat Input, Context Library, Detail View, Prompt Builder.
@@ -7,7 +7,7 @@
 
 const API = 'http://localhost:8000';
 
-// ─── Global error handler — prevents silent freezes in pywebview ──
+// â”€â”€â”€ Global error handler â€” prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {
     console.error('Uncaught error:', e.message, e.filename, e.lineno);
     try { showToast(`JS Error: ${e.message}`, 'error'); } catch (_) {}
@@ -17,7 +17,7 @@ window.addEventListener('unhandledrejection', e => {
     try { showToast(`Error: ${e.reason?.message || e.reason}`, 'error'); } catch (_) {}
 });
 
-// ─── Theme ──────────────────────────────────────────────────────
+// â”€â”€â”€ Theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     const isDark = theme === 'dark';
@@ -42,7 +42,7 @@ function toggleTheme() {
     _applyTheme(saved);
 })();
 
-// ─── State ───────────────────────────────────────────────────────
+// â”€â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const state = {
     view: 'input',           // 'input' | 'library' | 'detail'
     contexts: [],
@@ -64,7 +64,7 @@ const state = {
     searchQuery: '',           // current search query for highlighting
 };
 
-// ─── P2-2: Source badge constants ────────────────────────────────
+// â”€â”€â”€ P2-2: Source badge constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _KNOWN_SOURCES = ['ChatGPT', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Perplexity', 'Copilot'];
 
 function _getSourceBadge(tags) {
@@ -75,7 +75,7 @@ function _getSourceBadge(tags) {
     return `<span class="source-badge ${cls}">${escapeHtml(source)}</span>`;
 }
 
-// ─── Worker Status Polling ───────────────────────────────────────
+// â”€â”€â”€ Worker Status Polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _workerPollTimer = null;
 
 function startWorkerPolling() {
@@ -102,7 +102,7 @@ async function _pollSummarizingContexts() {
 
     const idsToCheck = [...new Set([...summarizingIds, ...(detailId ? [detailId] : [])])];
     if (idsToCheck.length === 0) {
-        // Nothing pending — stop polling
+        // Nothing pending â€” stop polling
         stopWorkerPolling();
         return;
     }
@@ -127,7 +127,7 @@ async function _pollSummarizingContexts() {
                     const newBanner = _buildDetailStatusBanner(fresh.status);
                     banner.outerHTML = newBanner;
                 } else if (fresh.status !== 'summarizing') {
-                    // Banner was removed (status changed) — re-render full detail
+                    // Banner was removed (status changed) â€” re-render full detail
                     renderDetail(fresh);
                 }
             }
@@ -145,7 +145,7 @@ function _buildDetailStatusBanner(status) {
         return `<div class="detail-status-banner status-summarizing" id="detail-status-banner">
             <div class="detail-status-icon"><span class="detail-spinner"></span></div>
             <div class="detail-status-text">
-                <strong>Summarizing in background…</strong>
+                <strong>Summarizing in backgroundâ€¦</strong>
                 <span>The AI is building a full summary. This page will update automatically when it's ready.</span>
             </div>
         </div>`;
@@ -166,7 +166,7 @@ function _buildCardStatusBadge(status) {
     if (status === 'summarizing') {
         return `<span class="status-badge status-summarizing"><span class="badge-spinner"></span>Summarizing</span>`;
     } else if (status === 'failed') {
-        return `<span class="status-badge status-failed">⚠ Failed</span>`;
+        return `<span class="status-badge status-failed">âš  Failed</span>`;
     }
     return '';
 }
@@ -188,11 +188,11 @@ function _refreshCard(ctx) {
     }
 }
 
-// ─── DOM Refs ────────────────────────────────────────────────────
+// â”€â”€â”€ DOM Refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ─── Setup Wizard ────────────────────────────────────────────────
+// â”€â”€â”€ Setup Wizard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let setupInterval = null;
 let setupAttempts = 0;
 
@@ -242,7 +242,7 @@ async function checkSetup() {
         state.ollamaReady = data.ollama_running && data.model_ready;
         updateStatusIndicator(data.ollama_running && data.model_ready);
 
-        // LLM ready → go to app
+        // LLM ready â†’ go to app
         if (data.ollama_running && data.model_ready) {
             state.setupComplete = true;
             transitionToApp();
@@ -277,10 +277,11 @@ function transitionToApp() {
         $('#app').style.animation = 'fadeIn 0.5s ease';
         loadCollections();
         _prefetchSettingsConfig();
+        loadDashboard();
     }, 500);
 }
 
-// ─── Navigation ──────────────────────────────────────────────────
+// â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function navigateTo(view) {
     state.view = view;
 
@@ -306,12 +307,15 @@ function navigateTo(view) {
 
     // Update nav
     $$('.nav-item').forEach(n => n.classList.remove('active'));
-    const navBtn = $(`[data-view="${view === 'detail' ? 'library' : view}"]`);
+    const navKey = view === 'detail' ? 'library' : (view === 'capture' ? 'input' : view);
+    const navBtn = $(`[data-view="${navKey}"]`);
     if (navBtn) navBtn.classList.add('active');
 
-    // Load data if library
+    // Load data for the target view
     if (view === 'library') {
         loadContexts();
+    } else if (view === 'input') {
+        loadDashboard();
     }
 
     // Start/stop background polling depending on view
@@ -322,7 +326,119 @@ function navigateTo(view) {
     }
 }
 
-// ─── Chat Input ──────────────────────────────────────────────────
+// â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _dashboardLoaded = false;
+
+function _getGreeting() {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+}
+
+function _animateCountUp(el, target, suffix = '') {
+    const duration = 600;
+    const start = performance.now();
+    const from = 0;
+    function step(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        // ease-out cubic
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(from + (target - from) * eased);
+        el.textContent = current.toLocaleString() + suffix;
+        if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+function _timeAgo(dateStr) {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diff = Math.max(0, now - then);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function _renderRecentCard(ctx) {
+    const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
+    const title = escapeHtml(ctx.title || 'Untitled');
+    const date = _timeAgo(ctx.created_at);
+    const sourceBadge = _getSourceBadge(ctx.tags);
+    const snippet = summary.key_ideas && summary.key_ideas.length > 0
+        ? escapeHtml(summary.key_ideas[0])
+        : (summary.snapshot ? escapeHtml(summary.snapshot) : '');
+
+    return `<div class="dashboard-recent-card" onclick="showDetail(${ctx.id})">
+        <div class="dashboard-recent-card-header">
+            <span class="dashboard-recent-card-title">${title}</span>
+            ${sourceBadge}
+        </div>
+        ${snippet ? `<div class="dashboard-recent-card-summary">${snippet}</div>` : ''}
+        <div class="dashboard-recent-card-footer">
+            ${sourceBadge}
+            <span class="dashboard-recent-card-date">${date}</span>
+        </div>
+    </div>`;
+}
+
+async function loadDashboard() {
+    // Update greeting
+    const greetingEl = document.getElementById('view-input-heading');
+    if (greetingEl) {
+        greetingEl.innerHTML = `${_getGreeting()},<br><span class="dashboard-greeting-name">User</span>`;
+    }
+
+    try {
+        const res = await fetch(`${API}/api/dashboard`);
+        if (!res.ok) throw new Error('Dashboard fetch failed');
+        const data = await res.json();
+        const stats = data.stats || {};
+        const recent = data.recent || [];
+
+        // Animate stat values
+        const ctxVal = document.getElementById('stat-contexts-val');
+        const chunkVal = document.getElementById('stat-chunks-val');
+        const storageVal = document.getElementById('stat-storage-val');
+
+        if (ctxVal) _animateCountUp(ctxVal, stats.contexts || 0);
+        if (chunkVal) _animateCountUp(chunkVal, stats.chunks || 0);
+        if (storageVal) {
+            const mb = stats.size_mb || 0;
+            if (mb >= 1024) {
+                storageVal.textContent = (mb / 1024).toFixed(1) + ' GB';
+            } else {
+                storageVal.textContent = mb.toFixed(1) + ' MB';
+            }
+        }
+
+        // Render recent contexts
+        const gridEl = document.getElementById('dashboard-recent-grid');
+        const emptyEl = document.getElementById('dashboard-recent-empty');
+        if (gridEl) {
+            if (recent.length > 0) {
+                if (emptyEl) emptyEl.style.display = 'none';
+                const cardsHtml = recent.map(ctx => _renderRecentCard(ctx)).join('');
+                gridEl.innerHTML = cardsHtml;
+            } else {
+                gridEl.innerHTML = '';
+                gridEl.appendChild(emptyEl);
+                emptyEl.style.display = 'flex';
+            }
+        }
+
+        _dashboardLoaded = true;
+    } catch (err) {
+        console.error('Dashboard load error:', err);
+    }
+}
+
+// â”€â”€â”€ Chat Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function initChatInput() {
     const textarea = $('#chat-textarea');
     const charCount = $('#char-count');
@@ -332,7 +448,7 @@ function initChatInput() {
         const len = textarea.value.length;
         const tokens = Math.round(len / 4);
         const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
-        charCount.textContent = `${len.toLocaleString()} chars · ${tokenStr} tokens`;
+        charCount.textContent = `${len.toLocaleString()} chars Â· ${tokenStr} tokens`;
         summarizeBtn.disabled = len < 20;
     });
 
@@ -361,7 +477,7 @@ async function summarizeAndSave() {
             if (textEl) textEl.textContent = ' ' + msg;
             if (fillEl && pct !== null) fillEl.style.width = pct + '%';
         };
-        _setProgress('Summarizing…', 5);
+        _setProgress('Summarizingâ€¦', 5);
 
         const summaryRes = await fetch(`${API}/api/summarize/stream`, {
             method: 'POST',
@@ -408,7 +524,7 @@ async function summarizeAndSave() {
         const tags = generateTags(summary);
 
         // Step 4: Save to database
-        _setProgress('Saving…', 90);
+        _setProgress('Savingâ€¦', 90);
         const createRes = await fetch(`${API}/api/contexts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -427,7 +543,7 @@ async function summarizeAndSave() {
         const created = await createRes.json();
 
         // Step 5: Chunk and embed the conversation
-        _setProgress('Embedding…', 97);
+        _setProgress('Embeddingâ€¦', 97);
         try {
             const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
             if (chunkRes.ok) {
@@ -442,7 +558,7 @@ async function summarizeAndSave() {
                 }
             }
         } catch {
-            showToast('Context saved, but chunking failed — use Rebuild Embeddings later', 'error');
+            showToast('Context saved, but chunking failed â€” use Rebuild Embeddings later', 'error');
         }
 
         // Clear textarea
@@ -477,7 +593,7 @@ function generateTags(summary) {
         ...(summary.vitals || []),
     ].join(' ').toLowerCase();
 
-    // Known tech keywords — still useful for canonical naming
+    // Known tech keywords â€” still useful for canonical naming
     const knownTags = {
         'python': 'Python', 'javascript': 'JavaScript', 'typescript': 'TypeScript',
         'react': 'React', 'vue': 'Vue', 'angular': 'Angular', 'svelte': 'Svelte',
@@ -515,7 +631,7 @@ function generateTags(summary) {
     return [...tags].slice(0, 5);
 }
 
-// ─── Collections ─────────────────────────────────────────────────
+// â”€â”€â”€ Collections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadCollections() {
     try {
         const res = await fetch(`${API}/api/collections`);
@@ -661,7 +777,7 @@ async function submitRenameCollection(id, newName) {
 }
 
 async function confirmDeleteCollection(id, name) {
-    if (!confirm(`Delete collection "${name}"?\n\nContexts inside will not be deleted — they'll just become uncollected.`)) return;
+    if (!confirm(`Delete collection "${name}"?\n\nContexts inside will not be deleted â€” they'll just become uncollected.`)) return;
     try {
         const res = await fetch(`${API}/api/collections/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error();
@@ -696,7 +812,7 @@ function _getCollectionForContext(collectionId) {
     return state.collections.find(c => c.id === collectionId) || null;
 }
 
-// ─── Context Library ─────────────────────────────────────────────
+// â”€â”€â”€ Context Library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Wrap matched search terms in <span class="search-highlight"> */
 function _highlightText(text, query) {
@@ -788,7 +904,7 @@ async function loadContexts(query = '', append = false) {
 
         // Notify user when semantic search fell back to keyword
         if (query && data.search_mode === 'keyword') {
-            showToast('Semantic search unavailable — showing keyword results', 'error');
+            showToast('Semantic search unavailable â€” showing keyword results', 'error');
         }
 
         if (append) {
@@ -889,7 +1005,7 @@ function _applyTagFilter() {
     const tag = state.activeTagFilter;
     const cards = grid.querySelectorAll('.context-card');
     if (cards.length > 0 && cards.length === state.contexts.length) {
-        // Cards match state — toggle visibility in-place
+        // Cards match state â€” toggle visibility in-place
         const ctxById = new Map(state.contexts.map(c => [c.id, c]));
         cards.forEach(card => {
             const id = parseInt(card.dataset.id, 10);
@@ -901,7 +1017,7 @@ function _applyTagFilter() {
             }
         });
     } else {
-        // Cards out of sync — fall back to full re-render
+        // Cards out of sync â€” fall back to full re-render
         const filtered = tag
             ? state.contexts.filter(c => (c.tags || []).includes(tag))
             : state.contexts;
@@ -944,7 +1060,7 @@ function toggleDeepSearch() {
 
     const input = $('#search-input');
     if (_deepSearchMode) {
-        input.placeholder = 'Deep search across all chunks…';
+        input.placeholder = 'Deep search across all chunksâ€¦';
         const q = input.value.trim();
         if (q.length >= 3) _runDeepSearch(q);
     } else {
@@ -974,7 +1090,7 @@ async function _runDeepSearch(query) {
     loadMore.style.display = 'none';
     emptyState.style.display = 'none';
     container.style.display = 'block';
-    container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Searching all chunks…</div>';
+    container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Searching all chunksâ€¦</div>';
 
     try {
         const res = await fetch(`${API}/api/retrieve/search`, {
@@ -1007,7 +1123,7 @@ function _renderDeepResults(data, query) {
     }
 
     const modeNote = data.search_mode === 'keyword'
-        ? ' <span style="font-size:0.75rem;opacity:0.6;font-weight:normal">(keyword match — run Rebuild Embeddings for semantic search)</span>'
+        ? ' <span style="font-size:0.75rem;opacity:0.6;font-weight:normal">(keyword match â€” run Rebuild Embeddings for semantic search)</span>'
         : '';
     let html = `<div class="deep-search-header">${data.total_chunks} chunks matched across ${data.results.length} conversation${data.results.length > 1 ? 's' : ''}${modeNote}</div>`;
 
@@ -1028,7 +1144,7 @@ function _renderDeepResults(data, query) {
             <div class="deep-result-chunks">`;
 
         for (const chunk of group.chunks) {
-            const excerpt = escapeHtml(chunk.text.length > 300 ? chunk.text.slice(0, 300) + '…' : chunk.text);
+            const excerpt = escapeHtml(chunk.text.length > 300 ? chunk.text.slice(0, 300) + 'â€¦' : chunk.text);
             const badges = [];
             if (chunk.has_code) badges.push('<span class="deep-badge">code</span>');
             if (chunk.is_starred) badges.push('<span class="deep-badge starred">starred</span>');
@@ -1045,7 +1161,7 @@ function _renderDeepResults(data, query) {
 }
 
 function deleteFromLibrary(id) {
-    // P2-10: Undo delete — hide card immediately, commit after 5s
+    // P2-10: Undo delete â€” hide card immediately, commit after 5s
     const ctx = state.contexts.find(c => c.id === id);
     if (!ctx) return;
 
@@ -1095,12 +1211,12 @@ async function _commitDelete(id) {
     }
 }
 
-// ─── Star / Select / Bulk ────────────────────────────────────────
+// â”€â”€â”€ Star / Select / Bulk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function toggleStar(id) {
     const ctx = state.contexts.find(c => c.id === id);
     if (!ctx) return;
 
-    // Optimistic DOM update — no full re-render
+    // Optimistic DOM update â€” no full re-render
     const wasStarred = ctx.starred;
     ctx.starred = !wasStarred;
 
@@ -1250,7 +1366,7 @@ function _rerenderGrid(changedId) {
     grid.innerHTML = _staggeredCards(filtered);
 }
 
-// ─── Context Detail ──────────────────────────────────────────────
+// â”€â”€â”€ Context Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function showDetail(id) {
     // Show detail view immediately with loading state
     navigateTo('detail');
@@ -1281,8 +1397,9 @@ function renderDetail(ctx) {
         `<span class="tag">${escapeHtml(t)}</span>`
     ).join('');
     const date = new Date(ctx.created_at).toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric'
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
     });
+    const timeAgo = _timeAgo(ctx.created_at);
 
     const keyIdeas = (summary.key_ideas || []).map(i =>
         `<li>${escapeHtml(i)}</li>`
@@ -1298,9 +1415,11 @@ function renderDetail(ctx) {
     const snapshot = summary.snapshot && summary.snapshot.toLowerCase() !== 'n/a' ? summary.snapshot : '';
 
     const statusInfo = _buildDetailStatusBanner(ctx.status);
+    const sourceBadge = _getSourceBadge(ctx.tags);
 
     const starredClass = ctx.starred ? ' active' : '';
     const starFill = ctx.starred ? 'currentColor' : 'none';
+    const aiModel = _detectAIModel(ctx.tags);
 
     container.innerHTML = `
         <div class="detail-sticky-header" id="detail-sticky-header">
@@ -1309,76 +1428,77 @@ function renderDetail(ctx) {
             </button>
             <span class="detail-sticky-title">${escapeHtml(ctx.title)}</span>
         </div>
-        <div class="detail-title-row">
-            <h2 class="detail-title">${escapeHtml(ctx.title)}</h2>
-            <button class="detail-star${starredClass}" onclick="toggleStarDetail(${ctx.id})" title="${ctx.starred ? 'Unpin' : 'Pin'}" aria-label="${ctx.starred ? 'Unpin context' : 'Pin context'}">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="${starFill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            </button>
-        </div>
-        ${statusInfo}
-        <div class="detail-meta">
-            <span>${date}</span>
-        </div>
-        <div class="detail-collection-row">
-            <span class="detail-collection-label">Collection</span>
-            <select class="collection-select" id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
-                <option value="">— None —</option>
-                ${state.collections.map(c =>
-                    `<option value="${c.id}"${ctx.collection_id === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`
-                ).join('')}
-            </select>
-        </div>
-        <div class="detail-tags">${tags || '<span style="color:var(--text-faint);font-size:12px;">No tags</span>'}</div>
 
-        ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') ? `
-        <div class="summary-section">
-            <h3 class="section-title">Main Topic</h3>
-            <div class="topic-text">${escapeHtml(summary.main_topic)}</div>
+        <div class="ctx-header">
+            <div class="ctx-header-top">
+                <div class="ctx-header-meta">
+                    <span class="ctx-date">${date} Â· ${timeAgo}</span>
+                    ${sourceBadge || ''}
+                </div>
+                <button class="detail-star${starredClass}" onclick="toggleStarDetail(${ctx.id})" title="${ctx.starred ? 'Unpin' : 'Pin'}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="${starFill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+            </div>
+            <h2 class="ctx-title">${escapeHtml(ctx.title)}</h2>
+            ${statusInfo}
+            <div class="ctx-tags-row">
+                <div class="detail-tags">${tags || '<span class="ctx-no-tags">No tags</span>'}</div>
+                <div class="ctx-collection-inline">
+                    <select class="collection-select" id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
+                        <option value="">Collection: None</option>
+                        ${state.collections.map(c =>
+                            `<option value="${c.id}"${ctx.collection_id === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') || snapshot ? `
+        <div class="ctx-overview">
+            ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') ? `
+            <div class="ctx-topic">${escapeHtml(summary.main_topic)}</div>` : ''}
+            ${snapshot ? `<p class="ctx-snapshot">${escapeHtml(snapshot)}</p>` : ''}
         </div>` : ''}
 
         ${importantNotes.length ? `
-        <div class="summary-section important-notes-section">
-            <h3 class="section-title">⭐ Marked Important</h3>
-            <ul class="summary-list important-notes-list">
-                ${importantNotes.map(n => `<li class="important-note-item">${escapeHtml(n)}</li>`).join('')}
+        <div class="ctx-section ctx-important">
+            <div class="ctx-section-label"><span class="ctx-important-dot"></span>Pinned Notes</div>
+            <ul class="ctx-list ctx-list--important">
+                ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
             </ul>
-        </div>` : ''}
-
-        ${snapshot ? `
-        <div class="summary-section">
-            <h3 class="section-title">Active State</h3>
-            <div class="snapshot-text">${escapeHtml(snapshot)}</div>
         </div>` : ''}
 
         ${vitals.length ? `
-        <div class="summary-section">
-            <h3 class="section-title">Technical Vitals</h3>
-            <ul class="vitals-list">
-                ${vitals.map(v => `<li class="vitals-item"><code>${escapeHtml(v)}</code></li>`).join('')}
-            </ul>
+        <div class="ctx-section">
+            <div class="ctx-section-label">Technical Vitals</div>
+            <div class="ctx-vitals">
+                ${vitals.map(v => `<code class="ctx-vital-chip">${escapeHtml(v)}</code>`).join('')}
+            </div>
         </div>` : ''}
 
-        ${keyIdeas ? `
-        <div class="summary-section">
-            <h3 class="section-title">Key Ideas</h3>
-            <ul class="summary-list">${keyIdeas}</ul>
-        </div>` : ''}
-
-        ${conclusions ? `
-        <div class="summary-section">
-            <h3 class="section-title">Conclusions</h3>
-            <ul class="summary-list">${conclusions}</ul>
-        </div>` : ''}
-
-        ${unresolved ? `
-        <div class="summary-section">
-            <h3 class="section-title">Open Questions</h3>
-            <ul class="summary-list">${unresolved}</ul>
+        ${keyIdeas || conclusions || unresolved ? `
+        <div class="ctx-insights">
+            ${keyIdeas ? `
+            <div class="ctx-insight-block">
+                <div class="ctx-section-label">Key Ideas</div>
+                <ul class="ctx-list">${keyIdeas}</ul>
+            </div>` : ''}
+            ${conclusions ? `
+            <div class="ctx-insight-block">
+                <div class="ctx-section-label">Conclusions</div>
+                <ul class="ctx-list">${conclusions}</ul>
+            </div>` : ''}
+            ${unresolved ? `
+            <div class="ctx-insight-block">
+                <div class="ctx-section-label">Open Questions</div>
+                <ul class="ctx-list">${unresolved}</ul>
+            </div>` : ''}
         </div>` : ''}
 
         ${_currentSnippets.length ? `
-        <div class="summary-section code-snippets-section">
-            <h3 class="section-title">Final Code Snippets <span class="snippets-count">${_currentSnippets.length}</span></h3>
+        <div class="ctx-section">
+            <div class="ctx-section-label">Code Snippets <span class="snippets-count">${_currentSnippets.length}</span></div>
             <div class="code-snippets-list">
                 ${_currentSnippets.map((s, i) => `
                 <div class="code-snippet-card">
@@ -1392,50 +1512,118 @@ function renderDetail(ctx) {
             </div>
         </div>` : ''}
 
-        <div class="original-chat-section">
-            <button class="original-chat-toggle" onclick="toggleOriginalChat()">
-                <span id="chat-toggle-icon">▶</span> View Original Conversation
-            </button>
-            <div class="original-chat-content" id="original-chat-box" style="display:none;">${escapeHtml(ctx.original_chat)}</div>
+        <div class="ctx-collapsibles">
+            <div class="original-chat-section">
+                <button class="ctx-collapse-btn" onclick="toggleOriginalChat()">
+                    <span id="chat-toggle-icon" class="ctx-collapse-icon">â–¶</span>
+                    Original Conversation
+                </button>
+                <div class="original-chat-content" id="original-chat-box" style="display:none;">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
+            </div>
+            <div class="chunks-section">
+                <button class="ctx-collapse-btn" id="chunks-toggle" onclick="toggleChunkViewer(${ctx.id})">
+                    <span class="ctx-collapse-icon" id="chunks-toggle-icon">â–¶</span>
+                    View Chunks
+                </button>
+                <div id="chunks-viewer-content" style="display:none;"></div>
+            </div>
         </div>
 
-        <div class="chunks-section">
-            <button class="chunks-toggle" id="chunks-toggle" onclick="toggleChunkViewer(${ctx.id})">
-                <span class="chunks-toggle-icon" id="chunks-toggle-icon">▶</span> View Chunks
+        <div class="ctx-prompt-builder">
+            <div class="ctx-prompt-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Continuation Prompt</span>
+            </div>
+            <div class="prompt-size-selector">
+                <span class="prompt-size-label">Size</span>
+                <div class="prompt-size-group">
+                    <button class="prompt-size-btn" data-size="compact" title="~2k chars">Compact</button>
+                    <button class="prompt-size-btn active" data-size="standard" title="~5k chars">Standard</button>
+                    <button class="prompt-size-btn" data-size="full" title="~12k chars">Full</button>
+                </div>
+            </div>
+            <div class="query-input-section">
+                <input type="text" id="retrieval-query" class="query-input"
+                       placeholder="Focus onâ€¦ (optional)" />
+            </div>
+            <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id}, this)">
+                Generate Prompt
             </button>
-            <div id="chunks-viewer-content" style="display:none;"></div>
         </div>
-
-        <div class="prompt-size-selector">
-            <span class="prompt-size-label">Prompt size:</span>
-            <button class="prompt-size-btn" data-size="compact" title="~2k chars — last exchange only, no code">Compact</button>
-            <button class="prompt-size-btn active" data-size="standard" title="~5k chars — smart-selected messages + code">Standard</button>
-            <button class="prompt-size-btn" data-size="full" title="~12k chars — maximum context + all code">Full</button>
-        </div>
-        <div class="query-input-section">
-            <label for="retrieval-query" class="query-label">Focus query (optional):</label>
-            <input type="text" id="retrieval-query" class="query-input"
-                   placeholder="What do you want to continue working on?" />
-            <div class="query-hint">Leave empty for a general continuation prompt, or describe what you want to focus on for targeted context retrieval.</div>
-        </div>
-        <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id}, this)">
-            Generate Continuation Prompt
-        </button>
     `;
 
-    // Wire up size selector toggles
     document.querySelectorAll('.prompt-size-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.prompt-size-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
         });
     });
-
-    // Hide prompt section
     $('#prompt-section').style.display = 'none';
 }
 
-// ─── Final Code Snippets ─────────────────────────────────────────
+
+// â”€â”€â”€ Chat Bubble Renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function _detectAIModel(tags) {
+    if (!tags || !tags.length) return 'AI Assistant';
+    const t = tags.map(x => x.toLowerCase());
+    if (t.some(x => x.includes('chatgpt') || x.includes('gpt'))) return 'ChatGPT';
+    if (t.some(x => x.includes('claude'))) return 'Claude';
+    if (t.some(x => x.includes('grok'))) return 'Grok';
+    if (t.some(x => x.includes('gemini'))) return 'Gemini';
+    if (t.some(x => x.includes('copilot'))) return 'Copilot';
+    if (t.some(x => x.includes('deepseek'))) return 'DeepSeek';
+    if (t.some(x => x.includes('llama'))) return 'Llama';
+    if (t.some(x => x.includes('mistral'))) return 'Mistral';
+    return 'AI Assistant';
+}
+
+function _renderChatBubbles(text, aiModel) {
+    if (!text) return '<div class="chat-empty">No conversation data available.</div>';
+    const lines = text.split('\n');
+    let html = '<div class="chat-bubbles">';
+    let currentRole = null;
+    let buffer = [];
+
+    function flushBuffer() {
+        if (!currentRole || !buffer.length) return;
+        const content = escapeHtml(buffer.join('\n').trim());
+        if (!content) return;
+        const isUser = currentRole === 'user';
+        const avatar = isUser ? 'U' : 'AI';
+        const name = isUser ? 'You' : aiModel;
+        const bubbleClass = isUser ? 'chat-bubble--user' : 'chat-bubble--ai';
+        html += `<div class="chat-bubble ${bubbleClass}">
+            <div class="chat-bubble-avatar ${isUser ? 'chat-avatar--user' : 'chat-avatar--ai'}">${avatar}</div>
+            <div class="chat-bubble-body">
+                <div class="chat-bubble-name">${name}</div>
+                <div class="chat-bubble-text">${content}</div>
+            </div>
+        </div>`;
+        buffer = [];
+    }
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        // Detect role markers
+        if (/^(User|Human|You):/i.test(trimmed)) {
+            flushBuffer();
+            currentRole = 'user';
+            buffer.push(trimmed.replace(/^(User|Human|You):\s*/i, ''));
+        } else if (/^(Assistant|AI|Agent|ChatGPT|Claude|Grok|Gemini|Copilot|DeepSeek|Llama|Mistral|Bot):/i.test(trimmed)) {
+            flushBuffer();
+            currentRole = 'ai';
+            buffer.push(trimmed.replace(/^(Assistant|AI|Agent|ChatGPT|Claude|Grok|Gemini|Copilot|DeepSeek|Llama|Mistral|Bot):\s*/i, ''));
+        } else {
+            if (!currentRole) currentRole = 'user'; // default
+            buffer.push(line);
+        }
+    }
+    flushBuffer();
+    html += '</div>';
+    return html;
+}
+
+// â”€â”€â”€ Final Code Snippets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _currentSnippets = [];
 
 /**
@@ -1477,7 +1665,7 @@ async function copyCodeSnippet(idx) {
     }
 }
 
-// ─── P2-4: Chunk Viewer ──────────────────────────────────────────
+// â”€â”€â”€ P2-4: Chunk Viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _chunksLoaded = false;
 
 async function toggleChunkViewer(contextId) {
@@ -1488,21 +1676,21 @@ async function toggleChunkViewer(contextId) {
     if (content.style.display !== 'none') {
         content.style.display = 'none';
         toggle.classList.remove('open');
-        icon.textContent = '▶';
+        icon.textContent = 'â–¶';
         return;
     }
 
     toggle.classList.add('open');
-    icon.textContent = '▼';
+    icon.textContent = 'â–¼';
     content.style.display = 'block';
 
     if (!_chunksLoaded) {
         content.innerHTML = `
             <div class="chunks-query-row">
-                <input type="text" class="chunks-query-input" id="chunks-query" placeholder="Enter a query to see similarity scores…" />
+                <input type="text" class="chunks-query-input" id="chunks-query" placeholder="Enter a query to see similarity scoresâ€¦" />
                 <button class="btn btn-secondary chunks-score-btn" id="chunks-score-btn" onclick="loadChunks(${contextId})">Score</button>
             </div>
-            <div id="chunks-list-container"><div class="chunks-empty">Loading chunks…</div></div>
+            <div id="chunks-list-container"><div class="chunks-empty">Loading chunksâ€¦</div></div>
         `;
         await loadChunks(contextId);
     }
@@ -1513,7 +1701,7 @@ async function loadChunks(contextId) {
     const queryInput = $('#chunks-query');
     const query = queryInput ? queryInput.value.trim() : '';
 
-    container.innerHTML = '<div class="chunks-empty"><span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Loading…</div>';
+    container.innerHTML = '<div class="chunks-empty"><span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Loadingâ€¦</div>';
 
     try {
         const url = query
@@ -1529,12 +1717,12 @@ async function loadChunks(contextId) {
         }
 
         _chunksLoaded = true;
-        let html = `<div class="chunks-summary">${data.total} chunks${query ? ' — scored against: "' + escapeHtml(query) + '"' : ''}</div><div class="chunks-list">`;
+        let html = `<div class="chunks-summary">${data.total} chunks${query ? ' â€” scored against: "' + escapeHtml(query) + '"' : ''}</div><div class="chunks-list">`;
 
         for (const ch of data.chunks) {
             const badges = [];
             if (ch.has_code) badges.push('<span class="chunk-badge code">code</span>');
-            if (ch.is_starred) badges.push('<span class="chunk-badge starred">★ important</span>');
+            if (ch.is_starred) badges.push('<span class="chunk-badge starred">â˜… important</span>');
 
             const scoreHtml = ch.similarity !== null && ch.similarity !== undefined
                 ? (() => {
@@ -1547,7 +1735,7 @@ async function loadChunks(contextId) {
                 })()
                 : '';
 
-            const text = ch.text.length > 300 ? ch.text.slice(0, 300) + '…' : ch.text;
+            const text = ch.text.length > 300 ? ch.text.slice(0, 300) + 'â€¦' : ch.text;
             const role = ch.role_hint ? `<div class="chunk-role">${escapeHtml(ch.role_hint)}</div>` : '';
 
             html += `<div class="chunk-card">
@@ -1575,17 +1763,17 @@ function toggleOriginalChat() {
     const icon = $('#chat-toggle-icon');
     if (box.style.display === 'none') {
         box.style.display = 'block';
-        icon.textContent = '▼';
+        icon.textContent = 'â–¼';
     } else {
         box.style.display = 'none';
-        icon.textContent = '▶';
+        icon.textContent = 'â–¶';
     }
 }
 
 async function generatePrompt(id, btn) {
     if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Generating…';
+        btn.textContent = 'Generatingâ€¦';
     }
     try {
         const activeSize = document.querySelector('.prompt-size-btn.active');
@@ -1615,7 +1803,7 @@ async function generatePrompt(id, btn) {
     }
 }
 
-// ─── Edit Modal ──────────────────────────────────────────────────
+// â”€â”€â”€ Edit Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openEditModal() {
     const ctx = state.currentContext;
     if (!ctx) return;
@@ -1673,7 +1861,7 @@ async function saveEdit() {
     }
 }
 
-// ─── Delete ──────────────────────────────────────────────────────
+// â”€â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function deleteCurrentContext() {
     const ctx = state.currentContext;
     if (!ctx) return;
@@ -1704,7 +1892,7 @@ function deleteCurrentContext() {
     });
 }
 
-// ─── Export ──────────────────────────────────────────────────────
+// â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function toggleExportMenu() {
     const menu = $('#export-menu');
     const btn = $('#export-btn');
@@ -1783,7 +1971,7 @@ async function _copyText(text) {
     }
 }
 
-// ─── Copy to Clipboard ──────────────────────────────────────────
+// â”€â”€â”€ Copy to Clipboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function copyPrompt() {
     if (!state.currentPrompt) return;
     try {
@@ -1801,7 +1989,7 @@ async function copyPrompt() {
     }
 }
 
-// ─── Toast ───────────────────────────────────────────────────────
+// â”€â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showToast(message, type = 'success') {
     const stack = $('#toast-stack');
     const toast = document.createElement('div');
@@ -1822,13 +2010,13 @@ function showToast(message, type = 'success') {
     }
 }
 
-// ─── P2-10: Undo Toast ───────────────────────────────────────────
+// â”€â”€â”€ P2-10: Undo Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _showUndoToast(message, onUndo) {
     const stack = $('#toast-stack');
     const toast = document.createElement('div');
     toast.className = 'toast undo';
     toast.innerHTML = `
-        <span class="toast-icon">🗑️</span>
+        <span class="toast-icon">ðŸ—‘ï¸</span>
         <span class="toast-message">${escapeHtml(message)}</span>
         <button class="toast-undo-btn">Undo</button>
         <div class="toast-countdown"></div>
@@ -1853,7 +2041,7 @@ function _showUndoToast(message, onUndo) {
     }
 }
 
-// ─── Status Indicator ────────────────────────────────────────────
+// â”€â”€â”€ Status Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateStatusIndicator(online) {
     const dot = $('.status-dot');
     const text = $('.status-text');
@@ -1866,7 +2054,7 @@ function updateStatusIndicator(online) {
     }
 }
 
-// ─── Rebuild Embeddings ──────────────────────────────────────────
+// â”€â”€â”€ Rebuild Embeddings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function rebuildEmbeddings() {
     const btn = $('#btn-rebuild-embeddings');
     if (!btn) return;
@@ -1875,7 +2063,7 @@ async function rebuildEmbeddings() {
 
     const original = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Starting…';
+    btn.textContent = 'Startingâ€¦';
 
     try {
         const res = await fetch(`${API}/api/contexts/chunk-all?force=true`, { method: 'POST' });
@@ -1900,7 +2088,7 @@ async function rebuildEmbeddings() {
                     const data = JSON.parse(line);
                     lastData = data;
                     if (data.total > 0) {
-                        btn.textContent = `Re-embedding… ${data.done} / ${data.total}`;
+                        btn.textContent = `Re-embeddingâ€¦ ${data.done} / ${data.total}`;
                     }
                 } catch { /* ignore */ }
             }
@@ -1913,14 +2101,14 @@ async function rebuildEmbeddings() {
             showToast(msg, 'success');
         }
     } catch {
-        showToast('Re-embed failed — check that your embed model is installed', 'error');
+        showToast('Re-embed failed â€” check that your embed model is installed', 'error');
     } finally {
         btn.textContent = original;
         btn.disabled = false;
     }
 }
 
-// ─── Settings Modal ──────────────────────────────────────────────
+// â”€â”€â”€ Settings Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _settingsConfig = null; // last loaded config from backend
 let _settingsConfigPromise = null; // in-flight fetch (deduplicated)
 
@@ -1947,10 +2135,10 @@ async function openSettingsModal() {
     // Reset warning
     $('#settings-embed-warning').classList.remove('visible');
 
-    // Keyboard trap — keep focus inside while open
+    // Keyboard trap â€” keep focus inside while open
     trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
 
-    // If already cached, render instantly — no loading state needed
+    // If already cached, render instantly â€” no loading state needed
     if (_settingsConfig) {
         _renderSettingsCards();
         // Refresh in background to pick up any install changes
@@ -2002,7 +2190,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const inst  = item.installed;
 
     const statusBadge = inst
-        ? '<span class="settings-installed-badge">✓ Installed</span>'
+        ? '<span class="settings-installed-badge">âœ“ Installed</span>'
         : '<span class="settings-not-installed-badge">Not downloaded</span>';
 
     card.innerHTML = `
@@ -2022,7 +2210,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const badge = card.querySelector('.settings-status-badge');
     if (inst) {
         badge.className = 'settings-installed-badge';
-        badge.textContent = '✓ Installed';
+        badge.textContent = 'âœ“ Installed';
     } else {
         badge.className = 'settings-not-installed-badge';
         badge.textContent = 'Not downloaded';
@@ -2043,7 +2231,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     return card;
 }
 
-// ─── P2-3: Inline Model Download ─────────────────────────────────
+// â”€â”€â”€ P2-3: Inline Model Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function _pullModelInline(modelId, card) {
     const safeId = modelId.replace(/[:.]/g, '-');
     const dlArea = card.querySelector(`#dl-area-${safeId}`);
@@ -2052,14 +2240,14 @@ async function _pullModelInline(modelId, card) {
     card.classList.add('downloading');
     if (badge) {
         badge.className = 'settings-not-installed-badge';
-        badge.textContent = 'Downloading…';
+        badge.textContent = 'Downloadingâ€¦';
     }
 
     if (dlArea) {
         dlArea.style.display = 'block';
         dlArea.innerHTML = `
             <div class="settings-download-bar-bg"><div class="settings-download-bar-fill" id="dl-fill-${safeId}"></div></div>
-            <div class="settings-download-status" id="dl-status-${safeId}">Starting download…</div>
+            <div class="settings-download-status" id="dl-status-${safeId}">Starting downloadâ€¦</div>
         `;
     }
 
@@ -2100,9 +2288,9 @@ async function _pullModelInline(modelId, card) {
                         if (fill) fill.style.width = pct + '%';
                         const mb = (data.completed / (1024 * 1024)).toFixed(0);
                         const totalMb = (data.total / (1024 * 1024)).toFixed(0);
-                        if (statusEl) statusEl.textContent = `${data.status || 'Downloading'} — ${mb} / ${totalMb} MB (${pct}%)`;
+                        if (statusEl) statusEl.textContent = `${data.status || 'Downloading'} â€” ${mb} / ${totalMb} MB (${pct}%)`;
                     } else if (statusEl) {
-                        statusEl.textContent = data.status || 'Processing…';
+                        statusEl.textContent = data.status || 'Processingâ€¦';
                     }
                 } catch (e) {
                     if (e.message && e.message !== line) {
@@ -2116,7 +2304,7 @@ async function _pullModelInline(modelId, card) {
         card.classList.remove('downloading');
         if (badge) {
             badge.className = 'settings-installed-badge';
-            badge.textContent = '✓ Installed';
+            badge.textContent = 'âœ“ Installed';
         }
         if (dlArea) dlArea.style.display = 'none';
         showToast(`Model "${modelId}" downloaded!`, 'success');
@@ -2179,7 +2367,7 @@ async function saveSettings() {
 
     const saveBtn = $('#settings-save-btn');
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
+    saveBtn.textContent = 'Savingâ€¦';
 
     try {
         const [r1, r2] = await Promise.all([
@@ -2209,7 +2397,7 @@ async function saveSettings() {
 
 function _updateSettingsHint(model, embed) {
     const hint = $('#settings-current-model-hint');
-    if (hint) hint.textContent = `${model} · ${embed}`;
+    if (hint) hint.textContent = `${model} Â· ${embed}`;
 }
 
 // Fetch and show current models in the hint on app load
@@ -2221,7 +2409,7 @@ async function _initSettingsHint() {
     } catch { /* ignore */ }
 }
 
-// ─── Utilities ───────────────────────────────────────────────────
+// â”€â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function escapeHtml(str) {
     if (!str) return '';
     const div = document.createElement('div');
@@ -2229,7 +2417,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// ─── Accessibility: Focus Trap ───────────────────────────────────
+// â”€â”€â”€ Accessibility: Focus Trap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _focusTrapEl   = null;   // currently trapped container
 let _focusTrapPrev = null;   // element that had focus before modal opened
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -2271,7 +2459,7 @@ function releaseFocus(container) {
     _focusTrapPrev = null;
 }
 
-// Global Escape key — closes whichever modal is open
+// Global Escape key â€” closes whichever modal is open
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const editModal      = $('#edit-modal');
@@ -2284,7 +2472,7 @@ document.addEventListener('keydown', (e) => {
     if (settingsModal  && settingsModal.style.display   !== 'none') closeSettingsModal();
 });
 
-// ─── P2-9: Keyboard Shortcuts Modal ──────────────────────────────
+// â”€â”€â”€ P2-9: Keyboard Shortcuts Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openShortcutsModal() {
     const modal = $('#shortcuts-modal');
     modal.style.display = 'flex';
@@ -2304,7 +2492,7 @@ function closeShortcutsModal() {
     }, 180);
 }
 
-// ─── Sidebar Tooltips (JS-positioned) ───────────────────────────
+// â”€â”€â”€ Sidebar Tooltips (JS-positioned) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _initSidebarTooltips() {
     const sidebar = document.getElementById('sidebar');
     const tooltip = document.getElementById('sidebar-tooltip');
@@ -2356,7 +2544,7 @@ function _initSidebarTooltips() {
     sidebar.addEventListener('click', () => hideTooltip());
 }
 
-// ─── Ask Your Vault — RAG Chat ───────────────────────────────────
+// â”€â”€â”€ Ask Your Vault â€” RAG Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 state.askHistory = [];     // [{role: 'user'|'assistant', content: ''}]
 state.askStreaming = false; // true while streaming response
 
@@ -2435,7 +2623,7 @@ function _askRenderThinking() {
     div.id = 'ask-thinking-indicator';
     div.innerHTML = `
         <div class="ask-thinking-dots"><span></span><span></span><span></span></div>
-        <span>Searching your vault…</span>
+        <span>Searching your vaultâ€¦</span>
     `;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
@@ -2465,13 +2653,13 @@ function _askSimpleMarkdown(text) {
     html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
 
     // Unordered lists
-    html = html.replace(/^[-•*]\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^[-â€¢*]\s+(.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
 
     // Numbered lists
     html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
 
-    // Line breaks → paragraphs
+    // Line breaks â†’ paragraphs
     html = html.replace(/\n\n+/g, '</p><p>');
     html = html.replace(/\n/g, '<br>');
     html = `<p>${html}</p>`;
@@ -2552,7 +2740,7 @@ function _askFinalizeMsg(sources) {
             <span class="ask-sources-label">Sources from your vault</span>
             ${sources.map(s => `
                 <button class="ask-source-chip" onclick="showDetail(${s.context_id})" title="${escapeHtml(s.title)}">
-                    📄 ${escapeHtml(s.title.length > 40 ? s.title.slice(0, 37) + '…' : s.title)}
+                    ðŸ“„ ${escapeHtml(s.title.length > 40 ? s.title.slice(0, 37) + 'â€¦' : s.title)}
                     <span class="ask-source-score">${s.score}</span>
                 </button>
             `).join('')}
@@ -2622,8 +2810,8 @@ async function askVault(question) {
                         _askAppendToken(data.token);
                     }
                     if (data.error) {
-                        fullResponse += `\n\n⚠️ Error: ${data.error}`;
-                        _askAppendToken(`\n\n⚠️ Error: ${data.error}`);
+                        fullResponse += `\n\nâš ï¸ Error: ${data.error}`;
+                        _askAppendToken(`\n\nâš ï¸ Error: ${data.error}`);
                     }
                     if (data.done) {
                         _askFinalizeMsg(data.sources || []);
@@ -2652,7 +2840,7 @@ async function askVault(question) {
         if (!$('#ask-streaming-msg')) {
             _askRenderAssistantMsg();
         }
-        _askAppendToken(`⚠️ ${err.message}`);
+        _askAppendToken(`âš ï¸ ${err.message}`);
         _askFinalizeMsg([]);
         fullResponse = `Error: ${err.message}`;
     }
@@ -2663,7 +2851,7 @@ async function askVault(question) {
     if (sendBtn && input) sendBtn.disabled = !input.value.trim();
 }
 
-// ─── Init ────────────────────────────────────────────────────────
+// â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('DOMContentLoaded', () => {
     // Setup wizard
     setupInterval = setInterval(checkSetup, 2000);
@@ -2686,6 +2874,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Chat input
     initChatInput();
+
+    // Dashboard event handlers
+    if ($('#quick-capture-toggle')) {
+        $('#quick-capture-toggle').addEventListener('click', () => navigateTo('capture'));
+    }
+    if ($('#capture-back-btn')) {
+        $('#capture-back-btn').addEventListener('click', () => navigateTo('input'));
+    }
+    if ($('#dashboard-see-all')) {
+        $('#dashboard-see-all').addEventListener('click', () => navigateTo('library'));
+    }
 
     // Search
     initSearch();
@@ -2804,12 +3003,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 
-    // ── Keyboard Shortcuts ──────────────────────────────────────────
+    // â”€â”€ Keyboard Shortcuts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     document.addEventListener('keydown', (e) => {
         const active = document.activeElement;
         const inInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
 
-        // Esc — close modals
+        // Esc â€” close modals
         if (e.key === 'Escape') {
             if ($('#shortcuts-modal').style.display !== 'none') { closeShortcutsModal(); return; }
             if ($('#edit-modal').style.display !== 'none') { closeEditModal(); return; }
@@ -2822,7 +3021,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Shortcuts below only fire when not typing in an input
         if (inInput) return;
 
-        // ? — open keyboard shortcuts cheat sheet
+        // ? â€” open keyboard shortcuts cheat sheet
         if (e.key === '?' || (e.shiftKey && e.key === '/')) {
             e.preventDefault();
             const modal = $('#shortcuts-modal');
@@ -2834,29 +3033,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // / — focus search (when in library view)
+        // / â€” focus search (when in library view)
         if (e.key === '/' && state.view === 'library') {
             e.preventDefault();
             $('#search-input').focus();
         }
 
-        // Backspace — go back from detail to library
+        // Backspace â€” go back from detail to library
         if (e.key === 'Backspace' && state.view === 'detail') {
             navigateTo('library');
         }
 
-        // N — go to New Chat
+        // N â€” go to New Chat
         if (e.key === 'n' || e.key === 'N') {
             navigateTo('input');
         }
 
-        // L — go to Library
+        // L â€” go to Library
         if (e.key === 'l' || e.key === 'L') {
             navigateTo('library');
         }
     });
 
-    // Ctrl+Enter — summarize when in chat input
+    // Ctrl+Enter â€” summarize when in chat input
     $('#chat-textarea').addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -2877,13 +3076,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 30000);
 });
 
-// ─── Restart Backend ─────────────────────────────────────────────
+// â”€â”€â”€ Restart Backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function restartBackend() {
     const btn = $('#btn-restart');
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     btn.classList.add('restarting');
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restarting…`;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restartingâ€¦`;
 
     // Snapshot the current server token before restarting
     let startedAt = null;
@@ -2894,12 +3093,12 @@ async function restartBackend() {
 
     try {
         await fetch(`${API}/api/restart`, { method: 'POST' });
-    } catch { /* server may drop before sending a response — fine */ }
+    } catch { /* server may drop before sending a response â€” fine */ }
 
     // Hard fallback: reload after 10 s no matter what (prevents infinite spin)
     const hardTimeout = setTimeout(() => window.location.reload(), 10000);
 
-    // Poll every 500 ms — reload as soon as started_at changes (new server instance)
+    // Poll every 500 ms â€” reload as soon as started_at changes (new server instance)
     const poll = async () => {
         try {
             const r = await fetch(`${API}/api/health`);
@@ -2917,7 +3116,7 @@ async function restartBackend() {
     setTimeout(poll, 800);
 }
 
-// ─── Detail Collection Change ────────────────────────────────────
+// â”€â”€â”€ Detail Collection Change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function handleDetailCollectionChange(contextId, value) {
     const collectionId = value === '' ? null : parseInt(value, 10);
     const updated = await setContextCollection(contextId, collectionId);
@@ -2927,7 +3126,7 @@ async function handleDetailCollectionChange(contextId, value) {
     }
 }
 
-// ─── System Status Modal ─────────────────────────────────────────
+// â”€â”€â”€ System Status Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _sysAutoRefresh = null;
 
 function openSystemModal() {
@@ -3015,7 +3214,7 @@ async function loadSystemHealth() {
                     <span class="sys-dot ok"></span>
                 </div>
                 <div class="sys-card-value">${d.database.contexts}</div>
-                <div class="sys-card-sub">${d.database.chunks} chunks · ${d.database.collections} collections · ${d.database.size_mb} MB</div>
+                <div class="sys-card-sub">${d.database.chunks} chunks Â· ${d.database.collections} collections Â· ${d.database.size_mb} MB</div>
             </div>
             <div class="sys-card" style="grid-column: span 2;">
                 <div class="sys-card-header" style="margin-bottom:6px;">
@@ -3057,13 +3256,13 @@ async function loadSystemLogs() {
     }
 }
 
-// ─── Backup Vault ────────────────────────────────────────────────
+// â”€â”€â”€ Backup Vault â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function downloadBackup() {
     const btn = $('#btn-backup');
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     const original = btn.innerHTML;
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backing up…`;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backing upâ€¦`;
     try {
         const res = await fetch(`${API}/api/backup/download`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -3084,7 +3283,7 @@ async function downloadBackup() {
     }
 }
 
-// ─── Retry Summarization ────────────────────────────────────────
+// â”€â”€â”€ Retry Summarization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function retrySummarize() {
     const ctx = state.currentContext;
     if (!ctx) return;
@@ -3108,7 +3307,7 @@ window.generatePrompt = generatePrompt;
 window.retrySummarize = retrySummarize;
 window.copyCodeSnippet = copyCodeSnippet;
 
-// ─── Feature 1: Collapsible Sidebar ─────────────────────────────
+// â”€â”€â”€ Feature 1: Collapsible Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function toggleSidebar() {
     const app = document.getElementById('app');
     app.classList.toggle('sidebar-collapsed');
@@ -3127,7 +3326,7 @@ function _restoreSidebarState() {
 // Run immediately
 _restoreSidebarState();
 
-// ─── Feature 4: Sticky Detail Header ────────────────────────────
+// â”€â”€â”€ Feature 4: Sticky Detail Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _stickyObserver = null;
 
 function _initStickyDetailHeader() {

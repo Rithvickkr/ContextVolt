@@ -1571,6 +1571,30 @@ def api_system_status():
 
 
 # ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dashboard")
+def api_dashboard():
+    """Dashboard data: stats + recent contexts in one call."""
+    try:
+        db = get_db_stats()
+    except Exception:
+        db = {"contexts": 0, "chunks": 0, "collections": 0, "size_mb": 0.0}
+
+    try:
+        recent = get_contexts_paginated(page=1, per_page=8, sort="newest")
+        recent_contexts = recent["contexts"]
+    except Exception:
+        recent_contexts = []
+
+    return {
+        "stats": db,
+        "recent": recent_contexts,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Restart
 # ---------------------------------------------------------------------------
 

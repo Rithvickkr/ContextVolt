@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-vibe="volt">
 
 <head>
     <meta charset="UTF-8">
@@ -8,238 +8,333 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet"></noscript>
     <link rel="stylesheet" href="css/installer.css">
 </head>
 
 <body>
-    <div class="installer">
-        <!-- Split layout container -->
-        <div class="installer-shell">
 
-            <!-- Left panel: branding + task list -->
-            <div class="installer-left">
-                <div class="installer-brand">
-                    <svg class="logo" width="36" height="36" viewBox="0 0 64 64" fill="none">
-                        <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
-                        <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z"
-                            fill="var(--bg-primary)" />
-                    </svg>
-                    <div>
-                        <h1 class="installer-title">ContextVolt</h1>
-                        <span class="version-badge">v1.0</span>
+    <!-- ── Welcome Splash ─────────────────────────────────────────────── -->
+    <div id="inst-welcome" class="inst-welcome" aria-hidden="true">
+        <div class="iw-glow" aria-hidden="true"></div>
+        <div class="iw-content">
+            <div class="iw-logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="currentColor" stroke="currentColor" stroke-width="0.4" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <h1 class="iw-name">ContextVolt</h1>
+            <p class="iw-tag">Local-first AI memory</p>
+            <div class="iw-hint">Setting things up…</div>
+        </div>
+        <div class="iw-dots" aria-hidden="true">
+            <span class="iw-dot"></span>
+            <span class="iw-dot"></span>
+            <span class="iw-dot"></span>
+        </div>
+    </div>
+
+    <div class="inst-wrap" id="inst-wrap" style="opacity:0;">
+
+        <!-- Split layout -->
+        <div class="inst-shell">
+
+            <!-- ── Left panel: brand + task list ── -->
+            <div class="inst-left">
+                <div class="inst-brand">
+                    <div class="inst-logo" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                            <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="currentColor" stroke="currentColor" stroke-width="0.5" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <span class="inst-brand-name">ContextVolt</span>
+                </div>
+
+                <div class="inst-section-label">Installation</div>
+
+                <div class="inst-steps" id="steps-container">
+                    <div class="inst-step" data-step="python">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Python Environment</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="venv">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Virtual Environment</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="deps">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Dependencies</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="ollama">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Ollama Service</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="model">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">AI Model</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="embed">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Embed Model</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
+                    </div>
+
+                    <div class="inst-step" data-step="extension">
+                        <div class="inst-step-line" aria-hidden="true"></div>
+                        <div class="inst-step-dot" aria-hidden="true">
+                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l2.5 2.5" stroke-linecap="round"/></svg>
+                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6" stroke-linecap="round"/></svg>
+                        </div>
+                        <div class="inst-step-info">
+                            <span class="ist-label">Browser Extension</span>
+                            <span class="ist-status">Waiting…</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="task-label">Installation Tasks</div>
-
-                <div class="steps-container" id="steps-container">
-                    <div class="step" data-step="python">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Python Environment</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="venv">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Virtual Environment</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="deps">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Dependencies</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="ollama">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Ollama Service</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="model">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">AI Model</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="embed">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Embed Model</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-
-                    <div class="step" data-step="extension">
-                        <div class="step-line"></div>
-                        <div class="step-icon">
-                            <svg class="icon-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /></svg>
-                            <svg class="icon-running" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
-                            <svg class="icon-completed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M8 12l2.5 2.5L16 9" /></svg>
-                            <svg class="icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><path d="M15 9l-6 6M9 9l6 6" /></svg>
-                        </div>
-                        <div class="step-content">
-                            <span class="step-label">Browser Extension</span>
-                            <span class="step-status">Waiting...</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="installer-left-footer">
-                    <span>Setting up your local AI workspace</span>
+                <div class="inst-left-footer">
+                    Local-first AI memory
                 </div>
             </div>
 
-            <!-- Right panel: setup (pre-install) then progress (during/after) -->
-            <div class="installer-right">
-            <div class="right-inner">
+            <!-- ── Right panel ── -->
+            <div class="inst-right">
+                <div class="inst-right-inner">
 
-                <!-- ── Setup panel: model selection ── -->
-                <div class="setup-panel" id="setup-panel">
-                    <div class="setup-scroll">
-                        <div class="setup-section">
-                            <div class="setup-heading">Choose Your AI Model</div>
-                            <div class="setup-subtitle">
-                                Powers conversation summarization. Pick based on your hardware — you can change this later.
-                            </div>
-                            <div class="model-cards" id="model-cards">
-                                <!-- populated by JS once pywebview is ready -->
+                    <!-- Setup Panel (shown before install) -->
+                    <div class="inst-setup-panel" id="setup-panel">
+
+                        <div class="isp-header">
+                            <h2 class="isp-title">Set up ContextVolt</h2>
+                            <p class="isp-sub">Choose your AI and configure settings before installation begins.</p>
+                        </div>
+
+                        <!-- Provider toggle: Cloud / Local -->
+                        <div class="isp-section">
+                            <div class="isp-section-label">AI Provider</div>
+                            <div class="isp-provider-toggle" id="provider-toggle" role="tablist" aria-label="AI provider type">
+                                <button class="ipt-btn active" id="ipt-cloud" data-mode="cloud" role="tab" aria-selected="true" type="button">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                                    Cloud AI
+                                </button>
+                                <button class="ipt-btn" id="ipt-local" data-mode="local" role="tab" aria-selected="false" type="button">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                                    Local (Ollama)
+                                </button>
                             </div>
                         </div>
 
-                        <div class="setup-divider"></div>
+                        <!-- Cloud section -->
+                        <div class="isp-cloud-section" id="isp-cloud-section">
+                            <div class="isp-cloud-providers" id="isp-cloud-providers" role="radiogroup" aria-label="Cloud provider">
+                                <button class="icp-card selected" data-cp="google" type="button" role="radio" aria-checked="true">
+                                    <div class="icp-icon" aria-hidden="true">
+                                        <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                                    </div>
+                                    <div class="icp-info">
+                                        <span class="icp-name">Google Gemini</span>
+                                        <span class="icp-desc">Fast &amp; capable</span>
+                                    </div>
+                                    <span class="icp-rec">Recommended</span>
+                                </button>
+                                <button class="icp-card" data-cp="openai" type="button" role="radio" aria-checked="false">
+                                    <div class="icp-icon" aria-hidden="true">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22.28 9.82a5.98 5.98 0 0 0-.52-4.91 6.05 6.05 0 0 0-6.51-2.9A6.07 6.07 0 0 0 4.98 4.18a5.98 5.98 0 0 0-4 2.9 6.05 6.05 0 0 0 .74 7.1 5.98 5.98 0 0 0 .51 4.91 6.05 6.05 0 0 0 6.51 2.9A5.98 5.98 0 0 0 13.26 24a6.06 6.06 0 0 0 5.77-4.21 5.99 5.99 0 0 0 4-2.9 6.06 6.06 0 0 0-.75-7.07zM13.26 22.5a4.48 4.48 0 0 1-2.88-1.04l.14-.08 4.78-2.76a.79.79 0 0 0 .39-.68V11.7l2.02 1.17a.07.07 0 0 1 .04.05v5.58A4.5 4.5 0 0 1 13.26 22.5zm-9.66-4.13A4.47 4.47 0 0 1 3.07 15.3l.14.09 4.78 2.76a.77.77 0 0 0 .78 0l5.84-3.37v2.33a.08.08 0 0 1-.03.06L9.74 19.95a4.5 4.5 0 0 1-6.14-1.58zM2.34 7.9a4.48 4.48 0 0 1 2.37-1.97v5.66a.77.77 0 0 0 .39.68l5.81 3.35-2.02 1.17a.08.08 0 0 1-.07 0L3.63 13.8A4.5 4.5 0 0 1 2.34 7.9zm16.6 3.86-5.84-3.37 2.02-1.17a.08.08 0 0 1 .07 0l4.83 2.79a4.49 4.49 0 0 1-.68 8.1v-5.68a.79.79 0 0 0-.4-.67zm2.01-3.02-.14-.09-4.77-2.78a.78.78 0 0 0-.79 0L9.41 9.23V6.9a.07.07 0 0 1 .03-.06l4.83-2.79a4.5 4.5 0 0 1 6.68 4.66zM8.31 12.86l-2.02-1.16a.08.08 0 0 1-.04-.06V6.07a4.5 4.5 0 0 1 7.38-3.45l-.14.08-4.78 2.76a.79.79 0 0 0-.39.68l-.01 6.72zm1.1-2.37 2.6-1.5 2.61 1.5v2.99l-2.6 1.5-2.6-1.5V10.5z"/></svg>
+                                    </div>
+                                    <div class="icp-info">
+                                        <span class="icp-name">OpenAI</span>
+                                        <span class="icp-desc">GPT-4o &amp; more</span>
+                                    </div>
+                                </button>
+                            </div>
 
-                        <div class="setup-section">
-                            <div class="setup-heading">Choose an Embedding Model</div>
-                            <div class="setup-subtitle">
-                                Enables semantic search across your saved contexts. Small download, big impact.
+                            <div class="isp-key-group">
+                                <label class="isp-field-label" for="inst-api-key">API Key</label>
+                                <div class="isp-key-row">
+                                    <div class="isp-key-wrap">
+                                        <input type="password" id="inst-api-key" class="isp-key-input" placeholder="Paste your API key…" autocomplete="off" spellcheck="false" />
+                                        <button class="isp-key-eye" id="inst-key-eye" type="button" aria-label="Show/hide key">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        </button>
+                                    </div>
+                                    <button class="isp-validate-btn" id="inst-validate-btn" type="button">Validate</button>
+                                </div>
+                                <div class="isp-key-status" id="inst-key-status" role="status" aria-live="polite"></div>
+                                <a href="#" id="inst-key-docs" target="_blank" rel="noopener" class="isp-docs-link">Get an API key →</a>
                             </div>
-                            <div class="model-cards" id="embed-model-cards">
-                                <!-- populated by JS once pywebview is ready -->
+
+                            <div class="isp-cloud-models" id="isp-cloud-models" style="display:none;">
+                                <label class="isp-field-label">Cloud Model</label>
+                                <div class="isp-model-grid" id="cloud-model-grid" role="radiogroup" aria-label="Cloud model"></div>
                             </div>
+                        </div>
+
+                        <!-- Local section -->
+                        <div class="isp-local-section" id="isp-local-section" style="display:none;">
+                            <div class="isp-model-grid" id="model-cards" role="radiogroup" aria-label="Local AI model"></div>
+                        </div>
+
+                        <!-- Embed model (always shown) -->
+                        <div class="isp-section" id="isp-embed-section">
+                            <div class="isp-divider"></div>
+                            <div class="isp-section-label">Embedding Model <span class="isp-label-hint">— always runs locally</span></div>
+                            <p class="isp-section-sub">Powers semantic search across your saved contexts.</p>
+                            <div class="isp-model-grid" id="embed-model-cards" role="radiogroup" aria-label="Embedding model"></div>
+                        </div>
+
+                        <div class="isp-footer">
+                            <button class="isp-start-btn" id="start-install-btn" disabled type="button">
+                                <span class="isb-text">Start Installation</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </button>
                         </div>
                     </div>
 
-                    <div class="setup-actions">
-                        <button class="btn btn-primary" id="start-install-btn" disabled>
-                            <span class="btn-text">Start Installation</span>
-                            <span class="btn-icon">→</span>
-                        </button>
+                    <!-- Progress Panel (shown after install starts) -->
+                    <div class="inst-progress-panel" id="progress-panel">
+
+                        <div class="ipp-header">
+                            <div class="ipp-meta">
+                                <span class="ipp-title">Installing ContextVolt</span>
+                                <span class="ipp-pct" id="progress-text">0%</span>
+                            </div>
+                            <div class="ipp-bar">
+                                <div class="ipp-fill" id="progress-fill"></div>
+                            </div>
+                        </div>
+
+                        <div class="ipp-log" role="log" aria-label="Installation log">
+                            <div class="ipp-log-header">
+                                <span class="ipp-log-label">Output</span>
+                            </div>
+                            <div class="ipp-log-body" id="log-content">
+                                <div class="ipp-log-entry ipp-log-init">
+                                    <span class="ipp-log-time">--:--</span>
+                                    <span class="ipp-log-msg">Waiting to start installation…</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ipp-actions">
+                            <button class="isp-btn-secondary" id="retry-btn" style="display:none;" type="button">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                Retry
+                            </button>
+                            <button class="isp-start-btn" id="launch-btn" disabled type="button">
+                                <span class="isb-text">Launch ContextVolt</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
+
                     </div>
+
                 </div>
-
-                <!-- ── Progress panel: shown after user clicks Start ── -->
-                <div class="progress-panel" id="progress-panel">
-                    <!-- Progress header -->
-                    <div class="progress-header">
-                        <div class="progress-info">
-                            <span class="progress-title">Installation Progress</span>
-                            <span class="progress-text" id="progress-text">0%</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="progress-fill"></div>
-                        </div>
-                    </div>
-
-                    <!-- Log output -->
-                    <div class="log-panel">
-                        <div class="log-header">
-                            <span class="log-label">Output</span>
-                        </div>
-                        <div class="log-content" id="log-content">
-                            <div class="log-entry log-entry-init">
-                                <span class="log-time">--:--</span>
-                                <span class="log-message">Waiting to start installation...</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Action buttons -->
-                    <div class="installer-actions">
-                        <button class="btn btn-secondary" id="retry-btn" style="display: none;">
-                            <span class="btn-icon">↻</span>
-                            Retry
-                        </button>
-                        <button class="btn btn-primary" id="launch-btn" disabled>
-                            <span class="btn-text">Launch ContextVolt</span>
-                            <span class="btn-icon">→</span>
-                        </button>
-                    </div>
-                </div>
-
             </div>
-            </div><!-- /.right-inner -->
 
         </div>
     </div>
 
     <script>
-        // ─────────────────────────────────────────────────────────────────
-        // Installer Frontend Logic
-        // ─────────────────────────────────────────────────────────────────
+        // ─── Installer Frontend Logic ──────────────────────────────────────
 
         const stepIds = ['python', 'venv', 'deps', 'ollama', 'model', 'embed', 'extension'];
         const stepElements = {};
         let installationComplete = false;
         let pollingInterval = null;
         let installationStarted = false;
+
+        // Selection state
+        let selectedMode = 'cloud';          // 'cloud' | 'local'
+        let selectedCloudProvider = 'google';
+        let cloudApiKey = '';
+        let cloudKeyValid = false;
+        let selectedCloudModel = '';
         let selectedModel = 'qwen2.5:3b';
         let selectedEmbedModel = 'nomic-embed-text';
 
+        const CLOUD_DOCS = {
+            google: 'https://aistudio.google.com/app/apikey',
+            openai: 'https://platform.openai.com/api-keys',
+        };
+
+        const CLOUD_MODELS = {
+            google: [
+                { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', desc: 'Fast, affordable, great for summaries', recommended: true },
+                { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   desc: 'Best reasoning, higher cost', recommended: false },
+                { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', desc: 'Proven workhorse, very affordable', recommended: false },
+            ],
+            openai: [
+                { id: 'gpt-4o-mini', label: 'GPT-4o Mini', desc: 'Fast, cost-effective, recommended', recommended: true },
+                { id: 'gpt-4o',      label: 'GPT-4o',      desc: 'Best quality, higher cost', recommended: false },
+            ],
+        };
+
         stepIds.forEach(id => {
-            stepElements[id] = document.querySelector(`.step[data-step="${id}"]`);
+            stepElements[id] = document.querySelector('.inst-step[data-step="' + id + '"]');
         });
 
         const progressFill  = document.getElementById('progress-fill');
@@ -251,76 +346,251 @@
         const setupPanel    = document.getElementById('setup-panel');
         const progressPanel = document.getElementById('progress-panel');
 
-        // ── Model card rendering ──────────────────────────────────────────
+        // ── Provider toggle ────────────────────────────────────────────────
+
+        document.getElementById('provider-toggle').addEventListener('click', e => {
+            const btn = e.target.closest('.ipt-btn');
+            if (!btn) return;
+            const mode = btn.dataset.mode;
+            if (mode === selectedMode) return;
+            selectedMode = mode;
+            document.querySelectorAll('.ipt-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.mode === mode);
+                b.setAttribute('aria-selected', b.dataset.mode === mode ? 'true' : 'false');
+            });
+            document.getElementById('isp-cloud-section').style.display = mode === 'cloud' ? '' : 'none';
+            document.getElementById('isp-local-section').style.display = mode === 'local' ? '' : 'none';
+            _checkCanStart();
+        });
+
+        // ── Cloud provider selection ───────────────────────────────────────
+
+        document.getElementById('isp-cloud-providers').addEventListener('click', e => {
+            const card = e.target.closest('.icp-card');
+            if (!card) return;
+            selectedCloudProvider = card.dataset.cp;
+            document.querySelectorAll('.icp-card').forEach(c => {
+                c.classList.toggle('selected', c === card);
+                c.setAttribute('aria-checked', c === card ? 'true' : 'false');
+            });
+            // Reset key
+            cloudApiKey = '';
+            cloudKeyValid = false;
+            selectedCloudModel = '';
+            document.getElementById('inst-api-key').value = '';
+            _setKeyStatus('', '');
+            document.getElementById('isp-cloud-models').style.display = 'none';
+            // Update docs link
+            document.getElementById('inst-key-docs').href = CLOUD_DOCS[selectedCloudProvider] || '#';
+            _checkCanStart();
+        });
+
+        // ── API key handling ───────────────────────────────────────────────
+
+        document.getElementById('inst-key-eye').addEventListener('click', () => {
+            const inp = document.getElementById('inst-api-key');
+            inp.type = inp.type === 'password' ? 'text' : 'password';
+        });
+
+        document.getElementById('inst-api-key').addEventListener('input', () => {
+            if (cloudKeyValid) {
+                cloudKeyValid = false;
+                selectedCloudModel = '';
+                document.getElementById('isp-cloud-models').style.display = 'none';
+                _setKeyStatus('', '');
+                _checkCanStart();
+            }
+        });
+
+        document.getElementById('inst-api-key').addEventListener('keydown', e => {
+            if (e.key === 'Enter') _validateKey();
+        });
+
+        document.getElementById('inst-validate-btn').addEventListener('click', _validateKey);
+
+        async function _validateKey() {
+            const key = document.getElementById('inst-api-key').value.trim();
+            if (!key) { _setKeyStatus('invalid', 'Enter an API key first'); return; }
+            cloudApiKey = key;
+            _setKeyStatus('validating', 'Validating…');
+            try {
+                if (window.pywebview?.api?.validate_cloud_key) {
+                    const res = await window.pywebview.api.validate_cloud_key(selectedCloudProvider, key);
+                    if (res && res.valid) {
+                        _setKeyStatus('valid', '✓ Key is valid');
+                        cloudKeyValid = true;
+                        _renderCloudModels();
+                    } else {
+                        _setKeyStatus('invalid', (res && res.error) || 'Invalid key');
+                    }
+                } else {
+                    // pywebview API not available or doesn't have this method — accept the key as-is
+                    _setKeyStatus('valid', '✓ Key saved (will be verified on launch)');
+                    cloudKeyValid = true;
+                    _renderCloudModels();
+                }
+            } catch (e) {
+                _setKeyStatus('invalid', 'Validation failed — check your connection');
+            }
+            _checkCanStart();
+        }
+
+        function _setKeyStatus(type, msg) {
+            const el = document.getElementById('inst-key-status');
+            el.className = 'isp-key-status' + (type ? ' ' + type : '');
+            if (type === 'validating') {
+                el.innerHTML = '<span class="isp-key-spinner"></span> ' + _esc(msg);
+            } else {
+                el.textContent = msg;
+            }
+        }
+
+        // ── Cloud model rendering ──────────────────────────────────────────
+
+        function _renderCloudModels() {
+            const models = CLOUD_MODELS[selectedCloudProvider] || [];
+            const grid = document.getElementById('cloud-model-grid');
+            grid.innerHTML = '';
+            selectedCloudModel = (models.find(m => m.recommended) || models[0] || {}).id || '';
+            models.forEach(m => {
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'isp-model-card' + (m.id === selectedCloudModel ? ' selected' : '');
+                card.dataset.id = m.id;
+                card.setAttribute('role', 'radio');
+                card.setAttribute('aria-checked', m.id === selectedCloudModel ? 'true' : 'false');
+                card.innerHTML =
+                    '<div class="imc-left">' +
+                        '<div class="imc-name">' + _esc(m.label) + '</div>' +
+                        '<div class="imc-desc">' + _esc(m.desc) + '</div>' +
+                    '</div>' +
+                    '<div class="imc-right">' +
+                        (m.recommended ? '<span class="imc-badge">Recommended</span>' : '') +
+                    '</div>';
+                card.addEventListener('click', () => {
+                    grid.querySelectorAll('.isp-model-card').forEach(c => {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-checked', 'false');
+                    });
+                    card.classList.add('selected');
+                    card.setAttribute('aria-checked', 'true');
+                    selectedCloudModel = m.id;
+                    _checkCanStart();
+                });
+                grid.appendChild(card);
+            });
+            document.getElementById('isp-cloud-models').style.display = '';
+            _checkCanStart();
+        }
+
+        // ── Local model rendering ──────────────────────────────────────────
 
         function renderModelCards(models) {
             const container = document.getElementById('model-cards');
             container.innerHTML = '';
             models.forEach(m => {
-                const card = document.createElement('div');
-                card.className = 'model-card' + (m.id === selectedModel ? ' selected' : '');
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'isp-model-card' + (m.id === selectedModel ? ' selected' : '');
                 card.dataset.modelId = m.id;
-                card.innerHTML = `
-                    <div class="model-card-header">
-                        <span class="model-name">${m.name}</span>
-                        ${m.recommended ? '<span class="model-badge">Recommended</span>' : ''}
-                        <span class="model-size">${m.size}</span>
-                    </div>
-                    <div class="model-desc">${m.description}</div>`;
+                card.setAttribute('role', 'radio');
+                card.setAttribute('aria-checked', m.id === selectedModel ? 'true' : 'false');
+                card.innerHTML =
+                    '<div class="imc-left">' +
+                        '<div class="imc-name">' + _esc(m.name) + '</div>' +
+                        '<div class="imc-desc">' + _esc(m.description) + '</div>' +
+                    '</div>' +
+                    '<div class="imc-right">' +
+                        '<span class="imc-size">' + _esc(m.size) + '</span>' +
+                        (m.recommended ? '<span class="imc-badge">Recommended</span>' : '') +
+                    '</div>';
                 card.addEventListener('click', () => {
                     selectedModel = m.id;
-                    container.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                    container.querySelectorAll('.isp-model-card').forEach(c => {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-checked', 'false');
+                    });
                     card.classList.add('selected');
+                    card.setAttribute('aria-checked', 'true');
+                    _checkCanStart();
                 });
                 container.appendChild(card);
             });
-            checkBothSelected();
+            _checkCanStart();
         }
 
         function renderEmbedModelCards(models) {
             const container = document.getElementById('embed-model-cards');
             container.innerHTML = '';
             models.forEach(m => {
-                const card = document.createElement('div');
-                card.className = 'model-card' + (m.id === selectedEmbedModel ? ' selected' : '');
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'isp-model-card' + (m.id === selectedEmbedModel ? ' selected' : '');
                 card.dataset.modelId = m.id;
-                card.innerHTML = `
-                    <div class="model-card-header">
-                        <span class="model-name">${m.name}</span>
-                        ${m.recommended ? '<span class="model-badge">Recommended</span>' : ''}
-                        <span class="model-size">${m.size}</span>
-                    </div>
-                    <div class="model-desc">${m.description}</div>`;
+                card.setAttribute('role', 'radio');
+                card.setAttribute('aria-checked', m.id === selectedEmbedModel ? 'true' : 'false');
+                card.innerHTML =
+                    '<div class="imc-left">' +
+                        '<div class="imc-name">' + _esc(m.name) + '</div>' +
+                        '<div class="imc-desc">' + _esc(m.description) + '</div>' +
+                    '</div>' +
+                    '<div class="imc-right">' +
+                        '<span class="imc-size">' + _esc(m.size) + '</span>' +
+                        (m.recommended ? '<span class="imc-badge">Recommended</span>' : '') +
+                    '</div>';
                 card.addEventListener('click', () => {
                     selectedEmbedModel = m.id;
-                    container.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+                    container.querySelectorAll('.isp-model-card').forEach(c => {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-checked', 'false');
+                    });
                     card.classList.add('selected');
+                    card.setAttribute('aria-checked', 'true');
+                    _checkCanStart();
                 });
                 container.appendChild(card);
             });
-            checkBothSelected();
+            _checkCanStart();
         }
 
-        function checkBothSelected() {
-            startInstBtn.disabled = !(selectedModel && selectedEmbedModel);
+        function _checkCanStart() {
+            let ready = !!selectedEmbedModel;
+            if (selectedMode === 'cloud') {
+                ready = ready && cloudKeyValid && !!selectedCloudModel;
+            } else {
+                ready = ready && !!selectedModel;
+            }
+            startInstBtn.disabled = !ready;
         }
 
-        // ── Start Installation button ─────────────────────────────────────
+        // ── Start Installation ─────────────────────────────────────────────
 
         startInstBtn.addEventListener('click', async () => {
             if (startInstBtn.disabled || !window.pywebview?.api) return;
             startInstBtn.disabled = true;
-            await window.pywebview.api.set_selected_model(selectedModel);
+
+            if (selectedMode === 'cloud') {
+                // Save cloud config
+                try {
+                    if (window.pywebview.api.set_cloud_config) {
+                        await window.pywebview.api.set_cloud_config(selectedCloudProvider, cloudApiKey, selectedCloudModel);
+                    }
+                } catch (e) { /* proceed */ }
+            } else {
+                await window.pywebview.api.set_selected_model(selectedModel);
+            }
+
             await window.pywebview.api.set_selected_embed_model(selectedEmbedModel);
+
             // Swap panels
             setupPanel.style.display = 'none';
-            progressPanel.classList.add('active');
+            progressPanel.style.display = 'flex';
             startPolling();
             installationStarted = true;
             await window.pywebview.api.start_installation();
         });
 
-        // ── Progress / log helpers ────────────────────────────────────────
+        // ── Progress helpers ───────────────────────────────────────────────
 
         retryBtn.addEventListener('click', async () => {
             retryBtn.style.display = 'none';
@@ -330,46 +600,40 @@
         launchBtn.addEventListener('click', async () => {
             if (!launchBtn.disabled && window.pywebview?.api) {
                 launchBtn.disabled = true;
-                launchBtn.querySelector('.btn-text').textContent = 'Launching...';
+                launchBtn.querySelector('.isb-text').textContent = 'Launching…';
                 stopPolling();
                 await window.pywebview.api.launch_app();
             }
         });
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         let initCleared = false;
         function appendLog(logEntry) {
             if (!initCleared) { logContent.innerHTML = ''; initCleared = true; }
             const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.innerHTML = `<span class="log-time">${logEntry.time}</span><span class="log-message">${escapeHtml(logEntry.message)}</span>`;
+            entry.className = 'ipp-log-entry';
+            entry.innerHTML = '<span class="ipp-log-time">' + _esc(logEntry.time) + '</span><span class="ipp-log-msg">' + _esc(logEntry.message) + '</span>';
             logContent.appendChild(entry);
             logContent.scrollTop = logContent.scrollHeight;
         }
 
         function updateUI(s) {
             const { steps, newLogs, hasError, installationComplete: isComplete } = s;
-            if (newLogs?.length) newLogs.forEach(appendLog);
+            if (newLogs && newLogs.length) newLogs.forEach(appendLog);
 
             steps.forEach(step => {
                 const el = stepElements[step.id];
                 if (!el) return;
                 el.classList.remove('pending', 'running', 'completed', 'error');
                 el.classList.add(step.status);
-                const statusEl = el.querySelector('.step-status');
-                const labels = { pending: 'Waiting...', running: 'In progress...', completed: 'Complete', error: 'Failed' };
+                const statusEl = el.querySelector('.ist-status');
+                const labels = { pending: 'Waiting…', running: 'In progress…', completed: 'Complete', error: 'Failed' };
                 statusEl.textContent = labels[step.status] || '';
             });
 
             const done = steps.filter(s => s.status === 'completed').length;
-            const pct  = Math.round((done / steps.length) * 100);
-            progressFill.style.width = `${pct}%`;
-            progressText.textContent = `${pct}%`;
+            const pct = Math.round((done / steps.length) * 100);
+            progressFill.style.width = pct + '%';
+            progressText.textContent = pct + '%';
             retryBtn.style.display = hasError ? 'flex' : 'none';
 
             if (isComplete && !installationComplete) {
@@ -383,10 +647,10 @@
         let _polling = false;
         async function pollState() {
             if (!window.pywebview?.api) return;
-            if (_polling) return; // don't stack calls — skip if previous hasn't returned
+            if (_polling) return;
             _polling = true;
             try { updateUI(await window.pywebview.api.get_state()); }
-            catch (err) { console.error('Polling error:', err); }
+            catch (e) { console.error('Polling error:', e); }
             finally { _polling = false; }
         }
 
@@ -399,61 +663,97 @@
             if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
         }
 
-        // ── Default model data (used immediately; overridden by API if available) ──
+        function _esc(text) {
+            const d = document.createElement('div');
+            d.textContent = String(text || '');
+            return d.innerHTML;
+        }
+
+        // ── Default data ───────────────────────────────────────────────────
 
         const DEFAULT_MODELS = [
             { id: 'qwen2.5:3b',   name: 'Qwen 2.5 3B',   size: '~2 GB',  description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
             { id: 'qwen2.5:7b',   name: 'Qwen 2.5 7B',   size: '~5 GB',  description: 'Best quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
-            { id: 'qwen2.5:1.5b', name: 'Qwen 2.5 1.5B', size: '~1 GB',  description: 'Lightweight — minimal hardware needed, basic summary quality', recommended: false },
+            { id: 'qwen2.5:1.5b', name: 'Qwen 2.5 1.5B', size: '~1 GB',  description: 'Lightweight — minimal hardware, basic summary quality', recommended: false },
         ];
 
         const DEFAULT_EMBED_MODELS = [
-            { id: 'nomic-embed-text',     name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
-            { id: 'mxbai-embed-large',    name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
-            { id: 'nomic-embed-text:v1.5',name: 'Nomic Embed v1.5',  size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
-            { id: 'bge-m3',               name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual support — best for non-English content', recommended: false },
+            { id: 'nomic-embed-text',      name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
+            { id: 'mxbai-embed-large',     name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
+            { id: 'nomic-embed-text:v1.5', name: 'Nomic Embed v1.5',  size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
+            { id: 'bge-m3',                name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual — best for non-English content', recommended: false },
         ];
 
-        // ── Initialization ────────────────────────────────────────────────
-
-        // Render defaults immediately so cards are visible before pywebview is ready
+        // Render defaults immediately
         renderModelCards(DEFAULT_MODELS);
         renderEmbedModelCards(DEFAULT_EMBED_MODELS);
+        // Default to cloud tab visible
+        document.getElementById('isp-cloud-section').style.display = '';
+        document.getElementById('isp-local-section').style.display = 'none';
+        document.getElementById('inst-key-docs').href = CLOUD_DOCS[selectedCloudProvider] || '#';
+
+        // ── Init via pywebview ─────────────────────────────────────────────
 
         let _apiInitDone = false;
         async function initialize() {
             if (_apiInitDone) return;
-            if (!window.pywebview?.api) return; // will be retried by event / interval
-
+            if (!window.pywebview?.api) return;
             _apiInitDone = true;
 
-            // Refresh selection from persisted config
             try {
                 const saved = await window.pywebview.api.get_saved_config();
                 if (saved.model)       selectedModel      = saved.model;
                 if (saved.embed_model) selectedEmbedModel = saved.embed_model;
-            } catch (e) { /* no config yet, keep defaults */ }
+            } catch (e) { /* keep defaults */ }
 
-            // Reload model lists from API (may contain updated data)
             try {
                 const models = await window.pywebview.api.get_available_models();
                 renderModelCards(models);
-            } catch (e) { /* keep defaults already rendered */ }
+            } catch (e) { /* keep defaults */ }
 
             try {
                 const embedModels = await window.pywebview.api.get_available_embed_models();
                 renderEmbedModelCards(embedModels);
-            } catch (e) { /* keep defaults already rendered */ }
+            } catch (e) { /* keep defaults */ }
         }
 
         window.addEventListener('pywebviewready', initialize);
-        // Fallback poll: pywebviewready sometimes doesn't fire in WinForms/Chromium
         const _initPoll = setInterval(() => {
             if (_apiInitDone || installationStarted) { clearInterval(_initPoll); return; }
             initialize();
         }, 300);
 
+        // ── Welcome splash transition ──────────────────────────────────────
+        (function() {
+            const welcome = document.getElementById('inst-welcome');
+            const wrap    = document.getElementById('inst-wrap');
+            let dismissed = false;
+
+            function dismiss() {
+                if (dismissed) return;
+                dismissed = true;
+                welcome.classList.add('iw-exit');
+                wrap.style.transition = 'opacity 0.55s cubic-bezier(0,0,0.2,1)';
+                wrap.style.opacity = '1';
+                setTimeout(() => { welcome.style.display = 'none'; }, 620);
+                document.removeEventListener('keydown', dismiss);
+                document.removeEventListener('click', onClickDismiss);
+            }
+
+            function onClickDismiss(e) {
+                // Only dismiss on click after the logo has fully appeared (~700ms)
+                if (e.target.closest('#inst-welcome')) dismiss();
+            }
+
+            // Auto-dismiss after 2.8 s (logo-in 0.6s + name 0.5s + tag 0.4s + hold 1.3s)
+            setTimeout(dismiss, 2800);
+
+            // Also allow early skip by clicking the splash or pressing any key
+            setTimeout(() => {
+                document.addEventListener('keydown', dismiss, { once: true });
+                welcome.addEventListener('click', dismiss, { once: true });
+            }, 700);
+        })();
     </script>
 </body>
-
 </html>

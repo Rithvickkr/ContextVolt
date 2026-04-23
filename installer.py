@@ -754,6 +754,29 @@ class Api:
             pass
         return {"success": True}
 
+    def set_cloud_config(self, provider: str, api_key: str, cloud_model: str):
+        """Save cloud provider, API key, and model to config.json."""
+        try:
+            config_path = PROJECT_ROOT / "config.json"
+            config = {}
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            config["provider"] = provider
+            if "cloud_keys" not in config:
+                config["cloud_keys"] = {}
+            if api_key:
+                config["cloud_keys"][provider] = api_key
+            if "cloud_models" not in config:
+                config["cloud_models"] = {}
+            if cloud_model:
+                config["cloud_models"][provider] = cloud_model
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+        except Exception:
+            pass
+        return {"success": True}
+
     def set_selected_model(self, model_id: str):
         """Set the model to install and persist to config.json."""
         global OLLAMA_MODEL

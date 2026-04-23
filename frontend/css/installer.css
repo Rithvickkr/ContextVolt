@@ -1,337 +1,921 @@
 /* ================================================================
    ContextVolt — Installer Styles
-   Split-panel installer: left = tasks, right = progress + log
+   Matches the main app premium monochrome theme.
    ================================================================ */
 
-:root {
-    --bg-primary: #0a0a0a;
-    --bg-secondary: #111111;
-    --bg-tertiary: #1a1a1a;
-    --bg-elevated: #222222;
+/* ================================================================
+   Welcome Splash Screen
+   ================================================================ */
 
-    --text-primary: #ededed;
-    --text-secondary: #a0a0a0;
-    --text-muted: #888888;
+.inst-welcome {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #09090b;
+    cursor: default;
+    overflow: hidden;
+}
+
+/* Radial ambient glow behind the logo */
+.iw-glow {
+    position: absolute;
+    width: 420px;
+    height: 420px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.055) 0%, transparent 70%);
+    animation: iwGlowPulse 3s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes iwGlowPulse {
+    0%,100% { transform: scale(0.9);  opacity: 0.6; }
+    50%      { transform: scale(1.08); opacity: 1;   }
+}
+
+/* Main content stack */
+.iw-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    position: relative;
+    z-index: 1;
+}
+
+/* Logo box */
+.iw-logo {
+    width: 68px;
+    height: 68px;
+    border-radius: 18px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #09090b;
+    margin-bottom: 24px;
+    box-shadow:
+        0 0 0 1px rgba(255,255,255,0.12),
+        0 8px 32px rgba(0,0,0,0.5),
+        0 0 60px rgba(255,255,255,0.06);
+    animation: iwLogoIn 0.65s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+@keyframes iwLogoIn {
+    from { opacity: 0; transform: scale(0.6) translateY(12px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0);    }
+}
+
+/* Wordmark */
+.iw-name {
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    color: #f0f0f0;
+    line-height: 1;
+    margin-bottom: 10px;
+    animation: iwFadeUp 0.55s cubic-bezier(0,0,0.2,1) 0.5s both;
+}
+
+/* Tagline */
+.iw-tag {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    color: #71717a;
+    letter-spacing: 0.01em;
+    animation: iwFadeUp 0.5s cubic-bezier(0,0,0.2,1) 0.85s both;
+}
+
+/* Hint text */
+.iw-hint {
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    font-size: 12px;
+    color: #3f3f46;
+    margin-top: 36px;
+    animation: iwFadeUp 0.45s cubic-bezier(0,0,0.2,1) 1.4s both;
+    letter-spacing: 0.02em;
+}
+
+@keyframes iwFadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Loading dots */
+.iw-dots {
+    position: absolute;
+    bottom: 36px;
+    display: flex;
+    gap: 6px;
+    animation: iwFadeUp 0.4s ease 1.6s both;
+}
+
+.iw-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #3f3f46;
+    animation: iwDotBlink 1.4s ease-in-out infinite;
+}
+
+.iw-dot:nth-child(2) { animation-delay: 0.2s; }
+.iw-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes iwDotBlink {
+    0%,80%,100% { opacity: 0.3; transform: scale(0.8); }
+    40%          { opacity: 1;   transform: scale(1.2); }
+}
+
+/* Exit animation */
+.iw-exit {
+    animation: iwOut 0.55s cubic-bezier(0.4,0,1,1) forwards;
+    pointer-events: none;
+}
+
+@keyframes iwOut {
+    0%   { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.04); }
+}
+
+:root {
+    --bg-primary:   #09090b;
+    --bg-secondary: #0f0f12;
+    --bg-tertiary:  #17171c;
+    --bg-elevated:  #1e1e24;
+    --bg-surface:   rgba(255,255,255,0.025);
+    --bg-hover:     rgba(255,255,255,0.04);
+    --bg-active:    rgba(255,255,255,0.07);
+
+    --text-primary:   #f0f0f0;
+    --text-secondary: #a1a1aa;
+    --text-muted:     #71717a;
+    --text-faint:     #3f3f46;
 
     --accent: #ffffff;
     --success: #34d399;
-    --danger: #f87171;
+    --danger:  #f87171;
+    --warning: #fbbf24;
 
-    --border: rgba(255, 255, 255, 0.08);
-    --border-accent: rgba(255, 255, 255, 0.18);
+    --border:        rgba(255,255,255,0.07);
+    --border-subtle: rgba(255,255,255,0.04);
+    --border-accent: rgba(255,255,255,0.15);
 
-    --radius: 12px;
+    --radius:    12px;
     --radius-sm: 8px;
+    --radius-lg: 16px;
     --radius-xl: 20px;
+    --radius-pill: 100px;
 
-    --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.05);
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+    --shadow-md: 0 4px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    --shadow-lg: 0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
 
-    --ease: cubic-bezier(0.4, 0, 0.2, 1);
-    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --font-display: 'Space Grotesk', -apple-system, sans-serif;
+    --font-body:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono:    'Geist Mono', 'JetBrains Mono', 'Cascadia Code', monospace;
+
+    --ease:       cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out:   cubic-bezier(0, 0, 0.2, 1);
+    --ease-spring:cubic-bezier(0.34, 1.56, 0.64, 1);
     --transition: 0.18s var(--ease);
 }
 
-/* ================================================================
-   Reset & Base
-   ================================================================ */
+/* ── Reset ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-body);
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
 }
 
+button { font-family: inherit; cursor: pointer; }
+input  { font-family: inherit; }
+a { color: inherit; }
+
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
 
 /* ================================================================
-   Background
+   Wrapper + Shell
    ================================================================ */
-.installer {
-    position: relative;
+
+.inst-wrap {
     height: 100vh;
     display: flex;
     overflow: hidden;
+    background: var(--bg-primary);
 }
 
-
-/* ================================================================
-   Shell — the split-panel container
-   ================================================================ */
-.installer-shell {
+.inst-shell {
     display: grid;
-    grid-template-columns: clamp(220px, 22%, 300px) 1fr;
+    grid-template-columns: clamp(200px, 22%, 260px) 1fr;
     width: 100%;
     height: 100%;
     background: var(--bg-secondary);
     overflow: hidden;
-    animation: shellIn 0.35s var(--ease-out);
+    animation: instIn 0.4s var(--ease-out);
 }
 
-@keyframes shellIn {
-    from { opacity: 0; transform: scale(0.97) translateY(16px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
+@keyframes instIn {
+    from { opacity: 0; transform: scale(0.97) translateY(12px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0);     }
 }
 
 /* ================================================================
-   Left Panel — branding + task sidebar
+   Left Panel
    ================================================================ */
-.installer-left {
+
+.inst-left {
     display: flex;
     flex-direction: column;
     background: var(--bg-primary);
     border-right: 1px solid var(--border);
-    padding: clamp(20px, 3vh, 32px) 24px clamp(16px, 2vh, 24px);
+    padding: clamp(20px, 3vh, 28px) 20px clamp(16px, 2vh, 22px);
     overflow-y: auto;
 }
 
-.installer-brand {
+/* Brand */
+.inst-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: clamp(20px, 3vh, 32px);
+    gap: 9px;
+    margin-bottom: clamp(24px, 3.5vh, 36px);
 }
 
-.installer-brand .logo {
-    width: 36px;
-    height: 36px;
-    filter: drop-shadow(0 2px 8px rgba(255, 255, 255, 0.08));
+.inst-logo {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bg-primary);
     flex-shrink: 0;
 }
 
-.installer-title {
-    font-size: 17px;
+.inst-brand-name {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+}
+
+/* Section label */
+.inst-section-label {
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1.2;
-}
-
-.version-badge {
-    display: inline-block;
-    padding: 2px 7px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border);
-    border-radius: 100px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.02em;
-}
-
-.task-label {
-    font-size: 10px;
-    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
     margin-bottom: 14px;
 }
 
-/* Task steps */
-.steps-container {
+/* Steps */
+.inst-steps {
     display: flex;
     flex-direction: column;
     flex: 1;
 }
 
-.step {
+.inst-step {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 9px 0;
+    gap: 11px;
+    padding: 8px 0;
     position: relative;
 }
 
-.step-line {
+.inst-step-line {
     position: absolute;
-    left: 13px;
-    top: 36px;
+    left: 12px;
+    top: 34px;
     width: 2px;
     height: calc(100% - 10px);
     background: var(--border);
-    transition: var(--transition);
+    transition: background 0.35s var(--ease);
 }
 
-.step:last-child .step-line { display: none; }
-.step.completed .step-line { background: rgba(52,211,153,0.35); }
+.inst-step:last-child .inst-step-line { display: none; }
+.inst-step.completed .inst-step-line { background: rgba(52,211,153,0.35); }
 
-.step-icon {
-    width: 28px;
-    height: 28px;
+.inst-step-dot {
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-tertiary);
+    background: var(--bg-surface);
     border: 2px solid var(--border);
     flex-shrink: 0;
     position: relative;
     z-index: 1;
-    transition: var(--transition);
+    transition: all 0.25s var(--ease);
 }
 
-.step-icon svg {
-    width: 15px;
-    height: 15px;
+.inst-step-dot svg {
+    width: 13px;
+    height: 13px;
     position: absolute;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s var(--ease);
 }
 
 /* Step states */
-.step.pending .step-icon  { border-color: var(--border); color: var(--text-muted); }
-.step.pending .icon-pending { opacity: 1; }
+.inst-step.pending  .inst-step-dot { border-color: var(--border); color: var(--text-faint); }
+.inst-step.pending  .icon-pending  { opacity: 0.45; }
 
-.step.running .step-icon {
+.inst-step.running  .inst-step-dot {
     border-color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.07);
+    background: rgba(255,255,255,0.07);
     color: var(--text-primary);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
-    animation: pulse 2s ease-in-out infinite;
+    animation: instPulse 2s ease-in-out infinite;
 }
-.step.running .icon-running { opacity: 1; }
+.inst-step.running .icon-running { opacity: 1; }
 
-@keyframes pulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(255, 255, 255, 0.1); }
-    50%       { box-shadow: 0 0 18px rgba(255, 255, 255, 0.2); }
+@keyframes instPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.12); }
+    50%     { box-shadow: 0 0 0 6px rgba(255,255,255,0);   }
 }
 
-.step.completed .step-icon {
+.inst-step.completed .inst-step-dot {
     border-color: rgba(52,211,153,0.5);
     background: rgba(52,211,153,0.1);
     color: var(--success);
 }
-.step.completed .icon-completed { opacity: 1; }
+.inst-step.completed .icon-completed { opacity: 1; }
 
-.step.error .step-icon {
+.inst-step.error .inst-step-dot {
     border-color: rgba(248,113,113,0.5);
     background: rgba(248,113,113,0.1);
     color: var(--danger);
 }
-.step.error .icon-error { opacity: 1; }
+.inst-step.error .icon-error { opacity: 1; }
 
-.step-content {
+.inst-step-info {
     display: flex;
     flex-direction: column;
     gap: 1px;
 }
 
-.step-label {
-    font-weight: 500;
-    font-size: 13px;
-    color: var(--text-primary);
-    transition: var(--transition);
+.ist-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-family: var(--font-display);
+    transition: color var(--transition);
 }
 
-.step.running .step-label  { color: var(--text-primary); }
-.step.completed .step-label { color: var(--success); }
-.step.error .step-label    { color: var(--danger); }
-
-.step-status {
+.ist-status {
     font-size: 11px;
-    color: var(--text-muted);
+    color: var(--text-faint);
+    transition: color var(--transition);
 }
-.step.running .step-status   { color: var(--text-secondary); }
-.step.completed .step-status { color: rgba(52,211,153,0.7); }
-.step.error .step-status     { color: rgba(248,113,113,0.7); }
 
-.installer-left-footer {
+.inst-step.running   .ist-label { color: var(--text-primary); }
+.inst-step.completed .ist-label { color: var(--success); }
+.inst-step.error     .ist-label { color: var(--danger); }
+.inst-step.running   .ist-status { color: var(--text-secondary); }
+.inst-step.completed .ist-status { color: rgba(52,211,153,0.65); }
+.inst-step.error     .ist-status { color: rgba(248,113,113,0.7); }
+
+.inst-left-footer {
     margin-top: auto;
-    padding-top: 16px;
-    font-size: 11px;
-    color: var(--text-muted);
+    padding-top: 14px;
     border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-faint);
 }
 
 /* ================================================================
-   Right Panel — scrolling outer shell + centered inner content
+   Right Panel
    ================================================================ */
-.installer-right {
+
+.inst-right {
     display: flex;
-    justify-content: center;
     overflow-y: auto;
-    padding: clamp(24px, 4vh, 48px) clamp(24px, 5%, 56px);
+    padding: clamp(22px, 3.5vh, 40px) clamp(22px, 4%, 48px);
 }
 
-/* Centered content wrapper — constrains width on large screens */
-.right-inner {
+.inst-right-inner {
     width: 100%;
-    max-width: 660px;
+    max-width: 580px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    /* Ensure right-inner fills the available height of installer-right */
-    align-self: stretch;
 }
 
 /* ================================================================
-   Progress header
+   Setup Panel
    ================================================================ */
-.progress-header {
+
+.inst-setup-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0;
+}
+
+.isp-header {
+    margin-bottom: 24px;
+}
+
+.isp-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.isp-sub {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+/* Section label */
+.isp-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.isp-label-hint {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-faint);
+    font-size: 10.5px;
+}
+
+.isp-section-sub {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.isp-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+}
+
+/* ── Provider toggle ── */
+.isp-provider-toggle {
+    display: inline-flex;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 3px;
     margin-bottom: 16px;
+    gap: 2px;
+}
+
+.ipt-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-display);
+    transition: all var(--transition);
+    white-space: nowrap;
+}
+
+.ipt-btn:hover { color: var(--text-primary); }
+
+.ipt-btn.active {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ── Cloud provider cards ── */
+.isp-cloud-providers {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.icp-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    text-align: left;
+    flex: 1;
+    transition: border-color var(--transition), background var(--transition), transform 0.12s var(--ease);
+}
+
+.icp-card:hover {
+    border-color: var(--border-accent);
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+}
+
+.icp-card.selected {
+    border-color: var(--text-primary);
+    background: var(--bg-active);
+}
+
+.icp-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 }
 
-.progress-info {
+.icp-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
+}
+
+.icp-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-display);
+}
+
+.icp-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.icp-rec {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.3);
+    border-radius: 100px;
+    color: var(--success);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* ── API key ── */
+.isp-key-group {
+    margin-bottom: 14px;
+}
+
+.isp-field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.isp-key-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.isp-key-wrap {
+    position: relative;
+    flex: 1;
+}
+
+.isp-key-input {
+    width: 100%;
+    height: 38px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    padding: 0 36px 0 12px;
+    outline: none;
+    transition: border-color var(--transition);
+}
+
+.isp-key-input:focus { border-color: var(--border-accent); }
+.isp-key-input::placeholder { color: var(--text-faint); font-family: var(--font-body); }
+
+.isp-key-eye {
+    position: absolute;
+    right: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    transition: color var(--transition);
+}
+.isp-key-eye:hover { color: var(--text-primary); }
+
+.isp-validate-btn {
+    height: 38px;
+    padding: 0 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all var(--transition);
+    flex-shrink: 0;
+}
+.isp-validate-btn:hover { border-color: var(--border-accent); background: var(--bg-surface); }
+
+.isp-key-status {
+    margin-top: 7px;
+    font-size: 12px;
+    color: var(--text-muted);
+    min-height: 18px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.isp-key-status.valid   { color: var(--success); }
+.isp-key-status.invalid { color: var(--danger); }
+.isp-key-status.validating { color: var(--text-secondary); }
+
+.isp-key-spinner {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--text-secondary);
+    border-radius: 50%;
+    animation: instSpin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes instSpin { to { transform: rotate(360deg); } }
+
+.isp-docs-link {
+    display: inline-block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+.isp-docs-link:hover { color: var(--text-primary); }
+
+/* ── Model grids ── */
+.isp-model-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.isp-model-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: border-color var(--transition), background var(--transition), transform 0.12s var(--ease);
+    user-select: none;
+}
+
+.isp-model-card:hover {
+    border-color: var(--border-accent);
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+}
+
+.isp-model-card.selected {
+    border-color: var(--text-primary);
+    background: var(--bg-active);
+}
+
+.imc-left {
+    flex: 1;
+    min-width: 0;
+}
+
+.imc-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-display);
+    margin-bottom: 3px;
+}
+
+.imc-desc {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.imc-right {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+}
+
+.imc-size {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.imc-badge {
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.28);
+    border-radius: 100px;
+    color: var(--success);
+    white-space: nowrap;
+}
+
+/* ── Setup footer ── */
+.isp-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 20px;
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* ── Shared buttons ── */
+.isp-start-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 24px;
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.isp-start-btn:hover:not(:disabled) {
+    background: #ffffff;
+    box-shadow: 0 4px 20px rgba(255,255,255,0.12);
+}
+
+.isp-start-btn:active:not(:disabled) {
+    transform: scale(0.97);
+    transition-duration: 0.08s;
+}
+
+.isp-start-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.isp-start-btn.ready {
+    animation: readyGlow 2.5s ease-in-out infinite;
+}
+
+@keyframes readyGlow {
+    0%,100% { box-shadow: 0 2px 8px rgba(255,255,255,0.06); }
+    50%      { box-shadow: 0 4px 24px rgba(255,255,255,0.18); }
+}
+
+.isp-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 18px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.isp-btn-secondary:hover { border-color: var(--border-accent); background: var(--bg-surface); }
+
+.isb-text { /* no special style needed */ }
+
+/* ================================================================
+   Progress Panel
+   ================================================================ */
+
+.inst-progress-panel {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 0;
+}
+
+/* Progress header */
+.ipp-header {
+    margin-bottom: 18px;
+    flex-shrink: 0;
+}
+
+.ipp-meta {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     margin-bottom: 8px;
 }
 
-.progress-title {
-    font-size: 13px;
-    font-weight: 600;
+.ipp-title {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
     color: var(--text-primary);
 }
 
-.progress-text {
+.ipp-pct {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
 }
 
-.progress-bar {
-    height: 6px;
+.ipp-bar {
+    height: 5px;
     background: var(--bg-tertiary);
     border-radius: 3px;
     overflow: hidden;
 }
 
-.progress-fill {
+.ipp-fill {
     height: 100%;
-    width: 0%;
+    width: 0;
     background: var(--text-primary);
     border-radius: 3px;
     transition: width 0.5s var(--ease);
     position: relative;
+    overflow: hidden;
 }
 
-.progress-fill::after {
+.ipp-fill::after {
     content: '';
     position: absolute;
     inset: 0;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
-    animation: shimmer 2s infinite;
+    animation: instShimmer 1.8s infinite;
 }
 
-@keyframes shimmer {
+@keyframes instShimmer {
     0%   { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
 }
 
-/* ================================================================
-   Log panel
-   ================================================================ */
-.log-panel {
+/* Log */
+.ipp-log {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -340,270 +924,68 @@ body {
     border-radius: var(--radius);
     overflow: hidden;
     background: var(--bg-primary);
+    margin-bottom: 16px;
 }
 
-.log-header {
-    padding: 10px 14px;
+.ipp-log-header {
+    padding: 9px 14px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-tertiary);
     flex-shrink: 0;
 }
 
-.log-label {
-    font-size: 11px;
-    font-weight: 600;
+.ipp-log-label {
+    font-size: 10.5px;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
+    letter-spacing: 0.07em;
+    color: var(--text-faint);
 }
 
-.log-content {
+.ipp-log-body {
     flex: 1;
     overflow-y: auto;
     padding: 12px 14px;
-    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     line-height: 1.65;
 }
 
-.log-entry {
+.ipp-log-entry {
     display: flex;
     gap: 10px;
     padding: 2px 0;
-    animation: fadeIn 0.15s ease;
+    animation: instLogIn 0.15s var(--ease);
 }
 
-.log-entry-init {
-    color: var(--text-muted);
+@keyframes instLogIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to   { opacity: 1; transform: translateY(0);    }
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-3px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
+.ipp-log-init { color: var(--text-faint); }
+.ipp-log-time { color: var(--text-faint); flex-shrink: 0; }
+.ipp-log-msg  { color: var(--text-secondary); word-break: break-word; }
 
-.log-time {
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
-.log-message {
-    color: var(--text-secondary);
-    word-break: break-word;
-}
-
-/* ================================================================
-   Action Buttons — fixed footer inside right-inner
-   ================================================================ */
-.installer-actions {
+/* Actions */
+.ipp-actions {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
     align-items: center;
-    padding-top: 20px;
-    margin-top: 12px;
+    padding-top: 16px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
 }
 
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 22px;
-    border: none;
-    border-radius: var(--radius-sm);
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 550;
-    cursor: pointer;
-    transition: all var(--transition);
-    white-space: nowrap;
-}
-
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.btn-primary {
-    background: var(--text-primary);
-    color: #0a0a0a;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-.btn-primary:hover:not(:disabled) {
-    background: #ffffff;
-    box-shadow: 0 4px 16px rgba(255, 255, 255, 0.1);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: scale(0.97);
-    transition-duration: 0.08s;
-}
-
-.btn-primary.ready {
-    animation: readyPulse 2.5s ease-in-out infinite;
-}
-
-@keyframes readyPulse {
-    0%, 100% { box-shadow: 0 2px 8px rgba(255, 255, 255, 0.08); }
-    50%       { box-shadow: 0 4px 24px rgba(255, 255, 255, 0.2); }
-}
-
-.btn-secondary {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-}
-
-.btn-secondary:hover:not(:disabled) {
-    background: var(--bg-elevated);
-    border-color: var(--border-accent);
-}
-
-.btn-icon {
-    font-size: 15px;
-    transition: transform 0.2s ease;
-}
-
-.btn-primary:hover:not(:disabled) .btn-icon {
-    transform: translateX(2px);
-}
-
 /* ================================================================
-   Setup Panel — model selection (shown before install)
+   Responsive
    ================================================================ */
-.setup-panel {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-.setup-scroll {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    padding-right: 4px;
-}
-
-.setup-section {
-    padding-bottom: 4px;
-}
-
-.setup-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 20px 0;
-}
-
-.setup-heading {
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--text-primary);
-    margin-bottom: 6px;
-}
-
-.setup-subtitle {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.55;
-    margin-bottom: 14px;
-}
-
-.model-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.model-card {
-    padding: 13px 15px;
-    background: var(--bg-primary);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    cursor: pointer;
-    transition: border-color var(--transition), background var(--transition);
-    user-select: none;
-}
-
-.model-card:hover {
-    border-color: var(--border-accent);
-    background: var(--bg-tertiary);
-}
-
-.model-card.selected {
-    border-color: rgba(255, 255, 255, 0.32);
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.model-card-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.model-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.model-badge {
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 7px;
-    background: rgba(52, 211, 153, 0.12);
-    color: var(--success);
-    border: 1px solid rgba(52, 211, 153, 0.28);
-    border-radius: 100px;
-    letter-spacing: 0.02em;
-}
-
-.model-size {
-    margin-left: auto;
-    font-size: 11px;
-    color: var(--text-muted);
-    font-family: 'JetBrains Mono', 'Consolas', monospace;
-}
-
-.model-desc {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.5;
-}
-
-.setup-actions {
-    padding-top: 20px;
-    margin-top: 12px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: flex-end;
-    flex-shrink: 0;
-}
-
-/* ================================================================
-   Progress Panel — hidden until install starts
-   ================================================================ */
-.progress-panel {
-    display: none;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-}
-
-.progress-panel.active {
-    display: flex;
-}
-
-/* ================================================================
-   Responsive — compact layout for smaller windows
-   ================================================================ */
-@media (max-height: 580px) {
-    .installer-left { padding-top: 16px; padding-bottom: 12px; }
-    .installer-brand { margin-bottom: 16px; }
-    .step { padding: 6px 0; }
-    .installer-right { padding-top: 16px; padding-bottom: 16px; }
-    .installer-actions { padding-top: 12px; margin-top: 8px; }
+@media (max-height: 560px) {
+    .inst-left  { padding-top: 14px; padding-bottom: 10px; }
+    .inst-brand { margin-bottom: 16px; }
+    .inst-step  { padding: 5px 0; }
+    .inst-right { padding-top: 14px; padding-bottom: 14px; }
+    .isp-header { margin-bottom: 16px; }
+    .isp-footer { padding-top: 12px; }
 }

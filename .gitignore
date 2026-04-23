@@ -39,3 +39,5 @@ Desktop.ini
 node_modules/
 context_volt.db-shm
 context_volt.db-wal
+config.json
+config.json

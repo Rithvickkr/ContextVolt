@@ -233,6 +233,15 @@ def init_db():
     )
     conn.commit()
 
+    # App-level stats counter (questions asked, etc.)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_stats (
+            key   TEXT PRIMARY KEY,
+            value INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+
     # sqlite-vec virtual tables
     dim = _detect_embed_dim(conn)
     if dim > 0:
@@ -760,12 +769,29 @@ def get_db_stats() -> dict:
         collections = conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
     except Exception:
         collections = 0
+    try:
+        row = conn.execute("SELECT value FROM app_stats WHERE key = 'questions_asked'").fetchone()
+        questions_asked = row[0] if row else 0
+    except Exception:
+        questions_asked = 0
     # connection reused (thread-local pool)
     try:
         size_mb = round(os.path.getsize(DB_PATH) / 1_048_576, 2)
     except Exception:
         size_mb = 0.0
-    return {"contexts": contexts, "chunks": chunks, "collections": collections, "size_mb": size_mb}
+    return {"contexts": contexts, "chunks": chunks, "collections": collections,
+            "size_mb": size_mb, "questions_asked": questions_asked}
+
+
+def increment_stat(key: str) -> None:
+    """Atomically increment an app-level counter."""
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO app_stats (key, value) VALUES (?, 1) "
+        "ON CONFLICT(key) DO UPDATE SET value = value + 1",
+        (key,),
+    )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------

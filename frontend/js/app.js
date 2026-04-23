@@ -67,6 +67,38 @@ const state = {
 // â”€â”€â”€ P2-2: Source badge constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const _KNOWN_SOURCES = ['ChatGPT', 'Claude', 'Gemini', 'Grok', 'DeepSeek', 'Perplexity', 'Copilot'];
 
+// Brand colors per AI model — used on library cards so users can recognize source at a glance.
+const _AI_BRAND = {
+    'ChatGPT':    { label: 'ChatGPT',    color: '#10a37f', bg: 'rgba(16,163,127,0.14)',  border: 'rgba(16,163,127,0.38)' },
+    'Claude':     { label: 'Claude',     color: '#d97757', bg: 'rgba(217,119,87,0.14)',  border: 'rgba(217,119,87,0.38)' },
+    'Gemini':     { label: 'Gemini',     color: '#4285f4', bg: 'rgba(66,133,244,0.14)',  border: 'rgba(66,133,244,0.38)' },
+    'Grok':       { label: 'Grok',       color: '#e5e5e7', bg: 'rgba(229,229,231,0.10)', border: 'rgba(229,229,231,0.32)' },
+    'DeepSeek':   { label: 'DeepSeek',   color: '#4d6bfe', bg: 'rgba(77,107,254,0.14)',  border: 'rgba(77,107,254,0.38)' },
+    'Perplexity': { label: 'Perplexity', color: '#20c5c5', bg: 'rgba(32,197,197,0.14)',  border: 'rgba(32,197,197,0.38)' },
+    'Copilot':    { label: 'Copilot',    color: '#5ea0ef', bg: 'rgba(94,160,239,0.14)',  border: 'rgba(94,160,239,0.38)' },
+};
+
+// Capture-method tags that should appear as the card's source chip (bottom) — not as a tag chip.
+const _CAPTURE_TAGS = new Set([
+    'extension', 'Extension', 'EXTENSION',
+    'paste', 'Paste', 'PASTE',
+    'import', 'Import', 'IMPORT',
+    'api', 'API',
+    'upload', 'Upload',
+]);
+
+function _getAIBrand(tags) {
+    if (!tags || !tags.length) return null;
+    const hit = tags.find(t => _AI_BRAND[t]);
+    return hit ? { key: hit, ..._AI_BRAND[hit] } : null;
+}
+
+function _getCaptureTag(tags) {
+    if (!tags || !tags.length) return '';
+    const hit = tags.find(t => _CAPTURE_TAGS.has(t));
+    return hit || '';
+}
+
 function _getSourceBadge(tags) {
     if (!tags || !tags.length) return '';
     const source = tags.find(t => _KNOWN_SOURCES.includes(t));
@@ -238,7 +270,24 @@ async function checkSetup() {
             _setStepState(stepModel, 'pending', 'Waiting...');
         }
 
-        // Update status indicator
+         // Check if a cloud provider is active -- bypass Ollama requirement
+        try {
+            const cfgRes = await fetch(`${API}/api/setup/config`);
+            const cfg = await cfgRes.json();
+            if (cfg.is_cloud_active) {
+                const provLabel = (_PROVIDER_META[cfg.active_provider] || {}).label || cfg.active_provider;
+                _setStepState(stepOllama, 'ok', `Using ${provLabel}`);
+                stepOllama.classList.add('ready');
+                _setStepState(stepModel, 'ok', cfg.active_model || 'Cloud model ready');
+                stepModel.classList.add('ready');
+                updateStatusIndicator(true, provLabel);
+                state.setupComplete = true;
+                transitionToApp();
+                return;
+            }
+        } catch (_) { /* ignore */ }
+
+       // Update status indicator
         state.ollamaReady = data.ollama_running && data.model_ready;
         updateStatusIndicator(data.ollama_running && data.model_ready);
 
@@ -336,6 +385,10 @@ function _getGreeting() {
     return 'Good evening';
 }
 
+function _getDayString() {
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
 function _animateCountUp(el, target, suffix = '') {
     const duration = 600;
     const start = performance.now();
@@ -365,34 +418,58 @@ function _timeAgo(dateStr) {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Accent colours per collection/tag category
+const _CV_ACCENTS = [
+    'var(--cv-volt)',
+    'oklch(0.72 0.18 280)',
+    'oklch(0.78 0.18 145)',
+    'oklch(0.78 0.15 30)',
+    'oklch(0.72 0.18 200)',
+    'oklch(0.75 0.18 320)',
+];
+
 function _renderRecentCard(ctx) {
     const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
     const title = escapeHtml(ctx.title || 'Untitled');
     const date = _timeAgo(ctx.created_at);
-    const sourceBadge = _getSourceBadge(ctx.tags);
-    const snippet = summary.key_ideas && summary.key_ideas.length > 0
-        ? escapeHtml(summary.key_ideas[0])
-        : (summary.snapshot ? escapeHtml(summary.snapshot) : '');
+    const tags = Array.isArray(ctx.tags) ? ctx.tags : (ctx.tags ? String(ctx.tags).split(',').map(t => t.trim()).filter(Boolean) : []);
+    const topic = escapeHtml(tags[0] || 'Context');
+    const mark = topic.slice(0, 2).toUpperCase();
+    const accent = _CV_ACCENTS[ctx.id % _CV_ACCENTS.length];
 
-    return `<div class="dashboard-recent-card" onclick="showDetail(${ctx.id})">
-        <div class="dashboard-recent-card-header">
-            <span class="dashboard-recent-card-title">${title}</span>
-            ${sourceBadge}
+    // Key idea as the hover-preview question
+    const snippet = summary.unresolved_questions && summary.unresolved_questions.length > 0
+        ? escapeHtml(summary.unresolved_questions[0])
+        : (summary.key_ideas && summary.key_ideas.length > 0 ? escapeHtml(summary.key_ideas[0]) : '');
+
+    const desc = summary.snapshot ? escapeHtml(summary.snapshot)
+        : (summary.key_ideas && summary.key_ideas.length > 0 ? escapeHtml(summary.key_ideas.slice(0, 2).join('. ')) : '');
+
+    const tag1 = tags[0] ? `<span class="cv-tag">#${escapeHtml(tags[0])}</span>` : '';
+    const tag2 = tags[1] ? `<span class="cv-tag">#${escapeHtml(tags[1])}</span>` : '';
+
+    return `<article class="cv-card" style="--accent:${accent};" onclick="showDetail(${ctx.id})">
+        <div class="cv-card-top">
+            <div class="cv-card-mark">${mark}</div>
+            <span class="cv-card-dot" aria-hidden="true"></span>
+            <span class="cv-card-topic">${topic}</span>
+            <span class="cv-card-date">${date}</span>
         </div>
-        ${snippet ? `<div class="dashboard-recent-card-summary">${snippet}</div>` : ''}
-        <div class="dashboard-recent-card-footer">
-            ${sourceBadge}
-            <span class="dashboard-recent-card-date">${date}</span>
+        <h3>${title}</h3>
+        ${desc ? `<p>${desc}</p>` : ''}
+        <div class="cv-card-foot">
+            ${tag1}${tag2}
         </div>
-    </div>`;
+        ${snippet ? `<div class="cv-card-preview">${snippet}</div>` : ''}
+    </article>`;
 }
 
 async function loadDashboard() {
-    // Update greeting
-    const greetingEl = document.getElementById('view-input-heading');
-    if (greetingEl) {
-        greetingEl.innerHTML = `${_getGreeting()},<br><span class="dashboard-greeting-name">User</span>`;
-    }
+    // Update hero greeting
+    const eyebrow = document.getElementById('cv-hero-eyebrow');
+    if (eyebrow) eyebrow.textContent = `${_getGreeting()} · ${_getDayString()}`;
+    const nameEl = document.getElementById('cv-greeting-name');
+    if (nameEl) nameEl.textContent = 'User.';
 
     try {
         const res = await fetch(`${API}/api/dashboard`);
@@ -404,18 +481,26 @@ async function loadDashboard() {
         // Animate stat values
         const ctxVal = document.getElementById('stat-contexts-val');
         const chunkVal = document.getElementById('stat-chunks-val');
-        const storageVal = document.getElementById('stat-storage-val');
+        const asksVal = document.getElementById('stat-asks-val');
+        const storageValEl = document.getElementById('stat-storage-val');
 
         if (ctxVal) _animateCountUp(ctxVal, stats.contexts || 0);
         if (chunkVal) _animateCountUp(chunkVal, stats.chunks || 0);
-        if (storageVal) {
+        if (asksVal) _animateCountUp(asksVal, stats.questions_asked || 0);
+        if (storageValEl) {
             const mb = stats.size_mb || 0;
-            if (mb >= 1024) {
-                storageVal.textContent = (mb / 1024).toFixed(1) + ' GB';
-            } else {
-                storageVal.textContent = mb.toFixed(1) + ' MB';
-            }
+            // Clear the unit span first, then set just the number
+            storageValEl.textContent = mb >= 1024
+                ? (mb / 1024).toFixed(1)
+                : mb.toFixed(1);
+            // Update unit label
+            const unitSpan = storageValEl.parentElement && storageValEl.parentElement.querySelector('.unit');
+            if (unitSpan) unitSpan.textContent = mb >= 1024 ? 'GB' : 'MB';
         }
+
+        // Update idx badge
+        const idxEl = document.getElementById('cv-recent-idx');
+        if (idxEl && stats.contexts) idxEl.textContent = `${Math.min(recent.length, 8)} / ${stats.contexts}`;
 
         // Render recent contexts
         const gridEl = document.getElementById('dashboard-recent-grid');
@@ -424,18 +509,58 @@ async function loadDashboard() {
             if (recent.length > 0) {
                 if (emptyEl) emptyEl.style.display = 'none';
                 const cardsHtml = recent.map(ctx => _renderRecentCard(ctx)).join('');
-                gridEl.innerHTML = cardsHtml;
+                // Keep emptyEl in DOM but hidden, append new cards
+                gridEl.innerHTML = '';
+                if (emptyEl) { emptyEl.style.display = 'none'; gridEl.appendChild(emptyEl); }
+                gridEl.insertAdjacentHTML('beforeend', cardsHtml);
+                // Attach parallax + tilt to new cards
+                _attachCardEffects(gridEl);
             } else {
                 gridEl.innerHTML = '';
-                gridEl.appendChild(emptyEl);
-                emptyEl.style.display = 'flex';
+                if (emptyEl) { gridEl.appendChild(emptyEl); emptyEl.style.display = ''; }
             }
         }
+
+        // Stat card spotlight
+        document.querySelectorAll('.cv-stat').forEach(el => {
+            el.addEventListener('pointermove', e => {
+                const r = el.getBoundingClientRect();
+                el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+                el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
+            });
+            el.addEventListener('pointerleave', () => {
+                el.style.setProperty('--mx', '50%');
+                el.style.setProperty('--my', '50%');
+            });
+        });
 
         _dashboardLoaded = true;
     } catch (err) {
         console.error('Dashboard load error:', err);
     }
+}
+
+function _attachCardEffects(container) {
+    container.querySelectorAll('.cv-card').forEach(el => {
+        // Radial spotlight
+        el.addEventListener('pointermove', e => {
+            const r = el.getBoundingClientRect();
+            el.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+            el.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100) + '%');
+        });
+        el.addEventListener('pointerleave', () => {
+            el.style.setProperty('--mx', '50%');
+            el.style.setProperty('--my', '50%');
+            el.style.transform = '';
+        });
+        // Subtle 3-D tilt
+        el.addEventListener('pointermove', e => {
+            const r = el.getBoundingClientRect();
+            const x = (e.clientX - r.left) / r.width - 0.5;
+            const y = (e.clientY - r.top) / r.height - 0.5;
+            el.style.transform = `translateY(-2px) perspective(900px) rotateX(${(-y * 3).toFixed(2)}deg) rotateY(${(x * 3).toFixed(2)}deg)`;
+        });
+    });
 }
 
 // â”€â”€â”€ Chat Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -455,6 +580,50 @@ function initChatInput() {
     summarizeBtn.addEventListener('click', () => summarizeAndSave());
 }
 
+// ─── Pipeline UI helpers ─────────────────────────────────────────
+function _pipelineShow(title) {
+    const pipe = document.getElementById('cv-pipeline');
+    if (!pipe) return;
+    const titleEl = document.getElementById('cv-pipe-title');
+    if (titleEl) titleEl.textContent = title || 'Processing conversation…';
+    pipe.style.display = '';
+    [1,2,3,4].forEach(n => {
+        const step = document.getElementById(`cv-step-${n}`);
+        if (step) step.classList.remove('done', 'active');
+        const bar = document.getElementById(`cv-step-${n}-bar`);
+        if (bar) bar.style.width = '0%';
+    });
+    const streamEl = document.getElementById('cv-stream-text');
+    if (streamEl) streamEl.innerHTML = '';
+    setTimeout(() => pipe.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    pipe.addEventListener('pointermove', _pipelineSheen);
+}
+function _pipelineSheen(e) {
+    const pipe = e.currentTarget;
+    const r = pipe.getBoundingClientRect();
+    pipe.style.setProperty('--px', ((e.clientX - r.left) / r.width * 100) + '%');
+}
+function _pipelineHide() {
+    const pipe = document.getElementById('cv-pipeline');
+    if (pipe) { pipe.style.display = 'none'; pipe.removeEventListener('pointermove', _pipelineSheen); }
+}
+function _pipelineSetStep(n, stepState, nameOverride) {
+    const step = document.getElementById(`cv-step-${n}`);
+    if (!step) return;
+    step.classList.remove('done', 'active');
+    if (stepState) step.classList.add(stepState);
+    const bar = document.getElementById(`cv-step-${n}-bar`);
+    if (bar) bar.style.width = stepState === 'done' ? '100%' : stepState === 'active' ? '60%' : '0%';
+    if (nameOverride) { const nm = step.querySelector('.name'); if (nm) nm.textContent = nameOverride; }
+}
+function _pipelineAppendToken(token) {
+    const el = document.getElementById('cv-stream-text');
+    if (!el) return;
+    el.textContent += token;
+    const box = el.closest('.cv-stream');
+    if (box) box.scrollTop = box.scrollHeight;
+}
+
 let _summarizing = false;
 async function summarizeAndSave() {
     if (_summarizing) return;
@@ -468,6 +637,10 @@ async function summarizeAndSave() {
     btn.querySelector('.btn-text').style.display = 'none';
     btn.querySelector('.btn-loader').style.display = 'inline-flex';
     btn.disabled = true;
+
+    // Show pipeline on dashboard
+    const _firstLine = text.split('\n').find(l => l.trim()) || 'Processing conversation…';
+    _pipelineShow(_firstLine.slice(0, 80));
 
     try {
         // Step 1: Summarize via Ollama (streaming progress)
@@ -509,21 +682,23 @@ async function summarizeAndSave() {
                     if (evt.step) {
                         const pct = evt.total > 0 ? Math.round((evt.done / evt.total) * 85) : 0;
                         _setProgress(evt.step, pct);
+                        _pipelineSetStep(1, 'active', evt.step.slice(0, 40));
                     }
+                    if (evt.token) _pipelineAppendToken(evt.token);
                     if (evt.result) summary = evt.result;
                 } catch (e) { if (e.message !== line) throw e; }
             }
         }
 
         if (!summary) throw new Error('Summarization produced no result');
+        _pipelineSetStep(1, 'done', 'Summary ready');
 
-        // Step 2: Create a title from the main topic
+        // Create title + tags
         const title = summary.main_topic || 'Untitled Context';
-
-        // Step 3: Auto-generate tags from summary content (LLM-derived)
         const tags = generateTags(summary);
 
-        // Step 4: Save to database
+        // Save to database
+        _pipelineSetStep(2, 'active', 'Storing to vault…');
         _setProgress('Savingâ€¦', 90);
         const createRes = await fetch(`${API}/api/contexts`, {
             method: 'POST',
@@ -541,8 +716,10 @@ async function summarizeAndSave() {
         }
 
         const created = await createRes.json();
+        _pipelineSetStep(2, 'done', 'Saved to vault');
+        _pipelineSetStep(3, 'active', 'Splitting chunks…');
 
-        // Step 5: Chunk and embed the conversation
+        // Chunk and embed
         _setProgress('Embeddingâ€¦', 97);
         try {
             const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
@@ -561,6 +738,9 @@ async function summarizeAndSave() {
             showToast('Context saved, but chunking failed â€” use Rebuild Embeddings later', 'error');
         }
 
+        _pipelineSetStep(3, 'done', 'Chunks ready');
+        _pipelineSetStep(4, 'done', 'Vectors indexed');
+
         // Clear textarea
         textarea.value = '';
         $('#char-count').textContent = '0 characters';
@@ -573,6 +753,7 @@ async function summarizeAndSave() {
 
     } catch (err) {
         showToast(err.message, 'error');
+        _pipelineHide();
     } finally {
         _summarizing = false;
         btn.querySelector('.btn-text').style.display = 'inline-flex';
@@ -581,6 +762,8 @@ async function summarizeAndSave() {
         // Reset progress bar
         const fillEl = document.getElementById('summarize-progress-fill');
         if (fillEl) fillEl.style.width = '0%';
+        // Hide pipeline after a beat
+        setTimeout(_pipelineHide, 3000);
     }
 }
 
@@ -824,47 +1007,124 @@ function _highlightText(text, query) {
 }
 
 function _renderContextCard(ctx) {
-    const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
+    const summary = typeof ctx.summary === 'string' ? {} : (ctx.summary || {});
     const q = state.searchQuery;
-    const tags = (ctx.tags || []).map(t =>
-        `<span class="tag">${escapeHtml(t)}</span>`
+    const title = _highlightText(ctx.title || 'Untitled', q);
+    const date  = _timeAgo(ctx.created_at);
+
+    const allTags = Array.isArray(ctx.tags) ? ctx.tags : [];
+    const brand   = _getAIBrand(allTags);
+    const capture = _getCaptureTag(allTags);
+
+    // User tags exclude both AI brand tags and capture-method tags — those are surfaced
+    // as dedicated UI (top-left AI pill, bottom capture chip) and should never double up
+    // as generic #tag chips.
+    const userTags = allTags.filter(t =>
+        !_AI_BRAND[t] && !_CAPTURE_TAGS.has(t)
+    );
+
+    const starred  = !!ctx.starred;
+    const selected = state.selectedIds && state.selectedIds.has(ctx.id);
+    const checked  = selected ? ' checked' : '';
+    const accent   = brand ? brand.color : _CV_ACCENTS[ctx.id % _CV_ACCENTS.length];
+
+    const col = ctx.collection_id ? _getCollectionForContext(ctx.collection_id) : null;
+
+    const firstIdea = (summary.key_ideas || [])[0] || '';
+    const snap      = summary.snapshot || '';
+    const desc = snap ? _highlightText(snap, q)
+                      : (firstIdea ? _highlightText(firstIdea, q) : '');
+    const snippet = (summary.unresolved_questions || [])[0]
+                  || (summary.key_ideas || [])[1]
+                  || firstIdea
+                  || '';
+
+    const tagHtml = userTags.slice(0, 3).map(t =>
+        `<span class="cv-tag">#${_highlightText(t, q)}</span>`
     ).join('');
-    const date = new Date(ctx.created_at).toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric'
-    });
-    const statusBadge = _buildCardStatusBadge(ctx.status);
-    const starred = ctx.starred;
-    const checked = state.selectedIds.has(ctx.id) ? ' checked' : '';
-    const sourceBadge = _getSourceBadge(ctx.tags);
-    const _cardCol = ctx.collection_id ? _getCollectionForContext(ctx.collection_id) : null;
-    const colDot = _cardCol ? `<span class="card-collection-dot" style="background:${escapeHtml(_cardCol.color)}" title="${escapeHtml(_cardCol.name)}"></span>` : '';
+
+    // Top-left AI brand pill (replaces the old generic mark/topic combo).
+    const aiPill = brand
+        ? `<span class="cv-card-ai" style="--ai-color:${brand.color};--ai-bg:${brand.bg};--ai-border:${brand.border};">
+              <span class="cv-card-ai-dot" aria-hidden="true"></span>${escapeHtml(brand.label)}
+           </span>`
+        : `<span class="cv-card-ai cv-card-ai-generic"><span class="cv-card-ai-dot" aria-hidden="true"></span>Context</span>`;
+
+    // Capture chip at the bottom (shown once, at most).
+    const captureChip = capture
+        ? `<span class="cv-card-capture">${escapeHtml(capture)}</span>`
+        : '';
+
+    // Live status indicator (positioned at top-right, does not overlap title/body).
+    let statusLive = '';
+    if (ctx.status === 'summarizing') {
+        statusLive = `<div class="cv-card-live" aria-live="polite">
+            <span class="cv-card-live-dot" aria-hidden="true"></span>
+            <span class="cv-card-live-label">Summarizing</span>
+            <span class="cv-card-live-sweep" aria-hidden="true"></span>
+        </div>`;
+    } else if (ctx.status === 'failed') {
+        statusLive = `<div class="cv-card-live cv-card-live-err">
+            <span class="cv-card-live-dot" aria-hidden="true"></span>
+            <span class="cv-card-live-label">Failed</span>
+        </div>`;
+    }
+
+    const onCardClick = state.selectMode
+        ? `toggleSelectCard(${ctx.id})`
+        : `showDetail(${ctx.id})`;
+
+    const checkbox = state.selectMode
+        ? `<input type="checkbox" class="cv-card-check" ${checked}
+                 onclick="event.stopPropagation(); toggleSelectCard(${ctx.id})"
+                 aria-label="Select context ${ctx.id}" />`
+        : '';
+
+    // Star and delete hide when the live-status pill occupies the top-right slot.
+    const showTopRightActions = !state.selectMode && ctx.status !== 'summarizing' && ctx.status !== 'failed';
+    const starBtn = showTopRightActions
+        ? `<button class="cv-card-star${starred ? ' on' : ''}"
+                   onclick="event.stopPropagation(); toggleStar(${ctx.id})"
+                   title="${starred ? 'Unpin' : 'Pin'}"
+                   aria-label="${starred ? 'Unpin context' : 'Pin context'}">
+             <svg width="12" height="12" viewBox="0 0 24 24" fill="${starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+           </button>`
+        : '';
+
+    const delBtn = !state.selectMode
+        ? `<button class="cv-card-del"
+                   onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})"
+                   title="Delete" aria-label="Delete context">
+             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+           </button>`
+        : '';
+
+    const colDot = col
+        ? `<span class="cv-card-coldot" style="background:${escapeHtml(col.color)};color:${escapeHtml(col.color)};" title="${escapeHtml(col.name)}"></span>`
+        : '';
+
     return `
-        <div class="context-card${starred ? ' starred' : ''}" data-id="${ctx.id}" onclick="${state.selectMode ? `toggleSelectCard(${ctx.id})` : `showDetail(${ctx.id})`}">
-            ${state.selectMode ? `<input type="checkbox" class="card-checkbox" ${checked} onclick="event.stopPropagation(); toggleSelectCard(${ctx.id})" />` : ''}
-            ${statusBadge}
-            <div class="card-header-row">
-                <h3 class="card-title">${_highlightText(ctx.title, q)}</h3>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    ${colDot}
-                    ${sourceBadge}
-                    ${!state.selectMode ? `<button class="card-star${starred ? ' active' : ''}" onclick="event.stopPropagation(); toggleStar(${ctx.id})" title="${starred ? 'Unpin' : 'Pin'}" aria-label="${starred ? 'Unpin context' : 'Pin context'}">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="${starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    </button>` : ''}
-                </div>
+        <article class="cv-card context-card${starred ? ' starred' : ''}${selected ? ' cv-card-selected' : ''}${ctx.status === 'summarizing' ? ' cv-card-summarizing' : ''}"
+                 data-id="${ctx.id}" data-anim
+                 style="--accent:${accent};"
+                 onclick="${onCardClick}">
+            ${statusLive}
+            ${checkbox}
+            ${starBtn}
+            <div class="cv-card-top">
+                ${aiPill}
+                ${colDot}
+                <span class="cv-card-date">${date}</span>
             </div>
-            ${(() => {
-                const ideas = summary.key_ideas || [];
-                const sub = ideas.length > 0 ? ideas[0] : (summary.snapshot || '');
-                return sub ? `<p class="card-topic">${_highlightText(sub, q)}</p>` : '';
-            })()}
-            <div class="card-tags">${tags}</div>
-            <div class="card-meta">
-                <span>${date}</span>
-                ${!state.selectMode ? `<button class="card-delete" onclick="event.stopPropagation(); deleteFromLibrary(${ctx.id})" title="Delete">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                </button>` : ''}
+            <h3 class="card-title">${title}</h3>
+            ${desc ? `<p>${desc}</p>` : ''}
+            <div class="cv-card-foot">
+                ${tagHtml}
+                ${captureChip}
             </div>
-        </div>
+            ${snippet ? `<div class="cv-card-preview">${_highlightText(snippet, q)}</div>` : ''}
+            ${delBtn}
+        </article>
     `;
 }
 
@@ -882,7 +1142,13 @@ async function loadContexts(query = '', append = false) {
         grid.style.opacity = '1';
         grid.style.transition = '';
         emptyState.style.display = 'none';
-        grid.innerHTML = Array(6).fill('<div class="skeleton-card"></div>').join('');
+        grid.innerHTML = Array(8).fill(
+            '<div class="cv-skel skeleton-card">' +
+              '<div class="cv-skel-line w40"></div>' +
+              '<div class="cv-skel-line w80"></div>' +
+              '<div class="cv-skel-line w60"></div>' +
+            '</div>'
+        ).join('');
     }
 
     try {
@@ -916,7 +1182,9 @@ async function loadContexts(query = '', append = false) {
         if (state.contexts.length === 0) {
             grid.style.display = 'none';
             loadMoreContainer.style.display = 'none';
-            emptyState.style.display = 'block';
+            emptyState.style.display = 'flex';
+            _updateLibCount(0, 0, query);
+            _renderActiveFilters();
             return;
         }
 
@@ -934,8 +1202,13 @@ async function loadContexts(query = '', append = false) {
             grid.innerHTML = _staggeredCards(filtered);
         }
 
-        // Build tag filter bar
+        // Attach parallax/spotlight to the cards
+        if (typeof _attachCardEffects === 'function') _attachCardEffects(grid);
+
+        // Build tag filter bar + active-filter pills + live count
         if (!append) _renderTagFilterBar(state.contexts);
+        _updateLibCount(filtered.length, state.contexts.length, query);
+        _renderActiveFilters();
 
         loadMoreContainer.style.display = state.libraryHasMore && !query ? 'flex' : 'none';
 
@@ -947,6 +1220,90 @@ async function loadContexts(query = '', append = false) {
         showToast('Failed to load contexts', 'error');
     }
 }
+
+// Live count + active-filter pills for the library hero
+function _updateLibCount(showing, total, query) {
+    const el = document.getElementById('cv-lib-count-text');
+    if (!el) return;
+    if (total === 0) {
+        el.textContent = query ? `No matches for "${query}"` : 'Nothing saved yet';
+        return;
+    }
+    const total_ = `<span class="cv-lib-count-num">${showing.toLocaleString()}</span>`;
+    if (showing === total && !query && !state.activeCollection && !state.activeTagFilter) {
+        el.innerHTML = `${total_} context${showing === 1 ? '' : 's'} in your vault`;
+    } else {
+        el.innerHTML = `${total_} of ${total.toLocaleString()} · filtered`;
+    }
+}
+
+function _renderActiveFilters() {
+    const bar = document.getElementById('cv-active-filters');
+    if (!bar) return;
+    const pills = [];
+
+    if (state.searchQuery) {
+        pills.push(`<span class="cv-active-pill">Search: "${escapeHtml(state.searchQuery)}"
+            <button class="cv-active-pill-x" onclick="cvClearSearch()" title="Clear search">×</button>
+        </span>`);
+    }
+    if (state.activeCollection !== null && state.activeCollection !== undefined) {
+        const col = state.collections.find(c => c.id === state.activeCollection);
+        if (col) {
+            pills.push(`<span class="cv-active-pill" style="background:color-mix(in oklab, ${escapeHtml(col.color)} 20%, transparent);border-color:color-mix(in oklab, ${escapeHtml(col.color)} 40%, transparent);color:${escapeHtml(col.color)}">
+                ${escapeHtml(col.name)}
+                <button class="cv-active-pill-x" style="background:color-mix(in oklab, ${escapeHtml(col.color)} 25%, transparent);color:${escapeHtml(col.color)}" onclick="cvClearCollection()" title="Clear collection">×</button>
+            </span>`);
+        }
+    }
+    if (state.activeTagFilter) {
+        pills.push(`<span class="cv-active-pill">#${escapeHtml(state.activeTagFilter)}
+            <button class="cv-active-pill-x" onclick="cvClearTag()" title="Clear tag">×</button>
+        </span>`);
+    }
+
+    if (pills.length > 1) {
+        pills.push(`<button class="cv-active-clear" onclick="cvClearAllFilters()">Clear all</button>`);
+    }
+
+    if (pills.length === 0) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+    } else {
+        bar.style.display = 'flex';
+        bar.innerHTML = pills.join('');
+    }
+}
+
+function cvClearSearch() {
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    state.searchQuery = '';
+    loadContexts('');
+}
+function cvClearCollection() {
+    state.activeCollection = null;
+    loadContexts(state.searchQuery || '');
+    if (typeof renderCollections === 'function') renderCollections();
+}
+function cvClearTag() {
+    state.activeTagFilter = null;
+    if (typeof _applyTagFilter === 'function') _applyTagFilter();
+    _renderActiveFilters();
+}
+function cvClearAllFilters() {
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    state.searchQuery = '';
+    state.activeTagFilter = null;
+    state.activeCollection = null;
+    loadContexts('');
+    if (typeof renderCollections === 'function') renderCollections();
+}
+window.cvClearSearch = cvClearSearch;
+window.cvClearCollection = cvClearCollection;
+window.cvClearTag = cvClearTag;
+window.cvClearAllFilters = cvClearAllFilters;
 
 async function loadMoreContexts() {
     state.libraryPage++;
@@ -1022,7 +1379,13 @@ function _applyTagFilter() {
             ? state.contexts.filter(c => (c.tags || []).includes(tag))
             : state.contexts;
         grid.innerHTML = _staggeredCards(filtered);
+        if (typeof _attachCardEffects === 'function') _attachCardEffects(grid);
     }
+
+    // Refresh count + active-filter pills
+    const visible = state.contexts.filter(c => !tag || (c.tags || []).includes(tag)).length;
+    if (typeof _updateLibCount === 'function') _updateLibCount(visible, state.contexts.length, state.searchQuery);
+    if (typeof _renderActiveFilters === 'function') _renderActiveFilters();
 }
 
 let _deepSearchMode = false;
@@ -1270,11 +1633,18 @@ function toggleSelectMode() {
     const bar = $('#bulk-actions-bar');
     const btn = $('#btn-select-mode');
     if (state.selectMode) {
-        bar.style.display = 'flex';
-        btn.classList.add('active');
+        if (bar) {
+            bar.style.display = 'flex';
+            // small delay so the CSS transition fires
+            requestAnimationFrame(() => bar.classList.add('show'));
+        }
+        if (btn) { btn.classList.add('active'); btn.classList.add('on'); }
     } else {
-        bar.style.display = 'none';
-        btn.classList.remove('active');
+        if (bar) {
+            bar.classList.remove('show');
+            setTimeout(() => { if (!state.selectMode) bar.style.display = 'none'; }, 300);
+        }
+        if (btn) { btn.classList.remove('active'); btn.classList.remove('on'); }
     }
     _rerenderGrid();
     _updateBulkCount();
@@ -1286,11 +1656,12 @@ function toggleSelectCard(id) {
     } else {
         state.selectedIds.add(id);
     }
-    // Update checkbox without full re-render
+    // Update the card visual + checkbox without a full re-render
     const card = document.querySelector(`.context-card[data-id="${id}"]`);
     if (card) {
-        const cb = card.querySelector('.card-checkbox');
+        const cb = card.querySelector('.cv-card-check, .card-checkbox');
         if (cb) cb.checked = state.selectedIds.has(id);
+        card.classList.toggle('cv-card-selected', state.selectedIds.has(id));
     }
     _updateBulkCount();
 }
@@ -1320,8 +1691,10 @@ async function bulkDelete() {
         showToast(`Deleted ${data.deleted} context${data.deleted > 1 ? 's' : ''}`, 'success');
         state.selectMode = false;
         state.selectedIds.clear();
-        $('#bulk-actions-bar').style.display = 'none';
-        $('#btn-select-mode').classList.remove('active');
+        const bar = $('#bulk-actions-bar');
+        if (bar) { bar.classList.remove('show'); setTimeout(() => { bar.style.display = 'none'; }, 300); }
+        const selBtn = $('#btn-select-mode');
+        if (selBtn) { selBtn.classList.remove('active'); selBtn.classList.remove('on'); }
         loadContexts($('#search-input').value.trim());
     } catch {
         showToast('Bulk delete failed', 'error');
@@ -1364,6 +1737,7 @@ function _rerenderGrid(changedId) {
         ? state.contexts.filter(c => (c.tags || []).includes(state.activeTagFilter))
         : state.contexts;
     grid.innerHTML = _staggeredCards(filtered);
+    if (typeof _attachCardEffects === 'function') _attachCardEffects(grid);
 }
 
 // â”€â”€â”€ Context Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1389,177 +1763,301 @@ async function showDetail(id) {
 }
 
 function renderDetail(ctx) {
-    _chunksLoaded = false; // Reset chunk viewer for new context
+    _chunksLoaded = false;
     _currentSnippets = _extractFinalCodeSnippets(ctx.original_chat || '');
     const container = $('#detail-content');
-    const summary = typeof ctx.summary === 'string' ? {} : ctx.summary;
-    const tags = (ctx.tags || []).map(t =>
-        `<span class="tag">${escapeHtml(t)}</span>`
-    ).join('');
+    const summary = typeof ctx.summary === 'string' ? {} : (ctx.summary || {});
+
     const date = new Date(ctx.created_at).toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+        month: 'short', day: 'numeric', year: 'numeric'
     });
     const timeAgo = _timeAgo(ctx.created_at);
 
-    const keyIdeas = (summary.key_ideas || []).map(i =>
-        `<li>${escapeHtml(i)}</li>`
-    ).join('');
-    const conclusions = (summary.conclusions || []).map(c =>
-        `<li>${escapeHtml(c)}</li>`
-    ).join('');
-    const unresolved = (summary.unresolved_questions || []).map(q =>
-        `<li>${escapeHtml(q)}</li>`
-    ).join('');
+    const keyIdeas      = (summary.key_ideas || []);
+    const conclusions   = (summary.conclusions || []);
+    const unresolved    = (summary.unresolved_questions || []);
     const importantNotes = (ctx.important_notes || []);
-    const vitals = (summary.vitals || []);
-    const snapshot = summary.snapshot && summary.snapshot.toLowerCase() !== 'n/a' ? summary.snapshot : '';
+    const vitals        = (summary.vitals || []);
+    const snapshot      = summary.snapshot && summary.snapshot.toLowerCase() !== 'n/a' ? summary.snapshot : '';
+    const mainTopic     = (summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') ? summary.main_topic : '';
 
     const statusInfo = _buildDetailStatusBanner(ctx.status);
-    const sourceBadge = _getSourceBadge(ctx.tags);
+    const source     = (ctx.tags || []).find(t => _KNOWN_SOURCES.includes(t)) || '';
+    const aiModel    = _detectAIModel(ctx.tags);
+    const starred    = !!ctx.starred;
 
-    const starredClass = ctx.starred ? ' active' : '';
-    const starFill = ctx.starred ? 'currentColor' : 'none';
-    const aiModel = _detectAIModel(ctx.tags);
+    // Derive quick metrics for the hero eyebrow + facts grid
+    const chatText = ctx.original_chat || '';
+    const wordCount = chatText ? chatText.trim().split(/\s+/).length : 0;
+    const turnCount = chatText ? (chatText.match(/^(User|Human|You|Assistant|AI|Agent|ChatGPT|Claude|Grok|Gemini|Copilot|DeepSeek|Llama|Mistral|Bot):/gmi) || []).length : 0;
+    const tagCount  = (ctx.tags || []).length;
+    const currentColl = state.collections.find(c => c.id === ctx.collection_id);
+
+    // Try to italicize the last noun-ish word of the title for a "voltword" accent
+    const titleWords = (ctx.title || '').trim().split(/\s+/);
+    const safeTitle = (() => {
+        if (titleWords.length >= 2) {
+            const last = titleWords.pop();
+            return `${escapeHtml(titleWords.join(' '))} <span class="voltword">${escapeHtml(last)}</span>`;
+        }
+        return escapeHtml(ctx.title || 'Untitled');
+    })();
+
+    const tagsHtml = (ctx.tags || [])
+        .filter(t => !_KNOWN_SOURCES.includes(t))
+        .map(t => `<span class="cv-tag">#${escapeHtml(t)}</span>`).join('');
+
+    const icon = {
+        pin:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+        pinO:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+        edit:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+        export: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+        del:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
+        back:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+        idea:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>',
+        done:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+        open:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>',
+        code:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+        chat:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+        chev:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+        pinIc:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v7M5 9l7-7 7 7M12 22v-6"/></svg>',
+        vitals: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+        bolt:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
+        chunks: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    };
+
+    const eyebrowBits = [];
+    if (source)     eyebrowBits.push(`<span class="cv-ebadge">${escapeHtml(source)}</span>`);
+    eyebrowBits.push(`<span class="cv-dot"></span>`);
+    const statLine = [];
+    if (turnCount)  statLine.push(`${turnCount} turns`);
+    if (wordCount)  statLine.push(`${wordCount.toLocaleString()} words`);
+    if (tagCount)   statLine.push(`${tagCount} tag${tagCount === 1 ? '' : 's'}`);
+    eyebrowBits.push(`<span>${statLine.join(' · ') || 'No metrics yet'}</span>`);
 
     container.innerHTML = `
-        <div class="detail-sticky-header" id="detail-sticky-header">
-            <button class="btn btn-ghost" onclick="navigateTo('library')" style="padding:6px 8px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <!-- Rail: back + meta + actions -->
+        <div class="cv-detail-rail">
+            <button class="cv-back" onclick="navigateTo('library')" aria-label="Back to library">
+                ${icon.back} Library
             </button>
-            <span class="detail-sticky-title">${escapeHtml(ctx.title)}</span>
+            <div class="cv-rail-meta">
+                <span>Context <b>#${ctx.id}</b></span>
+                <span class="cv-rail-sep">·</span>
+                <span>${escapeHtml(date)} · ${escapeHtml(timeAgo)}</span>
+            </div>
+            <div class="cv-rail-actions">
+                <button class="cv-ibtn${starred ? ' on' : ''}" id="cv-btn-pin"
+                        onclick="toggleStarDetail(${ctx.id})"
+                        title="${starred ? 'Unpin' : 'Pin'}" aria-label="${starred ? 'Unpin' : 'Pin'} context">
+                    ${starred ? icon.pin : icon.pinO}
+                </button>
+                <button class="cv-ibtn" onclick="openEditModal()" title="Edit" aria-label="Edit context">${icon.edit}</button>
+                <div style="position:relative;">
+                    <button class="cv-ibtn" onclick="cvToggleExportMenu(event)" title="Export" aria-label="Export context" aria-haspopup="menu">${icon.export}</button>
+                    <div class="cv-export-menu" id="cv-export-menu" role="menu">
+                        <button class="cv-export-opt" role="menuitem" onclick="exportContext('markdown'); cvCloseExportMenu();">Markdown (.md)</button>
+                        <button class="cv-export-opt" role="menuitem" onclick="exportContext('json'); cvCloseExportMenu();">Copy as JSON</button>
+                        <button class="cv-export-opt" role="menuitem" onclick="exportContext('text'); cvCloseExportMenu();">Copy as Plain Text</button>
+                    </div>
+                </div>
+                <button class="cv-ibtn cv-ibtn-danger" onclick="deleteCurrentContext()" title="Delete" aria-label="Delete context">${icon.del}</button>
+            </div>
         </div>
 
-        <div class="ctx-header">
-            <div class="ctx-header-top">
-                <div class="ctx-header-meta">
-                    <span class="ctx-date">${date} Â· ${timeAgo}</span>
-                    ${sourceBadge || ''}
-                </div>
-                <button class="detail-star${starredClass}" onclick="toggleStarDetail(${ctx.id})" title="${ctx.starred ? 'Unpin' : 'Pin'}">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="${starFill}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                </button>
-            </div>
-            <h2 class="ctx-title">${escapeHtml(ctx.title)}</h2>
-            ${statusInfo}
-            <div class="ctx-tags-row">
-                <div class="detail-tags">${tags || '<span class="ctx-no-tags">No tags</span>'}</div>
-                <div class="ctx-collection-inline">
-                    <select class="collection-select" id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
+        <!-- Hero -->
+        <section class="cv-dhero">
+            <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
+            <h1 class="cv-dtitle" id="detail-title-heading">${safeTitle}</h1>
+            ${mainTopic ? `<p class="cv-dsnap" style="margin-top:12px;color:var(--cv-text-3);font-size:13px;font-family:var(--cv-mono);letter-spacing:0.02em;">${escapeHtml(mainTopic)}</p>` : ''}
+            ${snapshot ? `<p class="cv-dsnap">${escapeHtml(snapshot)}</p>` : ''}
+            <div class="cv-dmeta">
+                ${tagsHtml}
+                <span class="cv-collection-inline">
+                    <select id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
                         <option value="">Collection: None</option>
                         ${state.collections.map(c =>
                             `<option value="${c.id}"${ctx.collection_id === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`
                         ).join('')}
                     </select>
-                </div>
+                </span>
             </div>
-        </div>
+            ${statusInfo ? `<div class="cv-dstatus${ctx.status === 'failed' ? ' err' : ''}">${statusInfo}</div>` : ''}
+        </section>
 
-        ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') || snapshot ? `
-        <div class="ctx-overview">
-            ${(summary.main_topic && summary.main_topic !== ctx.title && summary.main_topic !== 'No topic extracted') ? `
-            <div class="ctx-topic">${escapeHtml(summary.main_topic)}</div>` : ''}
-            ${snapshot ? `<p class="ctx-snapshot">${escapeHtml(snapshot)}</p>` : ''}
-        </div>` : ''}
+        <!-- Two-column grid -->
+        <section class="cv-dgrid">
+            <div class="cv-dcol-main">
 
-        ${importantNotes.length ? `
-        <div class="ctx-section ctx-important">
-            <div class="ctx-section-label"><span class="ctx-important-dot"></span>Pinned Notes</div>
-            <ul class="ctx-list ctx-list--important">
-                ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
-            </ul>
-        </div>` : ''}
-
-        ${vitals.length ? `
-        <div class="ctx-section">
-            <div class="ctx-section-label">Technical Vitals</div>
-            <div class="ctx-vitals">
-                ${vitals.map(v => `<code class="ctx-vital-chip">${escapeHtml(v)}</code>`).join('')}
-            </div>
-        </div>` : ''}
-
-        ${keyIdeas || conclusions || unresolved ? `
-        <div class="ctx-insights">
-            ${keyIdeas ? `
-            <div class="ctx-insight-block">
-                <div class="ctx-section-label">Key Ideas</div>
-                <ul class="ctx-list">${keyIdeas}</ul>
-            </div>` : ''}
-            ${conclusions ? `
-            <div class="ctx-insight-block">
-                <div class="ctx-section-label">Conclusions</div>
-                <ul class="ctx-list">${conclusions}</ul>
-            </div>` : ''}
-            ${unresolved ? `
-            <div class="ctx-insight-block">
-                <div class="ctx-section-label">Open Questions</div>
-                <ul class="ctx-list">${unresolved}</ul>
-            </div>` : ''}
-        </div>` : ''}
-
-        ${_currentSnippets.length ? `
-        <div class="ctx-section">
-            <div class="ctx-section-label">Code Snippets <span class="snippets-count">${_currentSnippets.length}</span></div>
-            <div class="code-snippets-list">
-                ${_currentSnippets.map((s, i) => `
-                <div class="code-snippet-card">
-                    <div class="code-snippet-header">
-                        <span class="code-snippet-lang">${escapeHtml(s.label)}</span>
-                        <span class="code-snippet-lines">${s.code.split('\n').filter(l => l.trim()).length} lines</span>
-                        <button class="code-snippet-copy" data-idx="${i}" onclick="copyCodeSnippet(${i})">Copy</button>
+                ${importantNotes.length ? `
+                <div class="cv-block cv-block-pinned">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic cv-ic-volt">${icon.pinIc}</span>
+                        <h3>Pinned notes</h3>
+                        <span class="cv-count">${importantNotes.length}</span>
                     </div>
-                    <pre class="code-snippet-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
-                </div>`).join('')}
-            </div>
-        </div>` : ''}
+                    <ul class="cv-notes">
+                        ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+                    </ul>
+                </div>` : ''}
 
-        <div class="ctx-collapsibles">
-            <div class="original-chat-section">
-                <button class="ctx-collapse-btn" onclick="toggleOriginalChat()">
-                    <span id="chat-toggle-icon" class="ctx-collapse-icon">â–¶</span>
-                    Original Conversation
-                </button>
-                <div class="original-chat-content" id="original-chat-box" style="display:none;">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
-            </div>
-            <div class="chunks-section">
-                <button class="ctx-collapse-btn" id="chunks-toggle" onclick="toggleChunkViewer(${ctx.id})">
-                    <span class="ctx-collapse-icon" id="chunks-toggle-icon">â–¶</span>
-                    View Chunks
-                </button>
-                <div id="chunks-viewer-content" style="display:none;"></div>
-            </div>
-        </div>
+                ${(keyIdeas.length || conclusions.length || unresolved.length) ? `
+                <div class="cv-insights">
+                    ${keyIdeas.length ? `
+                    <div class="cv-block">
+                        <div class="cv-block-head">
+                            <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
+                            <h3>Key ideas</h3>
+                        </div>
+                        <ul class="cv-list">${keyIdeas.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+                    </div>` : ''}
+                    ${conclusions.length ? `
+                    <div class="cv-block">
+                        <div class="cv-block-head">
+                            <span class="cv-block-ic cv-ic-done">${icon.done}</span>
+                            <h3>Conclusions</h3>
+                        </div>
+                        <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+                    </div>` : ''}
+                    ${unresolved.length ? `
+                    <div class="cv-block">
+                        <div class="cv-block-head">
+                            <span class="cv-block-ic cv-ic-open">${icon.open}</span>
+                            <h3>Open questions</h3>
+                        </div>
+                        <ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+                    </div>` : ''}
+                </div>` : ''}
 
-        <div class="ctx-prompt-builder">
-            <div class="ctx-prompt-header">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Continuation Prompt</span>
-            </div>
-            <div class="prompt-size-selector">
-                <span class="prompt-size-label">Size</span>
-                <div class="prompt-size-group">
-                    <button class="prompt-size-btn" data-size="compact" title="~2k chars">Compact</button>
-                    <button class="prompt-size-btn active" data-size="standard" title="~5k chars">Standard</button>
-                    <button class="prompt-size-btn" data-size="full" title="~12k chars">Full</button>
+                ${_currentSnippets.length ? `
+                <div class="cv-block">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic">${icon.code}</span>
+                        <h3>Code snippets</h3>
+                        <span class="cv-count">${_currentSnippets.length}</span>
+                    </div>
+                    <div class="cv-snips">
+                        ${_currentSnippets.map((s, i) => `
+                        <div class="cv-snip">
+                            <div class="cv-snip-head">
+                                <span class="cv-snip-lang">${escapeHtml(s.label)}</span>
+                                <span class="cv-snip-lines">${s.code.split('\n').filter(l => l.trim()).length} lines</span>
+                                <button class="cv-snip-copy code-snippet-copy" data-idx="${i}" onclick="copyCodeSnippet(${i})">Copy</button>
+                            </div>
+                            <pre class="cv-snip-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
+                        </div>`).join('')}
+                    </div>
+                </div>` : ''}
+
+                <!-- Original conversation (collapsible) -->
+                <div class="cv-block cv-collapse" id="origConv">
+                    <button class="cv-block-head cv-collapse-head" onclick="this.parentElement.classList.toggle('open')">
+                        <span class="cv-block-ic">${icon.chat}</span>
+                        <h3>Original conversation</h3>
+                        <span class="cv-count">${turnCount || '—'} turns</span>
+                        <span class="cv-collapse-chev">${icon.chev}</span>
+                    </button>
+                    <div class="cv-chat" id="original-chat-box">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
                 </div>
+
+                <!-- Chunk viewer (collapsible) -->
+                <div class="cv-block cv-collapse" id="chunksBlock">
+                    <button class="cv-block-head cv-collapse-head" id="chunks-toggle"
+                            onclick="this.parentElement.classList.toggle('open'); toggleChunkViewer(${ctx.id});">
+                        <span class="cv-block-ic">${icon.chunks}</span>
+                        <h3>Indexed chunks</h3>
+                        <span class="cv-count" id="chunks-count-badge">view</span>
+                        <span class="cv-collapse-chev">${icon.chev}</span>
+                    </button>
+                    <div id="chunks-viewer-content" class="cv-chunks"></div>
+                </div>
+
             </div>
-            <div class="query-input-section">
-                <input type="text" id="retrieval-query" class="query-input"
-                       placeholder="Focus onâ€¦ (optional)" />
-            </div>
-            <button class="btn btn-primary generate-prompt-btn" onclick="generatePrompt(${ctx.id}, this)">
-                Generate Prompt
-            </button>
-        </div>
+
+            <!-- Aside -->
+            <aside class="cv-dcol-aside">
+
+                <!-- Facts snapshot -->
+                <div class="cv-block cv-block-fact">
+                    <div class="cv-fact-grid">
+                        <div class="cv-fact"><span class="cv-fact-k">Model</span><span class="cv-fact-v">${escapeHtml(aiModel)}</span></div>
+                        <div class="cv-fact"><span class="cv-fact-k">Source</span><span class="cv-fact-v">${escapeHtml(source || '—')}</span></div>
+                        <div class="cv-fact"><span class="cv-fact-k">Turns</span><span class="cv-fact-v">${turnCount || '—'}</span></div>
+                        <div class="cv-fact"><span class="cv-fact-k">Words</span><span class="cv-fact-v">${wordCount ? wordCount.toLocaleString() : '—'}</span></div>
+                        <div class="cv-fact"><span class="cv-fact-k">Tags</span><span class="cv-fact-v">${tagCount || '—'}</span></div>
+                        <div class="cv-fact"><span class="cv-fact-k">Collection</span><span class="cv-fact-v">${escapeHtml(currentColl ? currentColl.name : '—')}</span></div>
+                    </div>
+                </div>
+
+                ${vitals.length ? `
+                <div class="cv-block">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic">${icon.vitals}</span>
+                        <h3>Technical vitals</h3>
+                    </div>
+                    <div class="cv-vitals">
+                        ${vitals.map(v => `<code>${escapeHtml(v)}</code>`).join('')}
+                    </div>
+                </div>` : ''}
+
+                <!-- Continuation prompt builder -->
+                <div class="cv-block cv-block-prompt">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic cv-ic-volt">${icon.bolt}</span>
+                        <h3>Continuation prompt</h3>
+                    </div>
+                    <div class="cv-size">
+                        <span class="cv-size-lbl">Size</span>
+                        <div class="cv-size-seg" id="cv-size-seg">
+                            <button class="prompt-size-btn" data-size="compact" title="~2k chars">Compact</button>
+                            <button class="prompt-size-btn on" data-size="standard" title="~5k chars">Standard</button>
+                            <button class="prompt-size-btn" data-size="full" title="~12k chars">Full</button>
+                        </div>
+                    </div>
+                    <input type="text" id="retrieval-query" class="cv-focus" placeholder="Focus on… (optional)" />
+                    <button class="cv-primary-block" onclick="generatePrompt(${ctx.id}, this)">
+                        ${icon.bolt} Generate prompt
+                    </button>
+                    <div class="cv-size-hint">Standard · ~5,200 chars — fits most 8k contexts</div>
+                </div>
+
+            </aside>
+        </section>
     `;
 
-    document.querySelectorAll('.prompt-size-btn').forEach(btn => {
+    // Segmented size control — toggle .on class
+    document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.prompt-size-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(b => {
+                b.classList.remove('on');
+                b.classList.remove('active');
+            });
+            btn.classList.add('on');
             btn.classList.add('active');
         });
     });
+
     $('#prompt-section').style.display = 'none';
 }
+
+// ─── Export menu toggle (used by new cv-detail rail) ─────────────
+function cvToggleExportMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('cv-export-menu');
+    if (!menu) return;
+    menu.classList.toggle('open');
+}
+function cvCloseExportMenu() {
+    const menu = document.getElementById('cv-export-menu');
+    if (menu) menu.classList.remove('open');
+}
+window.cvToggleExportMenu = cvToggleExportMenu;
+window.cvCloseExportMenu  = cvCloseExportMenu;
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#cv-export-menu') && !e.target.closest('[onclick*="cvToggleExportMenu"]')) {
+        cvCloseExportMenu();
+    }
+});
 
 
 // â”€â”€â”€ Chat Bubble Renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1578,9 +2076,9 @@ function _detectAIModel(tags) {
 }
 
 function _renderChatBubbles(text, aiModel) {
-    if (!text) return '<div class="chat-empty">No conversation data available.</div>';
+    if (!text) return '<div class="cv-msg" style="color:var(--cv-text-3);font-size:12.5px;">No conversation data available.</div>';
     const lines = text.split('\n');
-    let html = '<div class="chat-bubbles">';
+    let html = '';
     let currentRole = null;
     let buffer = [];
 
@@ -1591,12 +2089,11 @@ function _renderChatBubbles(text, aiModel) {
         const isUser = currentRole === 'user';
         const avatar = isUser ? 'U' : 'AI';
         const name = isUser ? 'You' : aiModel;
-        const bubbleClass = isUser ? 'chat-bubble--user' : 'chat-bubble--ai';
-        html += `<div class="chat-bubble ${bubbleClass}">
-            <div class="chat-bubble-avatar ${isUser ? 'chat-avatar--user' : 'chat-avatar--ai'}">${avatar}</div>
-            <div class="chat-bubble-body">
-                <div class="chat-bubble-name">${name}</div>
-                <div class="chat-bubble-text">${content}</div>
+        html += `<div class="cv-msg ${isUser ? 'cv-msg-user' : 'cv-msg-ai'}">
+            <div class="cv-msg-av ${isUser ? '' : 'cv-msg-av-ai'}">${avatar}</div>
+            <div class="cv-msg-body">
+                <div class="cv-msg-name">${name}</div>
+                <div class="cv-msg-text">${content}</div>
             </div>
         </div>`;
         buffer = [];
@@ -1604,7 +2101,6 @@ function _renderChatBubbles(text, aiModel) {
 
     for (const line of lines) {
         const trimmed = line.trim();
-        // Detect role markers
         if (/^(User|Human|You):/i.test(trimmed)) {
             flushBuffer();
             currentRole = 'user';
@@ -1614,13 +2110,12 @@ function _renderChatBubbles(text, aiModel) {
             currentRole = 'ai';
             buffer.push(trimmed.replace(/^(Assistant|AI|Agent|ChatGPT|Claude|Grok|Gemini|Copilot|DeepSeek|Llama|Mistral|Bot):\s*/i, ''));
         } else {
-            if (!currentRole) currentRole = 'user'; // default
+            if (!currentRole) currentRole = 'user';
             buffer.push(line);
         }
     }
     flushBuffer();
-    html += '</div>';
-    return html;
+    return html || '<div class="cv-msg" style="color:var(--cv-text-3);font-size:12.5px;">No conversation data available.</div>';
 }
 
 // â”€â”€â”€ Final Code Snippets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1669,31 +2164,21 @@ async function copyCodeSnippet(idx) {
 let _chunksLoaded = false;
 
 async function toggleChunkViewer(contextId) {
+    // Collapse state is handled by the parent .cv-collapse.open class in the new design.
+    // This function is now only responsible for lazy-loading chunk data on first open.
     const content = $('#chunks-viewer-content');
-    const toggle = $('#chunks-toggle');
-    const icon = $('#chunks-toggle-icon');
+    if (!content) return;
+    if (_chunksLoaded) return;
 
-    if (content.style.display !== 'none') {
-        content.style.display = 'none';
-        toggle.classList.remove('open');
-        icon.textContent = 'â–¶';
-        return;
-    }
-
-    toggle.classList.add('open');
-    icon.textContent = 'â–¼';
-    content.style.display = 'block';
-
-    if (!_chunksLoaded) {
-        content.innerHTML = `
-            <div class="chunks-query-row">
-                <input type="text" class="chunks-query-input" id="chunks-query" placeholder="Enter a query to see similarity scoresâ€¦" />
-                <button class="btn btn-secondary chunks-score-btn" id="chunks-score-btn" onclick="loadChunks(${contextId})">Score</button>
-            </div>
-            <div id="chunks-list-container"><div class="chunks-empty">Loading chunksâ€¦</div></div>
-        `;
-        await loadChunks(contextId);
-    }
+    content.innerHTML = `
+        <div class="chunks-query-row" style="display:flex;gap:8px;margin-bottom:10px;">
+            <input type="text" class="chunks-query-input" id="chunks-query" placeholder="Enter a query to see similarity scores…"
+                   style="flex:1;padding:8px 10px;border-radius:8px;background:rgba(6,6,8,0.6);border:1px solid var(--cv-line);color:var(--cv-text-0);font:400 12.5px/1 var(--cv-body);" />
+            <button class="cv-snip-copy chunks-score-btn" id="chunks-score-btn" onclick="loadChunks(${contextId})">Score</button>
+        </div>
+        <div id="chunks-list-container"><div class="chunks-empty" style="color:var(--cv-text-3);font-size:12.5px;">Loading chunks…</div></div>
+    `;
+    await loadChunks(contextId);
 }
 
 async function loadChunks(contextId) {
@@ -1771,12 +2256,14 @@ function toggleOriginalChat() {
 }
 
 async function generatePrompt(id, btn) {
+    let originalHTML = '';
     if (btn) {
+        originalHTML = btn.innerHTML;
         btn.disabled = true;
-        btn.textContent = 'Generatingâ€¦';
+        btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;margin-right:8px;vertical-align:-2px;"></span>Generating…';
     }
     try {
-        const activeSize = document.querySelector('.prompt-size-btn.active');
+        const activeSize = document.querySelector('.prompt-size-btn.active, .prompt-size-btn.on');
         const size = activeSize ? activeSize.dataset.size : 'standard';
         const queryEl = document.getElementById('retrieval-query');
         const query = queryEl ? queryEl.value.trim() : '';
@@ -1798,7 +2285,7 @@ async function generatePrompt(id, btn) {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = 'Generate Continuation Prompt';
+            btn.innerHTML = originalHTML;
         }
     }
 }
@@ -2042,14 +2529,16 @@ function _showUndoToast(message, onUndo) {
 }
 
 // â”€â”€â”€ Status Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function updateStatusIndicator(online) {
+function updateStatusIndicator(online, label) {
     const dot = $('.status-dot');
     const text = $('.status-text');
     if (online) {
         dot.classList.add('online');
-        text.textContent = 'LLM Ready';
+        dot.classList.remove('offline');
+        text.textContent = label || 'LLM Ready';
     } else {
         dot.classList.remove('online');
+        dot.classList.add('offline');
         text.textContent = 'LLM Offline';
     }
 }
@@ -2190,7 +2679,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const inst  = item.installed;
 
     const statusBadge = inst
-        ? '<span class="settings-installed-badge">âœ“ Installed</span>'
+        ? '<span class=”settings-installed-badge”>✓ Installed</span>'
         : '<span class="settings-not-installed-badge">Not downloaded</span>';
 
     card.innerHTML = `
@@ -2210,7 +2699,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const badge = card.querySelector('.settings-status-badge');
     if (inst) {
         badge.className = 'settings-installed-badge';
-        badge.textContent = 'âœ“ Installed';
+        badge.textContent = '✓ Installed';
     } else {
         badge.className = 'settings-not-installed-badge';
         badge.textContent = 'Not downloaded';
@@ -2304,7 +2793,7 @@ async function _pullModelInline(modelId, card) {
         card.classList.remove('downloading');
         if (badge) {
             badge.className = 'settings-installed-badge';
-            badge.textContent = 'âœ“ Installed';
+            badge.textContent = '✓ Installed';
         }
         if (dlArea) dlArea.style.display = 'none';
         showToast(`Model "${modelId}" downloaded!`, 'success');
@@ -2323,6 +2812,17 @@ async function _pullModelInline(modelId, card) {
     }
 }
 
+// Provider icon/color map
+const _PROVIDER_META = {
+    ollama:    { icon: '🏠', label: 'Local (Ollama)', color: '#888' },
+    openai:    { icon: '⚡', label: 'OpenAI',         color: '#10a37f' },
+    anthropic: { icon: '🔶', label: 'Anthropic',      color: '#d97706' },
+    google:    { icon: '💎', label: 'Google Gemini',   color: '#4285f4' },
+};
+
+let _selectedProvider = 'ollama';
+let _cloudKeyValid = {};  // { openai: true/false, ... }
+
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
 
@@ -2331,6 +2831,23 @@ function _renderSettingsCards() {
     llmGrid.innerHTML = '';
     embedGrid.innerHTML = '';
 
+    // ── Provider grid ──
+    _selectedProvider = _settingsConfig.provider || 'ollama';
+    const provGrid = $('#settings-provider-grid');
+    provGrid.innerHTML = '';
+
+    // Ollama card
+    const ollamaCard = _makeProviderCard('ollama', _settingsConfig.ollama_running !== false);
+    provGrid.appendChild(ollamaCard);
+
+    // Cloud provider cards
+    (_settingsConfig.cloud_providers || []).forEach(cp => {
+        provGrid.appendChild(_makeProviderCard(cp.id, cp.has_key, cp));
+    });
+
+    _updateCloudSections();
+
+    // ── LLM grid (Ollama) ──
     let selectedLlm   = _settingsConfig.model;
     let selectedEmbed = _settingsConfig.embed_model;
     const originalEmbed = _settingsConfig.embed_model;
@@ -2347,57 +2864,246 @@ function _renderSettingsCards() {
         embedGrid.appendChild(_makeSettingsCard(m, selectedEmbed, 'settings-embed-grid', id => {
             selectedEmbed = id;
             embedGrid.dataset.selected = id;
-            // Show warning if embed model has changed
             const warn = $('#settings-embed-warning');
-            if (id !== originalEmbed) {
-                warn.classList.add('visible');
-            } else {
-                warn.classList.remove('visible');
-            }
+            if (id !== originalEmbed) { warn.classList.add('visible'); }
+            else { warn.classList.remove('visible'); }
         }));
     });
     embedGrid.dataset.selected = selectedEmbed;
 }
 
+function _makeProviderCard(providerId, isReady, cpInfo) {
+    const meta = _PROVIDER_META[providerId] || { icon: '☁️', label: providerId, color: '#888' };
+    const card = document.createElement('div');
+    card.className = 'settings-provider-card' + (providerId === _selectedProvider ? ' selected' : '');
+    card.dataset.provider = providerId;
+
+    let metaText = '';
+    if (providerId === 'ollama') {
+        metaText = isReady ? '✓ Running' : '✗ Offline';
+    } else {
+        metaText = isReady ? '✓ Key saved' : 'No key';
+    }
+    const metaClass = isReady ? 'provider-card-meta has-key' : 'provider-card-meta';
+
+    card.innerHTML = `
+        <div class="provider-card-icon" style="color:${meta.color}">${meta.icon}</div>
+        <div class="provider-card-name">${escapeHtml(meta.label)}</div>
+        <div class="${metaClass}">${metaText}</div>
+    `;
+
+    card.addEventListener('click', () => {
+        _selectedProvider = providerId;
+        $$('.settings-provider-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        _updateCloudSections();
+    });
+
+    return card;
+}
+
+function _updateCloudSections() {
+    const keySection = $('#cloud-key-section');
+    const modelSection = $('#cloud-model-section');
+    const divider = $('#settings-ollama-divider');
+    const isCloud = _selectedProvider !== 'ollama';
+
+    keySection.style.display = isCloud ? '' : 'none';
+    modelSection.style.display = isCloud ? '' : 'none';
+
+    if (!isCloud) return;
+
+    // Find provider info
+    const cp = (_settingsConfig.cloud_providers || []).find(p => p.id === _selectedProvider);
+    if (!cp) return;
+
+    // Update key hint
+    const docsLink = $('#cloud-key-docs-link');
+    if (docsLink && cp.docs_url) { docsLink.href = cp.docs_url; }
+
+    // Pre-fill key input if saved (masked)
+    const keyInput = $('#cloud-key-input');
+    if (cp.has_key) {
+        keyInput.placeholder = '••••••••••••••••  (key saved)';
+        keyInput.value = '';
+        _setKeyStatus('valid', '✓ Key saved and active');
+        _cloudKeyValid[_selectedProvider] = true;
+    } else {
+        keyInput.placeholder = cp.key_hint || 'Enter API key…';
+        keyInput.value = '';
+        _setKeyStatus('', '');
+        _cloudKeyValid[_selectedProvider] = false;
+    }
+
+    // Render cloud model grid
+    _renderCloudModelGrid(cp);
+}
+
+function _renderCloudModelGrid(cp) {
+    const grid = $('#settings-cloud-model-grid');
+    grid.innerHTML = '';
+    const selectedModel = cp.selected_model || (cp.models[0] && cp.models[0].id) || '';
+
+    (cp.models || []).forEach(m => {
+        const card = document.createElement('div');
+        card.className = 'settings-model-card' + (m.id === selectedModel ? ' selected' : '');
+        card.dataset.id = m.id;
+
+        const costText = m.input_cost != null ? `$${m.input_cost} / $${m.output_cost}` : '';
+
+        card.innerHTML = `
+            <div class="settings-model-card-left">
+                <div class="settings-model-name">${escapeHtml(m.label || m.id)}</div>
+                <div class="settings-model-desc">${escapeHtml(m.desc || '')}</div>
+            </div>
+            <div class="settings-model-card-right">
+                ${costText ? `<span class="settings-model-cost">${costText}</span>` : ''}
+                ${m.recommended ? '<span class="settings-model-badge">Recommended</span>' : ''}
+                <div class="settings-model-radio"></div>
+            </div>
+        `;
+        card.addEventListener('click', () => {
+            grid.querySelectorAll('.settings-model-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            grid.dataset.selected = m.id;
+        });
+        grid.appendChild(card);
+    });
+    grid.dataset.selected = selectedModel;
+}
+
+function _setKeyStatus(type, message) {
+    const el = $('#cloud-key-status');
+    el.className = 'cloud-key-status' + (type ? ' ' + type : '');
+    el.innerHTML = type === 'validating'
+        ? `<div class="cloud-key-spinner"></div> ${escapeHtml(message)}`
+        : escapeHtml(message);
+}
+
+async function _validateCloudKey() {
+    const keyInput = $('#cloud-key-input');
+    const key = keyInput.value.trim();
+    if (!key) {
+        _setKeyStatus('invalid', 'Enter an API key first');
+        return;
+    }
+    _setKeyStatus('validating', 'Validating...');
+    try {
+        const res = await fetch(`${API}/api/setup/validate-key`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider: _selectedProvider, api_key: key }),
+        });
+        const data = await res.json();
+        if (data.valid) {
+            _setKeyStatus('valid', '✓ Key is valid');
+            _cloudKeyValid[_selectedProvider] = true;
+        } else {
+            _setKeyStatus('invalid', data.error || 'Invalid key');
+            _cloudKeyValid[_selectedProvider] = false;
+        }
+    } catch (e) {
+        _setKeyStatus('invalid', 'Validation failed: ' + (e.message || 'network error'));
+    }
+}
+
+async function _deleteCloudKey() {
+    if (!_selectedProvider || _selectedProvider === 'ollama') return;
+    const provLabel = (_PROVIDER_META[_selectedProvider] || {}).label || _selectedProvider;
+    if (!confirm(`Remove saved API key for ${provLabel}?`)) return;
+    try {
+        await fetch(`${API}/api/setup/cloud-key/${_selectedProvider}`, { method: 'DELETE' });
+        _cloudKeyValid[_selectedProvider] = false;
+        _settingsConfig = null;
+        // Refresh settings config and re-render
+        const res = await fetch(`${API}/api/setup/config`);
+        _settingsConfig = await res.json();
+        _renderSettingsCards();
+        showToast(`${provLabel} API key removed`, 'success');
+    } catch (e) {
+        showToast('Failed to remove key', 'error');
+    }
+}
+
+
 async function saveSettings() {
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');
+    const cloudGrid = $('#settings-cloud-model-grid');
     const newModel  = llmGrid.dataset.selected;
     const newEmbed  = embedGrid.dataset.selected;
+    const newCloudModel = cloudGrid ? cloudGrid.dataset.selected : '';
 
     const saveBtn = $('#settings-save-btn');
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Savingâ€¦';
+    saveBtn.textContent = 'Saving…';
 
     try {
-        const [r1, r2] = await Promise.all([
+        // 1. Save Ollama models
+        await Promise.all([
             fetch(`${API}/api/setup/select-model`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newModel }) }),
             fetch(`${API}/api/setup/select-embed-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newEmbed }) }),
         ]);
-        if (!r1.ok || !r2.ok) throw new Error('Save failed');
+
+        // 2. Save cloud API key if entered
+        const keyInput = $('#cloud-key-input');
+        if (_selectedProvider !== 'ollama' && keyInput && keyInput.value.trim()) {
+            const kr = await fetch(`${API}/api/setup/cloud-key`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ provider: _selectedProvider, api_key: keyInput.value.trim(), model: newCloudModel })
+            });
+            if (!kr.ok) throw new Error('Failed to save API key');
+        }
+
+        // 3. Save selected provider + model
+        const pr = await fetch(`${API}/api/setup/select-provider`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ provider: _selectedProvider, model: _selectedProvider !== 'ollama' ? newCloudModel : newModel })
+        });
+        if (!pr.ok) {
+            const err = await pr.json().catch(() => ({}));
+            throw new Error(err.detail || 'Failed to set provider');
+        }
+
+        // Invalidate cache
+        _settingsConfig = null;
 
         // Update sidebar hint
-        _updateSettingsHint(newModel, newEmbed);
+        if (_selectedProvider === 'ollama') {
+            _updateSettingsHint(newModel, newEmbed);
+        } else {
+            const provLabel = (_PROVIDER_META[_selectedProvider] || {}).label || _selectedProvider;
+            _updateSettingsHint(newCloudModel, provLabel);
+        }
 
-        const embedChanged = _settingsConfig && newEmbed !== _settingsConfig.embed_model;
+        // Update status indicator
+        const statusText = document.querySelector('.status-text');
+        const statusDot = document.querySelector('.status-dot');
+        if (_selectedProvider !== 'ollama' && statusText && statusDot) {
+            statusDot.classList.add('online');
+            statusDot.classList.remove('offline');
+            statusText.textContent = (_PROVIDER_META[_selectedProvider] || {}).label || 'Cloud AI';
+        }
+
+        const embedChanged = newEmbed !== ((_settingsConfig || {}).embed_model);
         closeSettingsModal();
 
         if (embedChanged) {
-            showToast('Models saved. Click "Rebuild Embeddings" to apply the new embedding model.', 'success');
+            showToast('Settings saved. Click "Rebuild Embeddings" to apply the new embedding model.', 'success');
         } else {
             showToast('Settings saved', 'success');
         }
-    } catch {
-        showToast('Failed to save settings', 'error');
+    } catch (e) {
+        showToast(e.message || 'Failed to save settings', 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save Changes';
     }
 }
 
-function _updateSettingsHint(model, embed) {
+function _updateSettingsHint(model, extra) {
     const hint = $('#settings-current-model-hint');
-    if (hint) hint.textContent = `${model} Â· ${embed}`;
+    if (hint) hint.textContent = `${model} · ${extra}`;
 }
 
 // Fetch and show current models in the hint on app load
@@ -2405,7 +3111,19 @@ async function _initSettingsHint() {
     try {
         const res = await fetch(`${API}/api/setup/config`);
         const cfg = await res.json();
-        _updateSettingsHint(cfg.model, cfg.embed_model);
+        if (cfg.is_cloud_active) {
+            const provLabel = (_PROVIDER_META[cfg.active_provider] || {}).label || cfg.active_provider;
+            _updateSettingsHint(cfg.active_model, provLabel);
+            const st = document.querySelector('.status-text');
+            const sd = document.querySelector('.status-dot');
+            if (st && sd) {
+                sd.classList.add('online');
+                sd.classList.remove('offline');
+                st.textContent = provLabel;
+            }
+        } else {
+            _updateSettingsHint(cfg.model, cfg.embed_model);
+        }
     } catch { /* ignore */ }
 }
 
@@ -2587,7 +3305,7 @@ function _initAskVault() {
         });
     }
 
-    // Suggestion pills
+    // Suggestion pills (including new cv-ask-starter cards)
     $$('.ask-suggestion').forEach(btn => {
         btn.addEventListener('click', () => {
             const q = btn.getAttribute('data-q');
@@ -2596,7 +3314,41 @@ function _initAskVault() {
                 askVault(q);
             }
         });
+        // Radial spotlight that tracks the cursor, matches dashboard/library cards.
+        btn.addEventListener('pointermove', e => {
+            const r = btn.getBoundingClientRect();
+            btn.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100) + '%');
+            btn.style.setProperty('--my', ((e.clientY - r.top)  / r.height * 100) + '%');
+        });
+        btn.addEventListener('pointerleave', () => {
+            btn.style.setProperty('--mx', '50%');
+            btn.style.setProperty('--my', '50%');
+        });
     });
+
+    // "New chat" button in the rail — mirrors the Clear-chat behavior.
+    const newChatBtn = $('#cv-ask-new-chat');
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            if (state.askStreaming) return;
+            state.askHistory = [];
+            const container = $('#ask-messages');
+            const empty = $('#ask-empty');
+            if (container) container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
+            if (empty) empty.style.display = '';
+            if (clearBtn) clearBtn.style.display = 'none';
+            if (input) input.value = '';
+            _askScrollToBottom();
+        });
+    }
+}
+
+// Scroll to the bottom of the Ask chat. The scrollable parent moved from
+// #ask-messages to .cv-ask-scroll in the cv-ask redesign — this helper
+// finds whichever one is actually scrollable.
+function _askScrollToBottom() {
+    const scroller = document.querySelector('.cv-ask-scroll') || $('#ask-messages');
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
 }
 
 function _askRenderUserMsg(text) {
@@ -2613,20 +3365,20 @@ function _askRenderUserMsg(text) {
         </div>
     `;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    _askScrollToBottom();
 }
 
 function _askRenderThinking() {
     const container = $('#ask-messages');
     const div = document.createElement('div');
-    div.className = 'ask-thinking';
+    div.className = 'ask-thinking cv-ask-thinking';
     div.id = 'ask-thinking-indicator';
     div.innerHTML = `
-        <div class="ask-thinking-dots"><span></span><span></span><span></span></div>
-        <span>Searching your vaultâ€¦</span>
+        <span class="cv-ask-orbit" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="cv-ask-thinking-text">Searching your vault…</span>
     `;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    _askScrollToBottom();
 }
 
 function _askRemoveThinking() {
@@ -2679,39 +3431,42 @@ function _askRenderAssistantMsg() {
     const div = document.createElement('div');
     div.className = 'ask-msg ask-msg-assistant';
     div.id = 'ask-streaming-msg';
+    // Volt bolt avatar to match the sidebar brand mark.
     div.innerHTML = `
-        <div class="ask-msg-avatar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="ask-msg-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
         </div>
         <div class="ask-msg-body">
             <div class="ask-msg-content" id="ask-streaming-content"><span class="ask-cursor"></span></div>
         </div>
     `;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    _askScrollToBottom();
 }
 
 function _askAppendToken(token) {
     const content = $('#ask-streaming-content');
     if (!content) return;
 
-    // Remove cursor, append token, add cursor back
+    // Remove cursor, wrap-append the new token, re-add cursor at end.
     const cursor = content.querySelector('.ask-cursor');
     if (cursor) cursor.remove();
 
-    // Store raw text in a data attribute for final markdown rendering
+    // Keep the raw source text for final markdown rendering.
     const rawAttr = content.getAttribute('data-raw') || '';
     content.setAttribute('data-raw', rawAttr + token);
 
-    // For streaming: just append as text with cursor
-    content.textContent = rawAttr + token;
+    // Append the new token as a span so it fades in.
+    const tokenSpan = document.createElement('span');
+    tokenSpan.className = 'ask-token';
+    tokenSpan.textContent = token;
+    content.appendChild(tokenSpan);
+
     const newCursor = document.createElement('span');
     newCursor.className = 'ask-cursor';
     content.appendChild(newCursor);
 
-    // Auto-scroll
-    const container = $('#ask-messages');
-    container.scrollTop = container.scrollHeight;
+    _askScrollToBottom();
 }
 
 function _askFinalizeMsg(sources) {
@@ -2722,35 +3477,48 @@ function _askFinalizeMsg(sources) {
     const cursor = content.querySelector('.ask-cursor');
     if (cursor) cursor.remove();
 
-    // Convert raw text to markdown HTML
+    // Convert the accumulated raw text to markdown HTML.
     const raw = content.getAttribute('data-raw') || content.textContent || '';
     content.innerHTML = _askSimpleMarkdown(raw);
 
-    // Remove streaming ID
+    // Drop streaming IDs now that this message is finalized.
     const msg = $('#ask-streaming-msg');
     if (msg) msg.removeAttribute('id');
     if (content) content.removeAttribute('id');
 
-    // Render source chips
+    // Source chips — each chip colored by its source AI brand (ChatGPT green,
+    // Claude orange, Grok white, Gemini blue, etc.) using the shared _AI_BRAND map.
     if (sources && sources.length > 0) {
         const body = content.parentElement; // .ask-msg-body
         const sourcesDiv = document.createElement('div');
         sourcesDiv.className = 'ask-sources';
-        sourcesDiv.innerHTML = `
-            <span class="ask-sources-label">Sources from your vault</span>
-            ${sources.map(s => `
-                <button class="ask-source-chip" onclick="showDetail(${s.context_id})" title="${escapeHtml(s.title)}">
-                    ðŸ“„ ${escapeHtml(s.title.length > 40 ? s.title.slice(0, 37) + 'â€¦' : s.title)}
-                    <span class="ask-source-score">${s.score}</span>
-                </button>
-            `).join('')}
-        `;
+
+        const chipsHtml = sources.map(s => {
+            const brand = s.source ? _AI_BRAND[s.source] : null;
+            const color = brand ? brand.color : 'var(--cv-volt)';
+            const title = String(s.title || 'Untitled');
+            const short = title.length > 42 ? title.slice(0, 40) + '…' : title;
+            const pct = typeof s.score === 'number' ? Math.round(s.score * 100) : null;
+            const score = pct !== null ? `<span class="ask-source-score">${pct}%</span>` : '';
+            return `<button class="ask-source-chip" style="--src-color:${color}"
+                            onclick="showDetail(${s.context_id})"
+                            title="${escapeHtml(title)}${brand ? ' · ' + brand.label : ''}">
+                        <span class="ask-source-dot" aria-hidden="true"></span>
+                        <span class="ask-source-title">${escapeHtml(short)}</span>
+                        ${score}
+                    </button>`;
+        }).join('');
+
+        sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources</span>${chipsHtml}`;
         body.appendChild(sourcesDiv);
     }
 
-    // Auto-scroll
-    const container = $('#ask-messages');
-    container.scrollTop = container.scrollHeight;
+    _askScrollToBottom();
+}
+
+function _askSetStatus(text) {
+    const el = document.getElementById('cv-ask-status-text');
+    if (el) el.textContent = text;
 }
 
 async function askVault(question) {
@@ -2763,6 +3531,7 @@ async function askVault(question) {
     if (input) input.value = '';
     if (sendBtn) sendBtn.disabled = true;
     if (clearBtn) clearBtn.style.display = '';
+    _askSetStatus('Thinking…');
 
     // Add user message to history & render
     state.askHistory.push({ role: 'user', content: question });
@@ -2788,6 +3557,7 @@ async function askVault(question) {
 
         _askRemoveThinking();
         _askRenderAssistantMsg();
+        _askSetStatus('Streaming…');
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -2849,6 +3619,7 @@ async function askVault(question) {
     state.askHistory.push({ role: 'assistant', content: fullResponse });
     state.askStreaming = false;
     if (sendBtn && input) sendBtn.disabled = !input.value.trim();
+    _askSetStatus('Ready');
 }
 
 // â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2968,6 +3739,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // Deep search toggle
     if ($('#btn-deep-search')) $('#btn-deep-search').addEventListener('click', toggleDeepSearch);
 
+    // Library view-mode seg (Grid / Rows)
+    const _viewSeg = document.getElementById('cv-view-seg');
+    if (_viewSeg) {
+        _viewSeg.querySelectorAll('button[data-view]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.view;
+                _viewSeg.querySelectorAll('button').forEach(b => {
+                    b.classList.toggle('on', b === btn);
+                    b.setAttribute('aria-selected', String(b === btn));
+                });
+                const grid = document.getElementById('contexts-grid');
+                if (grid) grid.setAttribute('data-view', mode);
+                try { localStorage.setItem('cv-lib-view', mode); } catch(e) {}
+            });
+        });
+        // Restore saved mode
+        try {
+            const saved = localStorage.getItem('cv-lib-view');
+            if (saved === 'rows' || saved === 'grid') {
+                const btn = _viewSeg.querySelector(`button[data-view="${saved}"]`);
+                if (btn) btn.click();
+            }
+        } catch(e) {}
+    }
+
+    // Ctrl/Cmd + K focuses the library search — or the Ask input when on Ask Vault.
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+            if (state.view === 'library') {
+                e.preventDefault();
+                const input = document.getElementById('search-input');
+                if (input) { input.focus(); input.select(); }
+            } else if (state.view === 'ask') {
+                e.preventDefault();
+                const input = document.getElementById('ask-input');
+                if (input) { input.focus(); input.select(); }
+            }
+        }
+    });
+
     // Edit modal
     $('#cancel-edit-btn').addEventListener('click', closeEditModal);
     $('#save-edit-btn').addEventListener('click', saveEdit);
@@ -2979,6 +3790,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Theme toggle
     if ($('#btn-theme-toggle')) $('#btn-theme-toggle').addEventListener('click', toggleTheme);
+
+    // Vibe toggle (Volt / Space)
+    const _vibeBtns = document.querySelectorAll('#vibeToggle button');
+    _vibeBtns.forEach(b => b.addEventListener('click', () => {
+        const v = b.dataset.vibe;
+        document.documentElement.setAttribute('data-vibe', v);
+        _vibeBtns.forEach(x => {
+            x.classList.toggle('on', x === b);
+            x.setAttribute('aria-selected', String(x === b));
+        });
+        try { localStorage.setItem('cv-vibe', v); } catch(e) {}
+    }));
+    try {
+        const _savedVibe = localStorage.getItem('cv-vibe');
+        if (_savedVibe) {
+            document.documentElement.setAttribute('data-vibe', _savedVibe);
+            _vibeBtns.forEach(x => {
+                x.classList.toggle('on', x.dataset.vibe === _savedVibe);
+                x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
+            });
+        }
+    } catch(e) {}
 
     // Sidebar collapse
     if ($('#sidebar-collapse-btn')) $('#sidebar-collapse-btn').addEventListener('click', toggleSidebar);
@@ -3001,6 +3834,14 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#settings-modal').addEventListener('click', (e) => {
         if (e.target === $('#settings-modal')) closeSettingsModal();
     });
+
+    // Cloud key validate + show/hide toggle
+    $('#cloud-key-validate-btn').addEventListener('click', _validateCloudKey);
+    $('#cloud-key-toggle').addEventListener('click', () => {
+        const inp = $('#cloud-key-input');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+    });
+    $('#cloud-key-delete-btn') && $('#cloud-key-delete-btn').addEventListener('click', _deleteCloudKey);
 
 
     // â”€â”€ Keyboard Shortcuts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

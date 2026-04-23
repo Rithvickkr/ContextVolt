@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-vibe="volt">
 
 <head>
     <meta charset="UTF-8">
@@ -32,6 +32,11 @@
 </head>
 
 <body>
+    <!-- Cinematic ambient layers (z-index below app) -->
+    <div class="cv-ambient" aria-hidden="true"></div>
+    <div class="cv-stars" aria-hidden="true"></div>
+    <div class="cv-grain" aria-hidden="true"></div>
+
     <!-- Setup Wizard (shown during initialization) -->
     <div id="setup-wizard" class="setup-wizard" role="dialog" aria-modal="true" aria-labelledby="setup-wizard-title">
         <div class="setup-shell">
@@ -105,49 +110,55 @@
     <!-- Main Application -->
     <div id="app" class="app-container" style="display:none;">
         <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar" aria-label="Application sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <svg width="28" height="28" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
-                        <rect width="64" height="64" rx="16" fill="var(--text-primary)" />
-                        <path d="M20 20h24v4H20zM20 28h20v4H20zM20 36h16v4H20zM20 44h24v4H20z"
-                            fill="var(--bg-primary)" />
+        <aside class="sidebar cv-side" id="sidebar" aria-label="Application sidebar">
+            <!-- Brand -->
+            <div class="cv-brand">
+                <div class="cv-logo" aria-hidden="true">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                        <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#1a1200" stroke="#1a1200" stroke-width="0.8" stroke-linejoin="round"/>
                     </svg>
-                    <span class="sidebar-brand">ContextVolt</span>
                 </div>
-                <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar" data-tooltip="Collapse or expand the sidebar">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m15 18-6-6 6-6"/>
-                    </svg>
+                <div class="cv-brand-text">
+                    <span class="n">ContextVolt</span>
+                    <span class="v">v2 · local</span>
+                </div>
+                <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                 </button>
             </div>
-            <nav class="sidebar-nav" aria-label="Main navigation">
-                <button class="nav-item active" data-view="input" id="nav-input"
-                        aria-current="page" aria-label="New Chat — paste a conversation" data-tooltip="Paste an AI conversation to summarize & save">
-                    <span class="nav-icon" aria-hidden="true">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+
+            <!-- Workspace nav -->
+            <nav class="cv-side-section" aria-label="Main navigation">
+                <div class="cv-side-label">Workspace</div>
+                <button class="nav-item cv-nav active" data-view="input" id="nav-input" aria-current="page">
+                    <span class="cv-nav-ic" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                     </span>
                     <span class="nav-label">Dashboard</span>
+                    <span class="cv-nav-kbd">D</span>
                 </button>
-                <button class="nav-item" data-view="library" id="nav-library"
-                        aria-current="false" aria-label="Library — browse saved conversations" data-tooltip="Browse & search your saved conversations">
-                    <span class="nav-icon" aria-hidden="true">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+                <button class="nav-item cv-nav" data-view="library" id="nav-library" aria-current="false">
+                    <span class="cv-nav-ic" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
                     </span>
                     <span class="nav-label">Library</span>
+                    <span class="cv-nav-kbd">L</span>
                 </button>
-                <button class="nav-item" data-view="ask" id="nav-ask"
-                        aria-current="false" aria-label="Ask your vault — get answers from saved conversations" data-tooltip="Ask questions about your saved conversations">
-                    <span class="nav-icon" aria-hidden="true">❇️</span>
+                <button class="nav-item cv-nav" data-view="ask" id="nav-ask" aria-current="false">
+                    <span class="cv-nav-ic" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg>
+                    </span>
                     <span class="nav-label">Ask Vault</span>
+                    <span class="cv-nav-kbd">A</span>
                 </button>
             </nav>
+
             <!-- Collections -->
-            <div class="collections-section" id="collections-section">
-                <div class="collections-header">
-                    <span class="collections-label">Collections</span>
-                    <button class="btn-add-collection" id="btn-add-collection" title="New collection" aria-label="Create new collection">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            <div class="cv-side-section" id="collections-section">
+                <div class="cv-side-label">
+                    <span>Collections</span>
+                    <button class="cv-side-iconbtn" id="btn-add-collection" aria-label="Create new collection">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
                 </div>
                 <div id="collection-create-row" style="display:none;" class="collection-create-row">
@@ -163,53 +174,52 @@
                     </div>
                     <input class="collection-name-input" id="collection-name-input" type="text" placeholder="Collection name…" maxlength="40" />
                 </div>
-                <div class="collections-list" id="collections-list">
-                    <!-- rendered by JS -->
-                </div>
+                <div class="collections-list" id="collections-list"><!-- rendered by JS --></div>
             </div>
-            <div class="sidebar-footer">
-                <!-- Preferences -->
-                <div class="sidebar-section-label">Preferences</div>
-                <button class="btn-settings" id="btn-theme-toggle" aria-label="Toggle light/dark theme" data-tooltip="Switch between light and dark mode">
-                    <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                    <svg id="theme-icon-light" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+
+            <!-- Footer: Preferences / Tools / System -->
+            <div class="cv-side-foot">
+                <div class="cv-side-label">Preferences</div>
+                <button class="cv-util" id="btn-theme-toggle" aria-label="Toggle light/dark theme">
+                    <span class="cv-util-ic">
+                        <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                        <svg id="theme-icon-light" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                    </span>
                     <span id="theme-label">Light Mode</span>
                 </button>
-                <button class="btn-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection" data-tooltip="Choose your AI summarization & embedding models">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
-                    Settings &amp; Models
+                <button class="cv-util" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
+                    <span>Settings &amp; Models</span>
                 </button>
-                <div class="settings-current-model" id="settings-current-model-hint" aria-live="polite" aria-label="Active models"></div>
+                <div class="cv-util-hint" id="settings-current-model-hint" aria-live="polite" aria-label="Active models"></div>
 
-                <!-- Tools -->
-                <div class="sidebar-section-label">Tools</div>
-                <button class="btn-embed-all" id="btn-rebuild-embeddings"
-                        title="Re-chunk and re-embed all contexts using the current embedding model. Use after switching embedding models."
-                        aria-label="Rebuild embeddings — re-chunk and re-embed all contexts with the current model"
-                        data-tooltip="Re-chunk & re-embed all contexts with the current model">
-                    Rebuild Embeddings
+                <div class="cv-side-label">Tools</div>
+                <button class="cv-util" id="btn-rebuild-embeddings" aria-label="Rebuild embeddings">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
+                    <span>Rebuild Embeddings</span>
                 </button>
-                <button class="btn-shortcuts" id="btn-shortcuts" aria-label="Keyboard shortcuts" data-tooltip="View all keyboard shortcuts">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M18 12h.01M8 16h8"/></svg>
-                    Shortcuts <kbd>?</kbd>
+                <button class="cv-util" id="btn-shortcuts" aria-label="Keyboard shortcuts">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
+                    <span>Shortcuts</span>
+                    <kbd class="cv-nav-kbd">?</kbd>
                 </button>
 
-                <!-- System -->
-                <div class="sidebar-section-label">System</div>
-                <button class="btn-settings" id="btn-system" aria-haspopup="dialog" aria-label="System status and logs" data-tooltip="View server health, Ollama status & logs">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 8h2M7 12h4M13 8h4M13 12h4"/></svg>
-                    System
+                <div class="cv-side-label">System</div>
+                <button class="cv-util" id="btn-system" aria-haspopup="dialog" aria-label="System status and logs">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+                    <span>System</span>
                 </button>
-                <button class="btn-settings" id="btn-backup" aria-label="Download a backup of your vault" data-tooltip="Download a .db backup of your entire vault">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Backup Vault
+                <button class="cv-util" id="btn-backup" aria-label="Download a backup of your vault">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                    <span>Backup Vault</span>
                 </button>
-                <button class="btn-restart" id="btn-restart" aria-label="Restart the backend server" data-tooltip="Restart the ContextVolt backend server">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                    Restart Backend
+                <button class="cv-util cv-util-danger" id="btn-restart" aria-label="Restart the backend server">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
+                    <span>Restart Backend</span>
                 </button>
-                <div class="status-indicator" id="status-indicator" aria-live="polite" aria-label="Backend connection status" data-tooltip="Backend connection status">
-                    <span class="status-dot" aria-hidden="true"></span>
+
+                <div class="cv-status" id="status-indicator" aria-live="polite" aria-label="Backend connection status">
+                    <span class="pulse status-dot offline" aria-hidden="true"></span>
                     <span class="status-text">Offline</span>
                 </div>
             </div>
@@ -218,103 +228,217 @@
         <!-- Main Content -->
         <main class="main-content" id="main-content" aria-label="Main content">
             <!-- Dashboard View -->
-            <div class="view" id="view-input" role="region" aria-labelledby="view-input-heading">
-                <!-- Dashboard Header: Greeting + Quick Capture Button -->
-                <div class="dashboard-header">
-                    <div class="dashboard-greeting-area">
-                        <h1 id="view-input-heading" class="dashboard-greeting">Good afternoon,<br><span class="dashboard-greeting-name">User</span></h1>
+            <div class="view cv-main" id="view-input" role="region" aria-labelledby="view-input-heading">
+
+                <!-- Topbar -->
+                <div class="cv-topbar">
+                    <div class="cv-breadcrumb">Workspace / <b>Dashboard</b></div>
+                    <div class="cv-vibe" id="vibeToggle" role="tablist" aria-label="Visual vibe" style="margin-left:auto;">
+                        <button data-vibe="volt" class="on" role="tab" aria-selected="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                            Volt
+                        </button>
+                        <button data-vibe="space" role="tab" aria-selected="false">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-25 12 12)"/></svg>
+                            Space
+                        </button>
                     </div>
-                    <button class="btn btn-primary quick-capture-btn" id="quick-capture-toggle" aria-label="Quick Capture">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                    <button class="cv-primary" id="quick-capture-toggle" aria-label="Quick Capture">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
                         Quick Capture
                     </button>
                 </div>
 
-                <!-- Stats Cards -->
-                <div class="dashboard-stats" id="dashboard-stats">
-                    <div class="stat-card" id="stat-contexts">
-                        <div class="stat-label">Total Contexts</div>
-                        <div class="stat-bottom">
-                            <div class="stat-value" id="stat-contexts-val">—</div>
-                            <div class="stat-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-                            </div>
+                <!-- Hero -->
+                <section class="cv-hero">
+                    <div class="cv-hero-eyebrow" id="cv-hero-eyebrow">Dashboard</div>
+                    <h1 id="view-input-heading">
+                        Welcome back,<br>
+                        <span class="voltword" id="cv-greeting-name">User.</span>
+                    </h1>
+                </section>
+
+                <!-- Stats -->
+                <section class="cv-stats-grid" id="dashboard-stats" aria-label="Vault statistics">
+                    <article class="cv-stat">
+                        <div class="k"><span class="dot"></span>Contexts</div>
+                        <div class="v"><span id="stat-contexts-val">0</span></div>
+                        <div class="d" aria-hidden="true">
+                            <i style="height:22%"></i><i style="height:38%"></i><i style="height:30%"></i><i style="height:52%"></i><i style="height:46%"></i><i style="height:68%"></i><i style="height:58%"></i><i style="height:74%"></i><i style="height:82%"></i><i style="height:70%"></i><i style="height:88%"></i><i style="height:100%"></i>
+                        </div>
+                        <div class="meta"><span>Total saved</span></div>
+                    </article>
+                    <article class="cv-stat">
+                        <div class="k"><span class="dot"></span>Chunks indexed</div>
+                        <div class="v"><span id="stat-chunks-val">0</span></div>
+                        <div class="d" aria-hidden="true">
+                            <i style="height:12%"></i><i style="height:30%"></i><i style="height:46%"></i><i style="height:58%"></i><i style="height:42%"></i><i style="height:66%"></i><i style="height:72%"></i><i style="height:60%"></i><i style="height:78%"></i><i style="height:86%"></i><i style="height:92%"></i><i style="height:98%"></i>
+                        </div>
+                        <div class="meta"><span>Semantic units</span></div>
+                    </article>
+                    <article class="cv-stat">
+                        <div class="k"><span class="dot"></span>Questions asked</div>
+                        <div class="v"><span id="stat-asks-val">0</span></div>
+                        <div class="d" aria-hidden="true">
+                            <i style="height:34%"></i><i style="height:28%"></i><i style="height:46%"></i><i style="height:40%"></i><i style="height:62%"></i><i style="height:50%"></i><i style="height:68%"></i><i style="height:58%"></i><i style="height:74%"></i><i style="height:66%"></i><i style="height:82%"></i><i style="height:78%"></i>
+                        </div>
+                        <div class="meta"><span>RAG queries</span></div>
+                    </article>
+                    <article class="cv-stat">
+                        <div class="k"><span class="dot"></span>Storage</div>
+                        <div class="v"><span id="stat-storage-val">0</span><span class="unit">MB</span></div>
+                        <div class="d" aria-hidden="true">
+                            <i style="height:10%"></i><i style="height:14%"></i><i style="height:22%"></i><i style="height:28%"></i><i style="height:36%"></i><i style="height:42%"></i><i style="height:50%"></i><i style="height:58%"></i><i style="height:66%"></i><i style="height:74%"></i><i style="height:82%"></i><i style="height:90%"></i>
+                        </div>
+                        <div class="meta"><span>On disk</span></div>
+                    </article>
+                </section>
+
+                <!-- Pipeline: streaming summarization (hidden until a job starts) -->
+                <section class="cv-pipeline" id="cv-pipeline" style="display:none;" aria-label="Summarization pipeline">
+                    <div class="cv-pipeline-head">
+                        <span class="cv-pipe-status">Summarizing</span>
+                        <span class="cv-pipe-title" id="cv-pipe-title">Processing conversation…</span>
+                    </div>
+                    <div class="cv-pipe-steps">
+                        <div class="cv-pipe-step" id="cv-step-1">
+                            <div class="lbl"><span class="num">01</span> Summarize</div>
+                            <div class="name" id="cv-step-1-name">Waiting…</div>
+                            <div class="bar"><i id="cv-step-1-bar"></i></div>
+                        </div>
+                        <div class="cv-pipe-step" id="cv-step-2">
+                            <div class="lbl"><span class="num">02</span> Save</div>
+                            <div class="name">Store to vault</div>
+                            <div class="bar"><i id="cv-step-2-bar"></i></div>
+                        </div>
+                        <div class="cv-pipe-step" id="cv-step-3">
+                            <div class="lbl"><span class="num">03</span> Chunk</div>
+                            <div class="name">Semantic split</div>
+                            <div class="bar"><i id="cv-step-3-bar"></i></div>
+                        </div>
+                        <div class="cv-pipe-step" id="cv-step-4">
+                            <div class="lbl"><span class="num">04</span> Embed</div>
+                            <div class="name">Vector index</div>
+                            <div class="bar"><i id="cv-step-4-bar"></i></div>
                         </div>
                     </div>
-                    <div class="stat-card" id="stat-chunks">
-                        <div class="stat-label">Chats Saved</div>
-                        <div class="stat-bottom">
-                            <div class="stat-value" id="stat-chunks-val">—</div>
-                            <div class="stat-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.5"/></svg>
-                            </div>
-                        </div>
+                    <div class="cv-stream" id="cv-stream">
+                        <span id="cv-stream-text"></span><span class="caret" aria-hidden="true"></span>
                     </div>
-                    <div class="stat-card" id="stat-storage">
-                        <div class="stat-label">Storage</div>
-                        <div class="stat-bottom">
-                            <div class="stat-value" id="stat-storage-val">—</div>
-                            <div class="stat-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                </section>
 
                 <!-- Recent Contexts -->
-                <div class="dashboard-recent-section" id="dashboard-recent-section">
-                    <div class="dashboard-section-header">
-                        <h2 class="dashboard-section-title">Recent Contexts</h2>
-                        <button class="btn btn-ghost dashboard-see-all" id="dashboard-see-all" aria-label="See all contexts">
-                            See all
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                        </button>
-                    </div>
-                    <div class="dashboard-recent-grid" id="dashboard-recent-grid">
-                        <!-- Recent context cards rendered by JS -->
-                        <div class="dashboard-recent-empty" id="dashboard-recent-empty">
-                            <p>No contexts yet. Use Quick Capture to save your first conversation!</p>
-                        </div>
+                <div class="cv-sec-head">
+                    <h2 class="cv-sec-title">
+                        Recent contexts
+                        <span class="idx" id="cv-recent-idx"></span>
+                    </h2>
+                    <div class="cv-sec-actions">
+                        <button class="cv-chip on" id="dashboard-see-all" aria-label="See all contexts">See all →</button>
                     </div>
                 </div>
+                <section class="cv-recent-grid" id="dashboard-recent-grid" aria-live="polite" aria-label="Recent contexts">
+                    <div class="cv-empty-state" id="dashboard-recent-empty">
+                        <p>No contexts yet. Use Quick Capture to save your first conversation!</p>
+                    </div>
+                </section>
+
             </div>
 
             <!-- Quick Capture View (separate page) -->
-            <div class="view" id="view-capture" style="display:none;" role="region" aria-labelledby="view-capture-heading">
-                <div class="capture-view-header">
-                    <button class="btn btn-ghost" id="capture-back-btn" aria-label="Back to Dashboard">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                        Dashboard
-                    </button>
-                </div>
-                <div class="capture-view-content">
-                    <div class="capture-hero">
-                        <div class="capture-hero-icon" aria-hidden="true">
-                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.5"/></svg>
-                        </div>
-                        <h1 id="view-capture-heading" class="capture-title">Quick Capture</h1>
-                        <p class="capture-desc" id="chat-textarea-desc">Paste any AI conversation below — it'll be summarized, chunked, and embedded into your vault.</p>
+            <div class="view cv-capture-shell" id="view-capture" style="display:none;" role="region" aria-labelledby="view-capture-heading">
+                <!-- Top rail -->
+                <div class="cv-capture-rail">
+                    <div class="cv-capture-rail-meta">
+                        <span>Workspace</span>
+                        <span class="cv-rail-sep">·</span>
+                        <b>Quick Capture</b>
+                        <span class="cv-rail-sep">·</span>
+                        <span>summarize + embed</span>
                     </div>
-                    <div class="input-area">
-                        <label for="chat-textarea" class="sr-only">Conversation text</label>
-                        <textarea id="chat-textarea" class="chat-textarea"
-                            placeholder="Paste your AI conversation here..."
-                            aria-describedby="chat-textarea-desc char-count"
-                            spellcheck="false"></textarea>
-                        <div class="input-actions">
-                            <span class="char-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
-                            <button class="btn btn-primary" id="summarize-btn" disabled
-                                    aria-disabled="true" aria-busy="false"
-                                    aria-describedby="chat-textarea-desc">
-                                <span class="btn-text">Summarize &amp; Save</span>
-                                <span class="btn-loader" style="display:none;" aria-hidden="true">
-                                    <span class="summarize-progress-bar">
-                                        <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
-                                    </span>
-                                    <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
-                                </span>
-                            </button>
+                    <div class="cv-capture-rail-actions">
+                        <button class="cv-ibtn" id="capture-back-btn" aria-label="Back to Library">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                            <span>Library</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Scroll area -->
+                <div class="cv-capture-scroll">
+                    <div class="cv-capture-inner">
+
+                        <!-- Hero -->
+                        <div class="cv-capture-hero">
+                            <div class="cv-capture-orb" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.6"/></svg>
+                            </div>
+                            <div class="cv-ask-eyebrow">
+                                <span class="cv-ebadge">Vault</span>
+                                <span class="cv-dot"></span>
+                                <span>Quick Capture</span>
+                            </div>
+                            <h1 id="view-capture-heading" class="cv-capture-title">Save to your <span class="voltword">vault</span>.</h1>
+                            <p class="cv-capture-desc" id="chat-textarea-desc">Paste any AI conversation — it'll be summarized, chunked, and embedded so you can search and ask questions later.</p>
                         </div>
+
+                        <!-- Input card -->
+                        <div class="cv-capture-card">
+                            <div class="cv-capture-card-head">
+                                <span class="cv-capture-card-label">Conversation</span>
+                                <div class="cv-capture-hints">
+                                    <span>ChatGPT</span>
+                                    <span class="cv-rail-sep">·</span>
+                                    <span>Claude</span>
+                                    <span class="cv-rail-sep">·</span>
+                                    <span>Gemini</span>
+                                    <span class="cv-rail-sep">·</span>
+                                    <span>Any AI</span>
+                                </div>
+                            </div>
+                            <label for="chat-textarea" class="sr-only">Conversation text</label>
+                            <textarea id="chat-textarea" class="cv-capture-textarea chat-textarea"
+                                placeholder="Paste your AI conversation here…"
+                                aria-describedby="chat-textarea-desc char-count"
+                                spellcheck="false"></textarea>
+                            <div class="cv-capture-footer">
+                                <span class="cv-capture-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
+                                <button class="cv-primary cv-capture-submit" id="summarize-btn" disabled
+                                        aria-disabled="true" aria-busy="false"
+                                        aria-describedby="chat-textarea-desc">
+                                    <span class="btn-text">Summarize &amp; Save</span>
+                                    <span class="btn-loader" style="display:none;" aria-hidden="true">
+                                        <span class="summarize-progress-bar">
+                                            <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
+                                        </span>
+                                        <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Feature pills -->
+                        <div class="cv-capture-tips">
+                            <div class="cv-capture-tip">
+                                <span class="cv-capture-tip-ic">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                </span>
+                                <span>Auto-summarized with AI</span>
+                            </div>
+                            <div class="cv-capture-tip">
+                                <span class="cv-capture-tip-ic">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                </span>
+                                <span>Embedded for semantic search</span>
+                            </div>
+                            <div class="cv-capture-tip">
+                                <span class="cv-capture-tip-ic">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                </span>
+                                <span>Queryable via Ask Vault</span>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -322,103 +446,199 @@
             <!-- Ask Vault View -->
             <div class="view" id="view-ask" style="display:none;" role="region" aria-labelledby="view-ask-heading">
                 <div class="ask-container">
-                    <div class="ask-messages" id="ask-messages">
-                        <!-- Empty state -->
-                        <div class="ask-empty" id="ask-empty">
-                            <div class="ask-empty-icon" aria-hidden="true">❇️</div>
-                            <h1 id="view-ask-heading">Ask Your Vault</h1>
-                            <p class="ask-empty-desc">Ask any question and get answers sourced from your saved conversations. Powered by local RAG.</p>
-                            <div class="ask-suggestions">
-                                <button class="ask-suggestion" data-q="What topics have I discussed most?">💡 What topics have I discussed most?</button>
-                                <button class="ask-suggestion" data-q="Summarize my recent conversations">📋 Summarize my recent conversations</button>
-                                <button class="ask-suggestion" data-q="What code patterns have I explored?">🔧 What code patterns have I explored?</button>
+                    <div class="cv-ask-shell">
+
+                        <!-- Top rail -->
+                        <div class="cv-ask-rail">
+                            <div class="cv-ask-rail-meta">
+                                <span>Workspace</span>
+                                <span class="cv-rail-sep">·</span>
+                                <b>Ask Vault</b>
+                                <span class="cv-rail-sep">·</span>
+                                <span id="cv-ask-status-text">Ready</span>
+                            </div>
+                            <div class="cv-ask-rail-actions">
+                                <button class="cv-ibtn" id="cv-ask-new-chat" title="New chat" aria-label="Start a new chat">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                                </button>
                             </div>
                         </div>
-                        <!-- Messages rendered by JS -->
-                    </div>
-                    <div class="ask-input-bar" id="ask-input-bar">
-                        <div class="ask-input-row">
-                            <label for="ask-input" class="sr-only">Ask a question</label>
-                            <input type="text" id="ask-input" class="ask-input" placeholder="Ask anything about your saved conversations…" autocomplete="off" spellcheck="false" />
-                            <button class="ask-send-btn" id="ask-send-btn" aria-label="Send question" disabled>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                            </button>
+
+                        <!-- Scroll area with messages -->
+                        <div class="cv-ask-scroll">
+                            <div class="ask-messages" id="ask-messages">
+
+                                <!-- Empty state hero -->
+                                <div class="ask-empty cv-ask-empty" id="ask-empty">
+                                    <div class="cv-ask-orb" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                    </div>
+                                    <div class="cv-ask-eyebrow">
+                                        <span class="cv-ebadge">Vault</span>
+                                        <span class="cv-dot"></span>
+                                        <span>Local RAG · streaming</span>
+                                    </div>
+                                    <h1 id="view-ask-heading" class="cv-ask-title">Ask your <span class="voltword">vault</span>.</h1>
+                                    <p class="cv-ask-desc">Answers streamed from your saved conversations — every claim traceable back to a context in your library.</p>
+
+                                    <div class="cv-ask-starters" role="list">
+                                        <button class="ask-suggestion cv-ask-starter" data-q="What topics have I discussed most?" role="listitem" style="--mx:50%;--my:50%;">
+                                            <span class="cv-ask-starter-ic">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-6"/></svg>
+                                            </span>
+                                            <span class="cv-ask-starter-body">
+                                                <span class="cv-ask-starter-t">What topics have I discussed most?</span>
+                                                <span class="cv-ask-starter-meta">Trends</span>
+                                            </span>
+                                        </button>
+                                        <button class="ask-suggestion cv-ask-starter" data-q="Summarize my recent conversations" role="listitem" style="--mx:50%;--my:50%;">
+                                            <span class="cv-ask-starter-ic">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+                                            </span>
+                                            <span class="cv-ask-starter-body">
+                                                <span class="cv-ask-starter-t">Summarize my recent conversations</span>
+                                                <span class="cv-ask-starter-meta">Overview</span>
+                                            </span>
+                                        </button>
+                                        <button class="ask-suggestion cv-ask-starter" data-q="What code patterns have I explored?" role="listitem" style="--mx:50%;--my:50%;">
+                                            <span class="cv-ask-starter-ic">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                            </span>
+                                            <span class="cv-ask-starter-body">
+                                                <span class="cv-ask-starter-t">What code patterns have I explored?</span>
+                                                <span class="cv-ask-starter-meta">Code</span>
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Messages rendered by JS -->
+                            </div>
                         </div>
-                        <div class="ask-input-hint">
-                            <span>Answers are sourced from your vault using RAG</span>
-                            <button class="ask-clear-btn" id="ask-clear-btn" style="display:none;">Clear chat</button>
+
+                        <!-- Composer -->
+                        <div class="ask-input-bar cv-ask-composer" id="ask-input-bar">
+                            <div class="cv-ask-pill">
+                                <span class="cv-ask-pill-ic" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                </span>
+                                <label for="ask-input" class="sr-only">Ask a question</label>
+                                <input type="text" id="ask-input" class="ask-input" placeholder="Ask anything about your saved conversations…" autocomplete="off" spellcheck="false" />
+                                <kbd class="cv-ask-pill-kbd" aria-hidden="true">↵</kbd>
+                                <button class="ask-send-btn cv-ask-send" id="ask-send-btn" aria-label="Send question" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                </button>
+                            </div>
+                            <div class="cv-ask-hint">
+                                <span class="cv-ask-hint-left">
+                                    <span class="cv-ask-hint-dot" aria-hidden="true"></span>
+                                    Streaming answers grounded in your vault
+                                </span>
+                                <button class="ask-clear-btn" id="ask-clear-btn" style="display:none;">Clear chat</button>
+                            </div>
                         </div>
+
                     </div>
                 </div>
             </div>
 
             <!-- Context Library View -->
-            <div class="view" id="view-library" style="display:none;" role="region" aria-labelledby="view-library-heading">
+            <div class="view cv-main" id="view-library" style="display:none;" role="region" aria-labelledby="view-library-heading">
                 <div class="view-header">
                     <h1 id="view-library-heading">Library</h1>
-                    <p class="view-desc">Browse and manage your saved conversation summaries.</p>
                 </div>
-                <div class="library-controls">
-                    <div class="library-controls-row">
-                        <div class="search-box" role="search">
-                            <span class="search-icon" aria-hidden="true">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                            </span>
-                            <label for="search-input" class="sr-only">Search contexts</label>
-                            <input type="text" id="search-input" class="search-input"
-                                placeholder="Search contexts..." aria-label="Search contexts"
-                                autocomplete="off" spellcheck="false">
-                            <button class="btn-deep-search" id="btn-deep-search" title="Deep search across all chunk content" aria-label="Toggle deep cross-context search" aria-pressed="false">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
-                                Deep
+
+                <!-- Hero -->
+                <section class="cv-lib-header">
+                    <div class="cv-lib-eyebrow">
+                        <span class="cv-ebadge">Library</span>
+                        <span class="cv-dot"></span>
+                        <span id="cv-lib-count-text">Loading your vault…</span>
+                    </div>
+                    <h1 class="cv-lib-title">Everything you've <span class="voltword">saved</span>.</h1>
+                </section>
+
+                <!-- Command bar: search + view mode + sort + select -->
+                <div class="cv-lib-command">
+                    <div class="cv-search-pill" role="search">
+                        <span class="cv-search-ic" aria-hidden="true">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        </span>
+                        <label for="search-input" class="sr-only">Search contexts</label>
+                        <input type="text" id="search-input" class="cv-search-input search-input"
+                            placeholder="Search contexts, tags, or content…" aria-label="Search contexts"
+                            autocomplete="off" spellcheck="false">
+                        <button class="cv-deep-toggle btn-deep-search" id="btn-deep-search"
+                                title="Deep search across all chunk content" aria-label="Toggle deep cross-context search" aria-pressed="false">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+                            Deep
+                        </button>
+                        <kbd class="cv-search-kbd" aria-hidden="true">Ctrl K</kbd>
+                    </div>
+
+                    <div class="cv-lib-tools">
+                        <div class="cv-view-seg" id="cv-view-seg" role="tablist" aria-label="View mode">
+                            <button data-view="grid" class="on" role="tab" aria-selected="true" title="Grid view">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                                Grid
+                            </button>
+                            <button data-view="rows" role="tab" aria-selected="false" title="Compact rows">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                                Rows
                             </button>
                         </div>
-                        <div class="library-actions">
-                            <select id="sort-select" class="sort-select" aria-label="Sort order">
-                                <option value="newest">Newest</option>
-                                <option value="oldest">Oldest</option>
-                                <option value="alpha">A — Z</option>
-                            </select>
-                            <button class="btn btn-ghost btn-select-mode" id="btn-select-mode" aria-label="Toggle multi-select">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
-                                Select
-                            </button>
-                        </div>
-                    </div>
-                    <div class="bulk-actions-bar" id="bulk-actions-bar" style="display:none;">
-                        <span class="bulk-count" id="bulk-count">0 selected</span>
-                        <button class="btn btn-ghost" id="btn-select-all">Select All</button>
-                        <button class="btn btn-danger" id="btn-bulk-delete">Delete Selected</button>
-                        <button class="btn btn-ghost" id="btn-cancel-select">Cancel</button>
+                        <select id="sort-select" class="cv-select sort-select" aria-label="Sort order">
+                            <option value="newest">Newest</option>
+                            <option value="oldest">Oldest</option>
+                            <option value="alpha">A — Z</option>
+                        </select>
+                        <button class="cv-select-mode-btn btn-select-mode" id="btn-select-mode" aria-label="Toggle multi-select">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
+                            Select
+                        </button>
                     </div>
                 </div>
-                <div class="tag-filter-bar" id="tag-filter-bar" style="display:none;" role="group" aria-label="Tag filters"></div>
-                <div class="contexts-grid" id="contexts-grid" aria-live="polite" aria-label="Saved contexts">
-                    <!-- Context cards will be rendered here -->
-                </div>
-                <div class="deep-search-results" id="deep-search-results" style="display:none;" role="region" aria-label="Deep search results">
-                    <!-- Filled by JS -->
-                </div>
-                <div class="load-more-container" id="load-more-container" style="display:none;">
+
+                <!-- Active filter pills (search/collection/tag) -->
+                <div class="cv-lib-activefilters" id="cv-active-filters" style="display:none;"></div>
+
+                <!-- Tag filter chips -->
+                <div class="tag-filter-bar cv-lib-tags" id="tag-filter-bar" style="display:none;" role="group" aria-label="Tag filters"></div>
+
+                <!-- Grid -->
+                <section class="contexts-grid cv-lib-grid" id="contexts-grid" data-view="grid" aria-live="polite" aria-label="Saved contexts">
+                    <!-- Context cards rendered here -->
+                </section>
+
+                <!-- Deep search results -->
+                <section class="deep-search-results cv-lib-deep" id="deep-search-results" style="display:none;" role="region" aria-label="Deep search results"></section>
+
+                <!-- Load more -->
+                <div class="cv-lib-loadmore load-more-container" id="load-more-container" style="display:none;">
                     <button class="btn btn-secondary" id="btn-load-more" aria-label="Load more contexts">
                         <span class="btn-text">Load More</span>
                     </button>
                 </div>
-                <div class="empty-state" id="empty-state" style="display:none;" role="status">
-                    <div class="empty-illustration" aria-hidden="true">
-                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-                            <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
-                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
-                            <path d="M8 7h8M8 11h6M8 15h4" opacity="0.4"/>
-                        </svg>
+
+                <!-- Empty state -->
+                <div class="cv-lib-empty empty-state" id="empty-state" style="display:none;" role="status">
+                    <div class="cv-lib-empty-orb" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
                     </div>
                     <h3>Your library is empty</h3>
-                    <p>Paste an AI conversation to create your first context entry. It'll be summarized and added here.</p>
+                    <p>Paste an AI conversation to create your first context entry. It'll be summarized and added here automatically.</p>
+                </div>
+
+                <!-- Floating bulk actions pill -->
+                <div class="cv-bulk-pill bulk-actions-bar" id="bulk-actions-bar" style="display:none;">
+                    <span class="cv-bulk-count bulk-count" id="bulk-count">0 selected</span>
+                    <button class="cv-bulk-btn" id="btn-select-all">Select all</button>
+                    <button class="cv-bulk-btn cv-bulk-danger" id="btn-bulk-delete">Delete</button>
+                    <button class="cv-bulk-btn" id="btn-cancel-select">Cancel</button>
                 </div>
             </div>
 
             <!-- Context Detail View -->
-            <div class="view" id="view-detail" style="display:none;" role="region" aria-labelledby="detail-title-heading">
+            <div class="view cv-main" id="view-detail" style="display:none;" role="region" aria-labelledby="detail-title-heading">
                 <div class="view-header">
                     <button class="btn btn-ghost" id="back-to-library" aria-label="Back to library">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>
@@ -503,10 +723,50 @@
                 </button>
             </div>
             <div class="settings-modal-body">
-                <!-- LLM Model -->
+
+                <!-- AI Provider Selection -->
                 <div>
-                    <div class="settings-section-label" id="llm-grid-label">AI Summarization Model</div>
-                    <p class="settings-section-hint" id="llm-grid-hint">Used for summarizing conversations. Takes effect on the next summarization. A restart may be required.</p>
+                    <div class="settings-section-label" id="provider-grid-label">AI Provider</div>
+                    <p class="settings-section-hint">Choose where to run your AI. Cloud providers offer better quality; Local is free &amp; private.</p>
+                    <div class="settings-provider-grid" id="settings-provider-grid" role="radiogroup" aria-labelledby="provider-grid-label">
+                        <!-- Provider cards rendered by JS -->
+                    </div>
+                </div>
+
+                <!-- Cloud API Key Input (shown when cloud provider selected) -->
+                <div id="cloud-key-section" style="display:none;">
+                    <div class="settings-section-label" id="cloud-key-label">API Key</div>
+                    <p class="settings-section-hint" id="cloud-key-hint">
+                        Enter your API key. <a href="#" id="cloud-key-docs-link" target="_blank" rel="noopener" class="settings-link">Get one here →</a>
+                    </p>
+                    <div class="cloud-key-input-row">
+                        <div class="cloud-key-input-wrap">
+                            <input type="password" id="cloud-key-input" class="cloud-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+                            <button class="cloud-key-toggle" id="cloud-key-toggle" type="button" aria-label="Show/hide API key">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary cloud-key-validate-btn" id="cloud-key-validate-btn" type="button">Validate</button>
+                        <button class="btn btn-ghost cloud-key-delete-btn" id="cloud-key-delete-btn" type="button" title="Remove saved key">Remove key</button>
+                    </div>
+                    <div class="cloud-key-status" id="cloud-key-status" role="status" aria-live="polite"></div>
+                </div>
+
+                <!-- Cloud Model Selection (shown when cloud provider selected & key valid) -->
+                <div id="cloud-model-section" style="display:none;">
+                    <div class="settings-section-label" id="cloud-model-label">Cloud Model</div>
+                    <p class="settings-section-hint">Choose which model to use. Costs are per 1M tokens.</p>
+                    <div class="settings-model-grid" id="settings-cloud-model-grid" role="radiogroup" aria-labelledby="cloud-model-label">
+                        <!-- Cloud model cards rendered by JS -->
+                    </div>
+                </div>
+
+                <div class="settings-divider" id="settings-ollama-divider"></div>
+
+                <!-- LLM Model (Ollama) -->
+                <div id="ollama-llm-section">
+                    <div class="settings-section-label" id="llm-grid-label">Local Summarization Model (Ollama)</div>
+                    <p class="settings-section-hint" id="llm-grid-hint">Used when Local (Ollama) is the active provider. Takes effect on the next summarization.</p>
                     <div class="settings-model-grid" id="settings-llm-grid"
                          role="radiogroup" aria-labelledby="llm-grid-label" aria-describedby="llm-grid-hint">
                         <!-- rendered by JS -->
@@ -514,8 +774,8 @@
                 </div>
                 <!-- Embed Model -->
                 <div>
-                    <div class="settings-section-label" id="embed-grid-label">Embedding Model</div>
-                    <p class="settings-section-hint" id="embed-grid-hint">Used for semantic search. If you change this, click <strong style="color:var(--text-secondary)">Re-embed All (New Model)</strong> in the sidebar afterwards.</p>
+                    <div class="settings-section-label" id="embed-grid-label">Embedding Model (always local)</div>
+                    <p class="settings-section-hint" id="embed-grid-hint">Used for semantic search. Embeddings always run locally for privacy. If you change this, click <strong style="color:var(--text-secondary)">Re-embed All (New Model)</strong> in the sidebar afterwards.</p>
                     <div class="settings-model-grid" id="settings-embed-grid"
                          role="radiogroup" aria-labelledby="embed-grid-label" aria-describedby="embed-grid-hint">
                         <!-- rendered by JS -->
@@ -527,8 +787,14 @@
                 </div>
             </div>
             <div class="settings-modal-footer">
-                <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
-                <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
+                <div class="settings-privacy-notice" id="settings-privacy-notice">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>API keys are stored locally on your machine. Never sent anywhere except the provider's official API.</span>
+                </div>
+                <div class="settings-modal-footer-actions">
+                    <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
+                    <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
+                </div>
             </div>
         </div>
     </div>

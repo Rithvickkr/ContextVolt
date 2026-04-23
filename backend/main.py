@@ -41,15 +41,17 @@ from backend.database import (
     update_collection,
     delete_collection,
     set_context_collection,
+    increment_stat,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
     PromptRequest, EmbedModelSelect, ModelSelect,
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
+    CloudKeySet, ProviderSelect, CloudKeyValidate,
 )
 from backend.ollama_client import (
-    summarize_conversation,
-    summarize_conversation_streaming,
+    summarize_conversation as _ollama_summarize,
+    summarize_conversation_streaming as _ollama_summarize_streaming,
     generate_continuation_prompt,
     build_hybrid_prompt,
     chunk_conversation,
@@ -61,6 +63,18 @@ from backend.ollama_client import (
     check_model_available,
     DEFAULT_MODEL,
     _USER_TURN,
+)
+from backend.llm_router import (
+    get_active_provider,
+    is_cloud_active,
+    summarize_conversation,
+    summarize_conversation_streaming,
+    generate as router_generate,
+    generate_stream as router_generate_stream,
+)
+from backend.cloud_client import (
+    cloud_validate_key,
+    PROVIDERS as CLOUD_PROVIDERS,
 )
 
 # ---------------------------------------------------------------------------
@@ -284,11 +298,15 @@ def get_config():
 
     Each entry in available_models / available_embed_models includes an installed
     boolean so the frontend can show which models are already downloaded.
+    Includes cloud provider info.
     """
     cfg = _read_config()
     ollama_ok = check_ollama_running()
     current_model = cfg.get("model", DEFAULT_MODEL)
     current_embed = cfg.get("embed_model", "nomic-embed-text")
+    current_provider = cfg.get("provider", "ollama")
+    cloud_keys = cfg.get("cloud_keys", {})
+    cloud_models = cfg.get("cloud_models", {})
 
     # Fetch installed model names once — single HTTP call
     installed_names: list[str] = []
@@ -324,6 +342,23 @@ def get_config():
     for m in embed_models:
         m["installed"] = _is_installed(m["id"])
 
+    # Build cloud provider info
+    cloud_providers = []
+    for pid, pinfo in CLOUD_PROVIDERS.items():
+        has_key = bool(cloud_keys.get(pid, "").strip())
+        cloud_providers.append({
+            "id": pid,
+            "label": pinfo["label"],
+            "has_key": has_key,
+            "key_hint": pinfo["key_hint"],
+            "docs_url": pinfo["docs_url"],
+            "selected_model": cloud_models.get(pid, pinfo["models"][0]["id"] if pinfo["models"] else ""),
+            "models": pinfo["models"],
+        })
+
+    # Determine active provider display info
+    active = get_active_provider()
+
     return {
         "model": current_model,
         "embed_model": current_embed,
@@ -332,6 +367,11 @@ def get_config():
         "ollama_running": ollama_ok,
         "available_models": llm_models,
         "available_embed_models": embed_models,
+        "provider": current_provider,
+        "cloud_providers": cloud_providers,
+        "active_provider": active["provider"],
+        "active_model": active["model"],
+        "is_cloud_active": active["is_cloud"],
     }
 
 
@@ -389,26 +429,157 @@ def pull_model_stream(body: ModelSelect):
 
 
 # ---------------------------------------------------------------------------
+# Cloud Provider Management
+# ---------------------------------------------------------------------------
+
+@app.post("/api/setup/cloud-key")
+def save_cloud_key(req: CloudKeySet):
+    """Save a cloud API key for a provider and optionally set the model."""
+    if req.provider not in CLOUD_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+    if not req.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key cannot be empty")
+
+    cfg = _read_config()
+    if "cloud_keys" not in cfg:
+        cfg["cloud_keys"] = {}
+    if "cloud_models" not in cfg:
+        cfg["cloud_models"] = {}
+
+    cfg["cloud_keys"][req.provider] = req.api_key.strip()
+    if req.model:
+        cfg["cloud_models"][req.provider] = req.model
+    elif req.provider not in cfg["cloud_models"]:
+        # Set default model for this provider
+        default_model = CLOUD_PROVIDERS[req.provider]["models"][0]["id"]
+        cfg["cloud_models"][req.provider] = default_model
+
+    _write_config(cfg)
+    return {
+        "status": "saved",
+        "provider": req.provider,
+        "model": cfg["cloud_models"].get(req.provider, ""),
+    }
+
+
+@app.delete("/api/setup/cloud-key/{provider}")
+def delete_cloud_key(provider: str):
+    """Remove a saved cloud API key."""
+    cfg = _read_config()
+    cloud_keys = cfg.get("cloud_keys", {})
+    if provider in cloud_keys:
+        del cloud_keys[provider]
+        cfg["cloud_keys"] = cloud_keys
+        # If this was the active provider, switch back to Ollama
+        if cfg.get("provider") == provider:
+            cfg["provider"] = "ollama"
+        _write_config(cfg)
+    return {"status": "deleted", "provider": provider}
+
+
+@app.post("/api/setup/validate-key")
+def validate_cloud_key(req: CloudKeyValidate):
+    """Test if a cloud API key is valid by making a minimal API call."""
+    if req.provider not in CLOUD_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+    result = cloud_validate_key(req.provider, req.api_key.strip())
+    return result
+
+
+@app.post("/api/setup/select-provider")
+def select_provider(req: ProviderSelect):
+    """Switch the active LLM provider."""
+    valid_providers = {"ollama"} | set(CLOUD_PROVIDERS.keys())
+    if req.provider not in valid_providers:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+
+    cfg = _read_config()
+
+    # If selecting a cloud provider, verify we have a key
+    if req.provider != "ollama":
+        cloud_keys = cfg.get("cloud_keys", {})
+        if not cloud_keys.get(req.provider, "").strip():
+            raise HTTPException(status_code=400, detail=f"No API key saved for {req.provider}")
+
+    cfg["provider"] = req.provider
+    if req.model and req.provider != "ollama":
+        if "cloud_models" not in cfg:
+            cfg["cloud_models"] = {}
+        cfg["cloud_models"][req.provider] = req.model
+    elif req.model and req.provider == "ollama":
+        cfg["model"] = req.model
+
+    _write_config(cfg)
+
+    active = get_active_provider()
+    return {
+        "status": "saved",
+        "provider": active["provider"],
+        "model": active["model"],
+        "is_cloud": active["is_cloud"],
+    }
+
+
+@app.get("/api/setup/providers")
+def list_providers():
+    """List all available providers with their status."""
+    cfg = _read_config()
+    current_provider = cfg.get("provider", "ollama")
+    cloud_keys = cfg.get("cloud_keys", {})
+    cloud_models = cfg.get("cloud_models", {})
+    ollama_ok = check_ollama_running()
+
+    providers = [
+        {
+            "id": "ollama",
+            "label": "Local (Ollama)",
+            "is_local": True,
+            "active": current_provider == "ollama",
+            "ready": ollama_ok and check_model_available(),
+            "model": cfg.get("model", DEFAULT_MODEL),
+        },
+    ]
+    for pid, pinfo in CLOUD_PROVIDERS.items():
+        has_key = bool(cloud_keys.get(pid, "").strip())
+        providers.append({
+            "id": pid,
+            "label": pinfo["label"],
+            "is_local": False,
+            "active": current_provider == pid,
+            "ready": has_key,
+            "has_key": has_key,
+            "model": cloud_models.get(pid, pinfo["models"][0]["id"] if pinfo["models"] else ""),
+            "models": pinfo["models"],
+            "key_hint": pinfo["key_hint"],
+            "docs_url": pinfo["docs_url"],
+        })
+
+    return {"providers": providers, "active": current_provider}
+
+
+# ---------------------------------------------------------------------------
 # Summarization
 # ---------------------------------------------------------------------------
 
 @app.post("/api/summarize")
 def api_summarize(req: SummarizeRequest):
-    """Send conversation text to Ollama and return a structured summary."""
+    """Send conversation text to the active LLM provider and return a structured summary."""
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    if not check_ollama_running():
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama is not running. Please start it with 'ollama serve'.",
-        )
-
-    if not check_model_available():
-        raise HTTPException(
-            status_code=503,
-            detail=f"Model '{DEFAULT_MODEL}' is not available. Pull it with 'ollama pull {DEFAULT_MODEL}'.",
-        )
+    active = get_active_provider()
+    if not active["is_cloud"]:
+        # Ollama checks only needed for local provider
+        if not check_ollama_running():
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama is not running. Please start it with 'ollama serve'.",
+            )
+        if not check_model_available():
+            raise HTTPException(
+                status_code=503,
+                detail=f"Model '{DEFAULT_MODEL}' is not available. Pull it with 'ollama pull {DEFAULT_MODEL}'.",
+            )
 
     try:
         summary = summarize_conversation(req.text)
@@ -426,10 +597,13 @@ def api_summarize_stream(req: SummarizeRequest):
     """Streaming version of /api/summarize — sends NDJSON progress lines."""
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
-    if not check_ollama_running():
-        raise HTTPException(status_code=503, detail="Ollama is not running")
-    if not check_model_available():
-        raise HTTPException(status_code=503, detail="Model not available")
+
+    active = get_active_provider()
+    if not active["is_cloud"]:
+        if not check_ollama_running():
+            raise HTTPException(status_code=503, detail="Ollama is not running")
+        if not check_model_available():
+            raise HTTPException(status_code=503, detail="Model not available")
 
     import json as _json
 
@@ -943,27 +1117,25 @@ def api_vault_ask(body: dict):
 
     Streams NDJSON lines:
       {"token": "..."} — during generation
-      {"done": true, "sources": [...]} — final line with citations
+      {"done": true, "sources": [...], "usage": {...}, "cost": ...} — final line with citations
 
     Body: {"question": "...", "history": [{"role": "user"|"assistant", "content": "..."}]}
     """
-    import requests as _req
-
     question = (body.get("question") or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
 
+    increment_stat("questions_asked")
+
     history = body.get("history") or []
 
-    # Check Ollama is available
-    if not check_ollama_running():
-        raise HTTPException(status_code=503, detail="Ollama is not running")
+    # Check provider availability
+    active = get_active_provider()
+    if not active["is_cloud"]:
+        if not check_ollama_running():
+            raise HTTPException(status_code=503, detail="Ollama is not running")
 
-    from backend.ollama_client import _get_default_model, _get_embed_model, OLLAMA_BASE, _NUM_CTX
-
-    model = _get_default_model()
-
-    # 1. Embed the question
+    # 1. Embed the question (always local — Ollama)
     query_vec = embed_text(question)
 
     # 2. Hybrid retrieval: semantic + keyword, merged
@@ -1056,39 +1228,31 @@ RULES:
 
     full_prompt = f"{system_prompt}\n\nUSER: {question}\nASSISTANT:"
 
-    # 5. Stream the response from Ollama
+    # 5. Stream the response via the LLM router (works for both Ollama and cloud)
     def _stream():
         try:
-            r = _req.post(
-                f"{OLLAMA_BASE}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": full_prompt,
-                    "stream": True,
-                    "options": {"num_ctx": min(_NUM_CTX, 16384), "temperature": 0.3},
-                },
-                stream=True,
-                timeout=180,
-            )
-            r.raise_for_status()
-
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    token = data.get("response", "")
-                    if token:
-                        yield json.dumps({"token": token}) + "\n"
-                    if data.get("done"):
-                        break
-                except json.JSONDecodeError:
-                    continue
-
+            for event in router_generate_stream(full_prompt, temperature=0.3, max_tokens=4000):
+                if event.get("token"):
+                    yield json.dumps({"token": event["token"]}) + "\n"
+                elif event.get("error"):
+                    yield json.dumps({"error": event["error"]}) + "\n"
+                elif event.get("done"):
+                    # Final line with sources + usage info
+                    final = {"done": True, "sources": sources}
+                    if event.get("usage"):
+                        final["usage"] = event["usage"]
+                    if event.get("cost") is not None:
+                        final["cost"] = event["cost"]
+                    if event.get("provider"):
+                        final["provider"] = event["provider"]
+                    if event.get("model"):
+                        final["model"] = event["model"]
+                    yield json.dumps(final) + "\n"
+                    return
         except Exception as e:
             yield json.dumps({"error": str(e)}) + "\n"
 
-        # Final line with sources
+        # Fallback final line if stream didn't send done
         yield json.dumps({"done": True, "sources": sources}) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
@@ -1560,6 +1724,8 @@ def api_system_status():
     except Exception:
         db = {"contexts": 0, "chunks": 0, "collections": 0, "size_mb": 0.0}
 
+    active = get_active_provider()
+
     return {
         "backend":          {"status": "ok", "uptime_s": uptime_s},
         "ollama":           {"running": ollama_running, "url": "http://localhost:11434"},
@@ -1567,6 +1733,7 @@ def api_system_status():
         "embed":            {"name": embed_model},
         "installed_models": installed_models,
         "database":         db,
+        "active_provider":  {"provider": active["provider"], "model": active["model"], "is_cloud": active["is_cloud"]},
     }
 
 

@@ -84,3 +84,22 @@ class CollectionUpdate(BaseModel):
 class ContextCollectionSet(BaseModel):
     collection_id: int | None = None
 
+
+class CloudKeySet(BaseModel):
+    """Request body for saving a cloud API key."""
+    provider: str  # "openai" | "anthropic" | "google"
+    api_key: str
+    model: str | None = None  # optional model override
+
+
+class ProviderSelect(BaseModel):
+    """Request body for switching the active LLM provider."""
+    provider: str  # "ollama" | "openai" | "anthropic" | "google"
+    model: str | None = None
+
+
+class CloudKeyValidate(BaseModel):
+    """Request body for validating a cloud API key."""
+    provider: str
+    api_key: str
+

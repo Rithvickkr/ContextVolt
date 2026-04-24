@@ -94,37 +94,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
-    // ── Cross-conversation retrieval (for @convx and auto-inject) ──
-    if (request.action === "cross_retrieve") {
-        const query = request.query || "";
-        const size = request.size || "standard";
-
-        if (!query.trim()) {
-            sendResponse({ success: false, error: "Empty query" });
-            return true;
-        }
-
-        fetch("http://localhost:8000/api/retrieve", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query, size }),
-        })
-            .then(res => {
-                if (!res.ok) throw new Error("Server error " + res.status);
-                return res.json();
-            })
-            .then(data => sendResponse({
-                success: true,
-                prompt: data.prompt,
-                mode: data.mode,
-                chunks_found: data.chunks_found,
-            }))
-            .catch(err => {
-                console.error("ContextVolt — cross retrieve error:", err);
-                sendResponse({ success: false, error: err.message || String(err) });
-            });
-
-        return true;
-    }
 });
 

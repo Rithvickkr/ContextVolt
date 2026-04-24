@@ -626,7 +626,8 @@ function toggleImportPanel() {
             </div>
         </div>
         <div class="cv-query-section">
-            <input type="text" id="cv-query-input" placeholder="Focus query — e.g. 'the auth bug'" />
+            <div class="cv-query-label">↳ Narrow retrieval <span class="cv-query-label-hint">optional</span></div>
+            <input type="text" id="cv-query-input" placeholder="e.g. 'the auth bug', 'deployment steps'…" />
         </div>
         <div class="cv-panel-list" id="cv-panel-list">
             <div class="cv-panel-loading"><span class="cv-spinner"></span> Loading…</div>
@@ -686,7 +687,6 @@ function showBriefToast(message) {
 }
 
 function showContextPreview(item, ctx) {
-    // Remove any existing tooltip
     const existing = document.getElementById("cv-preview-tooltip");
     if (existing) existing.remove();
 
@@ -694,6 +694,16 @@ function showContextPreview(item, ctx) {
     const source = ctx.source || "";
     const date = ctx.created_at
         ? new Date(ctx.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        : "";
+    const keyIdeas = Array.isArray(ctx.key_ideas) ? ctx.key_ideas.slice(0, 3) : [];
+    const snippet = ctx.summary || "";
+
+    const bodyHtml = keyIdeas.length > 0
+        ? `<div class="cv-preview-divider"></div>
+           <div class="cv-preview-ideas">${keyIdeas.map(k => `<div class="cv-preview-idea">• ${escapeHtml(k)}</div>`).join("")}</div>`
+        : snippet
+        ? `<div class="cv-preview-divider"></div>
+           <div class="cv-preview-snippet">${escapeHtml(snippet)}</div>`
         : "";
 
     const tip = document.createElement("div");
@@ -704,6 +714,7 @@ function showContextPreview(item, ctx) {
             ${source ? `<span class="cv-preview-source">${escapeHtml(source)}</span>` : ""}
             ${date ? `<span class="cv-preview-date">${date}</span>` : ""}
         </div>
+        ${bodyHtml}
         <div class="cv-preview-hint">Click to import into this conversation</div>
     `;
     document.body.appendChild(tip);
@@ -750,20 +761,56 @@ function loadContexts(query = "") {
             return;
         }
 
+        const LLM_TAG_PATTERNS = ["gpt", "claude", "gemini", "llama", "mistral", "mixtral", "deepseek", "grok", "perplexity", "cohere", "palm", "sonnet", "opus", "haiku", "o1", "o3"];
+        function isModelTag(tag) {
+            const lower = tag.toLowerCase();
+            return LLM_TAG_PATTERNS.some(p => lower.includes(p));
+        }
+
         listEl.innerHTML = "";
         contexts.forEach(ctx => {
             const item = document.createElement("div");
             item.className = "cv-context-item";
             const title = ctx.title || "Untitled";
             const source = ctx.source || "";
-            const date = ctx.created_at ? new Date(ctx.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+            const snippet = ctx.summary || "";
+            const isStarred = ctx.starred || false;
+            const status = ctx.status || "ready";
+            const tags = ctx.tags || [];
+
+            const now = new Date();
+            const created = ctx.created_at ? new Date(ctx.created_at) : null;
+            const sameYear = created && created.getFullYear() === now.getFullYear();
+            const date = created ? created.toLocaleDateString("en-US", {
+                month: "short", day: "numeric",
+                ...(sameYear ? {} : { year: "numeric" })
+            }) : "";
+
+            const tagsHtml = tags.map(t => {
+                const cls = isModelTag(t) ? "cv-tag cv-tag-model" : "cv-tag";
+                return `<span class="${cls}">${escapeHtml(t)}</span>`;
+            }).join("");
+
+            const statusBadge = status === "summarizing"
+                ? `<span class="cv-status-badge cv-status-processing"><span class="cv-spinner cv-spinner-xs"></span> Summarizing</span>`
+                : status === "failed"
+                ? `<span class="cv-status-badge cv-status-failed">⚠ Failed</span>`
+                : "";
 
             item.innerHTML = `
-                <div class="cv-context-title">${escapeHtml(title)}</div>
-                <div class="cv-context-meta">
-                    ${source ? `<span class="cv-context-source">${escapeHtml(source)}</span>` : ""}
-                    ${date ? `<span class="cv-context-date">${date}</span>` : ""}
+                <div class="cv-context-item-inner">
+                    <div class="cv-context-title">
+                        ${isStarred ? '<span class="cv-star-icon">★</span>' : ""}${escapeHtml(title)}
+                    </div>
+                    ${snippet ? `<div class="cv-context-snippet">${escapeHtml(snippet)}</div>` : ""}
+                    <div class="cv-context-meta">
+                        ${source ? `<span class="cv-context-source">${escapeHtml(source)}</span>` : ""}
+                        ${date ? `<span class="cv-context-date">${date}</span>` : ""}
+                        ${tagsHtml}
+                        ${statusBadge}
+                    </div>
                 </div>
+                <div class="cv-item-loading-overlay" aria-hidden="true"><span class="cv-spinner"></span></div>
             `;
 
             // ── Hover preview (1 second hover, not hold) ─────────────
@@ -794,8 +841,6 @@ function loadContexts(query = "") {
                 item.classList.add("cv-loading");
                 const queryInput = document.getElementById("cv-query-input");
                 const query = queryInput ? queryInput.value.trim() : "";
-                const modeLabel = query ? "Retrieving…" : "Generating…";
-                item.querySelector(".cv-context-title").innerHTML = `<span class="cv-spinner"></span> ${modeLabel}`;
 
                 const activeSize = document.querySelector(".cv-size-btn.cv-size-active");
                 const size = activeSize ? activeSize.dataset.size : "standard";
@@ -804,7 +849,7 @@ function loadContexts(query = "") {
                     item.classList.remove("cv-loading");
 
                     if (res && res.success && res.prompt) {
-                        const mode = res.mode === "hybrid" ? "⚡ Hybrid" : res.mode === "retrieval" ? "🎯 Retrieved" : "📄 Static";
+                        const mode = res.mode === "hybrid" ? "⚡ Hybrid" : res.mode === "retrieval" ? "🎯 Retrieved" : res.mode === "context" ? "📋 Context" : "📄 Static";
 
                         // Close panel FIRST so focus returns to the page input,
                         // then inject after a short delay for the panel animation to settle.
@@ -822,10 +867,8 @@ function loadContexts(query = "") {
                             }
                         }, 120);
                     } else {
-                        item.querySelector(".cv-context-title").textContent = "❌ Failed";
-                        setTimeout(() => {
-                            item.querySelector(".cv-context-title").textContent = title;
-                        }, 2000);
+                        item.classList.add("cv-insert-failed");
+                        setTimeout(() => item.classList.remove("cv-insert-failed"), 2000);
                     }
                 });
             });
@@ -840,268 +883,6 @@ function escapeHtml(str) {
     div.textContent = str;
     return div.innerHTML;
 }
-
-// ─── @convx keyword detection ────────────────────────────────────
-// When user types "@convx <query>" in the chat input, intercept it,
-// retrieve cross-conversation context, and replace @convx with the prompt.
-
-const CONVX_TRIGGER = /@convx\s+(.+)/i;
-let _convxProcessing = false;
-let _convxLastQuery = "";       // Prevent re-searching the same query
-let _convxPendingPrompt = null; // Stored prompt waiting for user confirmation
-let _convxOriginalText = "";    // Original input text at time of search
-
-function getChatInput() {
-    const domain = window.location.hostname;
-    if (domain.includes("chatgpt.com"))
-        return document.querySelector('#prompt-textarea, textarea[data-id="root"], div[contenteditable="true"]');
-    if (domain.includes("claude.ai"))
-        return document.querySelector('[contenteditable="true"].ProseMirror, div[contenteditable="true"]');
-    if (domain.includes("gemini.google.com"))
-        return document.querySelector('rich-textarea div[contenteditable="true"]');
-    if (domain.includes("grok.com") || domain.includes("x.com") || domain.includes("x.ai"))
-        return document.querySelector('textarea, [contenteditable="true"]');
-    if (domain.includes("deepseek.com"))
-        return document.querySelector('textarea, #chat-input');
-    if (domain.includes("perplexity.ai"))
-        return document.querySelector('textarea, [contenteditable="true"]');
-    if (domain.includes("copilot.microsoft.com"))
-        return document.querySelector('textarea, #searchbox');
-    return null;
-}
-
-function getInputText(el) {
-    if (!el) return "";
-    return el.tagName === "TEXTAREA" || el.tagName === "INPUT" ? el.value : el.innerText;
-}
-
-function setInputText(el, text) {
-    if (!el) return;
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-        el.value = text;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-    } else {
-        // contenteditable
-        const domain = window.location.hostname;
-        if (domain.includes("claude.ai") || domain.includes("gemini.google.com")) {
-            el.innerHTML = `<p>${text.replace(/\n/g, "<br>")}</p>`;
-        } else {
-            el.innerText = text;
-        }
-        el.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    }
-    el.focus();
-}
-
-function checkConvxTrigger() {
-    if (_convxProcessing) return;
-    const input = getChatInput();
-    if (!input) return;
-
-    const text = getInputText(input);
-    const match = text.match(CONVX_TRIGGER);
-
-    // If @convx was removed from input, reset state
-    if (!match) {
-        if (_convxLastQuery) {
-            _convxLastQuery = "";
-            _convxPendingPrompt = null;
-            _convxOriginalText = "";
-            hideConvxBadge();
-        }
-        return;
-    }
-
-    const query = match[1].trim();
-    if (!query || query.length < 3) return;
-
-    // Don't re-search the same query
-    if (query === _convxLastQuery) return;
-
-    _convxProcessing = true;
-    _convxLastQuery = query;
-    _convxOriginalText = text;
-
-    showConvxBadge("Searching...");
-
-    chrome.runtime.sendMessage({ action: "cross_retrieve", query, size: "standard" }, (res) => {
-        _convxProcessing = false;
-        if (res && res.success && res.prompt && res.chunks_found > 0) {
-            _convxPendingPrompt = res.prompt;
-            // Show badge with Inject / Dismiss buttons — user decides
-            showConvxInjectBadge(res.chunks_found, query);
-        } else {
-            _convxPendingPrompt = null;
-            showConvxBadge("No matching context found");
-            setTimeout(hideConvxBadge, 3000);
-        }
-    });
-}
-
-function showConvxInjectBadge(chunksFound, query) {
-    let badge = document.getElementById("cv-convx-badge");
-    if (!badge) {
-        badge = document.createElement("div");
-        badge.id = "cv-convx-badge";
-        document.body.appendChild(badge);
-    }
-    badge.className = "cv-badge cv-badge-visible cv-badge-action";
-
-    const shortQuery = query.length > 30 ? query.substring(0, 30) + "…" : query;
-    badge.innerHTML = `
-        <span class="cv-badge-text">⚡ Found ${chunksFound} chunks for "${escapeHtml(shortQuery)}"</span>
-        <button class="cv-badge-btn cv-badge-inject" id="cv-convx-inject">Inject</button>
-        <button class="cv-badge-btn cv-badge-dismiss" id="cv-convx-dismiss">✕</button>
-    `;
-
-    document.getElementById("cv-convx-inject").addEventListener("click", () => {
-        if (_convxPendingPrompt) {
-            const input = getChatInput();
-            if (input) {
-                // Remove @convx ... from the original text, prepend context
-                const userMessage = _convxOriginalText.replace(CONVX_TRIGGER, "").trim();
-                const combined = _convxPendingPrompt + "\n\n" + userMessage;
-                setInputText(input, combined);
-            }
-        }
-        _convxPendingPrompt = null;
-        _convxLastQuery = "";
-        _convxOriginalText = "";
-        hideConvxBadge();
-    });
-
-    document.getElementById("cv-convx-dismiss").addEventListener("click", () => {
-        _convxPendingPrompt = null;
-        _convxLastQuery = "";
-        _convxOriginalText = "";
-        hideConvxBadge();
-    });
-}
-
-// Poll for @convx trigger (check every 800ms)
-setInterval(checkConvxTrigger, 800);
-
-
-// ─── Auto-inject on first message ────────────────────────────────
-// Detects when user is starting a new conversation and automatically
-// searches for relevant context across all saved conversations.
-
-let _autoInjectDone = false;
-let _lastUrl = window.location.href;
-let _autoInjectDismissed = false;
-let _pendingAutoPrompt = null;
-
-function isNewConversation() {
-    const domain = window.location.hostname;
-    const path = window.location.pathname;
-
-    // ChatGPT: / or /? means new chat; /c/xxx means existing
-    if (domain.includes("chatgpt.com")) return path === "/" || path === "";
-    // Claude: /new means new chat; /chat/xxx means existing
-    if (domain.includes("claude.ai")) return path === "/new" || path === "/" || path === "";
-    // Gemini: /app means new; /app/xxx means existing
-    if (domain.includes("gemini.google.com")) return path === "/app" || path === "/";
-    // Grok, DeepSeek, Perplexity: heuristic — check if no messages on page
-    if (domain.includes("grok.com") || domain.includes("deepseek.com") || domain.includes("perplexity.ai")) {
-        const msgs = document.querySelectorAll("[data-message-author-role], .message-bubble, .ds-message-row, .prose");
-        return msgs.length === 0;
-    }
-    return false;
-}
-
-function checkAutoInject() {
-    // Reset when URL changes (user navigated to a new chat)
-    if (window.location.href !== _lastUrl) {
-        _lastUrl = window.location.href;
-        _autoInjectDone = false;
-        _autoInjectDismissed = false;
-        _pendingAutoPrompt = null;
-        hideConvxBadge();
-    }
-
-    if (_autoInjectDone || _autoInjectDismissed) return;
-    if (!isNewConversation()) return;
-
-    const input = getChatInput();
-    if (!input) return;
-
-    const text = getInputText(input).trim();
-    // Need at least 15 chars of meaningful input to trigger
-    if (text.length < 15) return;
-
-    // Don't trigger if it's an @convx message (that has its own handler)
-    if (CONVX_TRIGGER.test(text)) return;
-
-    _autoInjectDone = true; // Only try once per conversation
-
-    showConvxBadge("Searching vault...");
-
-    chrome.runtime.sendMessage({ action: "cross_retrieve", query: text, size: "standard" }, (res) => {
-        if (res && res.success && res.prompt && res.chunks_found > 0) {
-            _pendingAutoPrompt = res.prompt;
-            showAutoInjectBadge(res.chunks_found);
-        } else {
-            hideConvxBadge();
-        }
-    });
-}
-
-// Check every 2 seconds for auto-inject opportunity
-setInterval(checkAutoInject, 2000);
-
-
-// ─── Badge UI for @convx and auto-inject ─────────────────────────
-
-function showConvxBadge(message) {
-    let badge = document.getElementById("cv-convx-badge");
-    if (!badge) {
-        badge = document.createElement("div");
-        badge.id = "cv-convx-badge";
-        document.body.appendChild(badge);
-    }
-    badge.textContent = "⚡ ConVX: " + message;
-    badge.className = "cv-badge cv-badge-visible";
-}
-
-function hideConvxBadge() {
-    const badge = document.getElementById("cv-convx-badge");
-    if (badge) badge.className = "cv-badge";
-}
-
-function showAutoInjectBadge(chunksFound) {
-    let badge = document.getElementById("cv-convx-badge");
-    if (!badge) {
-        badge = document.createElement("div");
-        badge.id = "cv-convx-badge";
-        document.body.appendChild(badge);
-    }
-    badge.className = "cv-badge cv-badge-visible cv-badge-action";
-    badge.innerHTML = `
-        <span class="cv-badge-text">⚡ ConVX found ${chunksFound} relevant chunks</span>
-        <button class="cv-badge-btn cv-badge-inject" id="cv-auto-inject-yes">Inject</button>
-        <button class="cv-badge-btn cv-badge-dismiss" id="cv-auto-inject-no">✕</button>
-    `;
-
-    document.getElementById("cv-auto-inject-yes").addEventListener("click", () => {
-        if (_pendingAutoPrompt) {
-            const input = getChatInput();
-            if (input) {
-                const currentText = getInputText(input).trim();
-                const combined = _pendingAutoPrompt + "\n\n" + currentText;
-                setInputText(input, combined);
-            }
-            _pendingAutoPrompt = null;
-        }
-        hideConvxBadge();
-    });
-
-    document.getElementById("cv-auto-inject-no").addEventListener("click", () => {
-        _autoInjectDismissed = true;
-        _pendingAutoPrompt = null;
-        hideConvxBadge();
-    });
-}
-
 
 // Run injection periodically since SPAs re-render the DOM
 setInterval(() => {

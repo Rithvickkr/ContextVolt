@@ -1,4 +1,51 @@
-/* ContextVolt — Browser Extension Styles */
+/* ContextVolt — Browser Extension Styles (matches main app theme) */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+
+/* ─── Design tokens (mirrors main app) ─────────────────────────── */
+#cv-btn-container,
+#cv-import-panel,
+#cv-preview-tooltip,
+.cv-badge,
+#cv-toast {
+    --bg-primary:    #09090b;
+    --bg-secondary:  #0f0f12;
+    --bg-tertiary:   #17171c;
+    --bg-elevated:   #1e1e24;
+    --bg-hover:      rgba(255, 255, 255, 0.04);
+    --bg-active:     rgba(255, 255, 255, 0.07);
+
+    --text-primary:   #f0f0f0;
+    --text-secondary: #a1a1aa;
+    --text-muted:     #71717a;
+    --text-faint:     #3f3f46;
+
+    --accent:        #ffffff;
+    --accent-glow:   rgba(255, 255, 255, 0.06);
+
+    --danger:        #f87171;
+    --success:       #34d399;
+    --warning:       #fbbf24;
+
+    --border:        rgba(255, 255, 255, 0.07);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-accent: rgba(255, 255, 255, 0.15);
+
+    --radius:        12px;
+    --radius-sm:     8px;
+    --radius-pill:   100px;
+
+    --shadow-sm:  0 2px 8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03);
+    --shadow-md:  0 4px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    --shadow-lg:  0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+
+    --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body:    'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    --ease:   cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --transition: 0.2s var(--ease);
+}
 
 /* ─── Button Container ──────────────────────────────────────────── */
 #cv-btn-container {
@@ -16,26 +63,28 @@
 #cv-export-button,
 #cv-import-button {
     padding: 10px 18px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: #111113;
     color: #f4f4f5;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.2);
+    font-family: var(--font-body);
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 7px;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s var(--ease);
     letter-spacing: -0.01em;
     backdrop-filter: blur(12px);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #cv-export-button:hover,
 #cv-import-button:hover {
-    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5), 0 0 12px rgba(255, 255, 255, 0.04);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 12px rgba(255,255,255,0.04);
     background: #1c1c1f;
     border-color: rgba(255, 255, 255, 0.16);
 }
@@ -89,6 +138,7 @@
     border-radius: 50%;
     animation: cv-spin 0.6s linear infinite;
     vertical-align: middle;
+    flex-shrink: 0;
 }
 
 @keyframes cv-spin {
@@ -105,16 +155,18 @@
     background: #0d0d10;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 18px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7), 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
     z-index: 999998;
     display: flex;
     flex-direction: column;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
     opacity: 0;
     transform: translateY(16px) scale(0.96);
     pointer-events: none;
-    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+    transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 
 #cv-import-panel.cv-panel-open {
@@ -145,10 +197,11 @@
 }
 
 .cv-panel-title {
+    font-family: var(--font-display);
     font-size: 13px;
     font-weight: 600;
     color: #e4e4e7;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
 }
 
 .cv-panel-close {
@@ -161,6 +214,7 @@
     border-radius: 6px;
     line-height: 1;
     transition: color 0.15s, background 0.15s;
+    font-family: var(--font-body);
 }
 .cv-panel-close:hover {
     color: #a1a1aa;
@@ -196,12 +250,13 @@
     border: 1px solid rgba(255, 255, 255, 0.07);
     color: #e4e4e7;
     font-size: 12px;
+    font-family: var(--font-body);
     padding: 7px 10px 7px 30px;
     border-radius: 9px;
     outline: none;
-    font-family: inherit;
     box-sizing: border-box;
     transition: border-color 0.15s;
+    -webkit-font-smoothing: antialiased;
 }
 
 .cv-panel-search input:focus {
@@ -236,7 +291,7 @@
     color: #52525b;
     cursor: pointer;
     transition: all 0.15s ease;
-    font-family: inherit;
+    font-family: var(--font-display);
     letter-spacing: 0;
 }
 
@@ -252,27 +307,52 @@
     padding: 0 12px 8px;
 }
 
+.cv-query-label {
+    font-size: 10.5px;
+    font-family: var(--font-display);
+    font-weight: 500;
+    color: #52525b;
+    letter-spacing: 0.02em;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.cv-query-label-hint {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 4px;
+    padding: 0 5px;
+    font-size: 9.5px;
+    color: #3f3f46;
+    letter-spacing: 0.03em;
+    font-weight: 400;
+}
+
 .cv-query-section input {
     width: 100%;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    color: #a1a1aa;
-    font-size: 11.5px;
-    padding: 6px 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    color: #d4d4d8;
+    font-size: 12px;
+    font-family: var(--font-body);
+    padding: 7px 10px;
     outline: none;
-    font-family: inherit;
     box-sizing: border-box;
-    transition: border-color 0.15s, color 0.15s;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    -webkit-font-smoothing: antialiased;
 }
 
 .cv-query-section input:focus,
 .cv-query-section.cv-query-active input {
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.06);
     color: #e4e4e7;
 }
 
-.cv-query-section input::placeholder { color: #3f3f46; }
+.cv-query-section input::placeholder { color: #52525b; }
 
 /* ─── Context List ──────────────────────────────────────────────── */
 .cv-panel-list {
@@ -296,6 +376,8 @@
     transition: background 0.12s;
     border-left: 2px solid transparent;
     margin-bottom: 1px;
+    position: relative;
+    overflow: hidden;
 }
 
 .cv-context-item:hover {
@@ -306,31 +388,79 @@
 .cv-context-item:active { background: rgba(255, 255, 255, 0.08); }
 
 .cv-context-item.cv-loading {
-    opacity: 0.5;
     pointer-events: none;
 }
 
+.cv-context-item.cv-loading .cv-context-item-inner {
+    opacity: 0.35;
+}
+
+.cv-item-loading-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 13, 16, 0.55);
+    border-radius: 10px;
+    backdrop-filter: blur(1px);
+}
+
+.cv-context-item.cv-loading .cv-item-loading-overlay {
+    display: flex;
+}
+
+.cv-context-item.cv-insert-failed {
+    border-left-color: rgba(248, 113, 113, 0.6);
+    background: rgba(248, 113, 113, 0.06);
+}
+
 .cv-context-title {
+    font-family: var(--font-body);
     font-size: 12.5px;
     font-weight: 500;
     color: #d4d4d8;
     line-height: 1.35;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    -webkit-font-smoothing: antialiased;
+}
+
+.cv-star-icon {
+    color: #fbbf24;
+    font-size: 10px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.cv-context-snippet {
+    font-family: var(--font-body);
+    font-size: 11px;
+    color: #71717a;
+    line-height: 1.5;
+    margin-bottom: 5px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    -webkit-font-smoothing: antialiased;
 }
 
 .cv-context-meta {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
+    flex-wrap: wrap;
 }
 
 .cv-context-source {
+    font-family: var(--font-display);
     font-size: 10px;
     font-weight: 600;
     color: #71717a;
@@ -346,6 +476,58 @@
     font-size: 10.5px;
     color: #3f3f46;
     font-variant-numeric: tabular-nums;
+    font-family: var(--font-body);
+}
+
+/* ─── Context Tags ──────────────────────────────────────────────── */
+.cv-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 500;
+    font-family: var(--font-display);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    color: #52525b;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.cv-tag-model {
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+}
+
+/* ─── Status badges ─────────────────────────────────────────────── */
+.cv-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+    font-family: var(--font-body);
+}
+
+.cv-status-processing {
+    background: rgba(251, 191, 36, 0.1);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.15);
+}
+
+.cv-status-failed {
+    background: rgba(248, 113, 113, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(248, 113, 113, 0.15);
+}
+
+.cv-spinner-xs {
+    width: 8px;
+    height: 8px;
+    border-width: 1.5px;
 }
 
 /* ─── Empty / Loading States ────────────────────────────────────── */
@@ -354,6 +536,7 @@
     padding: 40px 16px;
     color: #52525b;
     font-size: 12px;
+    font-family: var(--font-body);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -365,6 +548,7 @@
     padding: 40px 16px;
     color: #52525b;
     font-size: 12px;
+    font-family: var(--font-body);
     line-height: 1.6;
 }
 
@@ -378,6 +562,7 @@
     font-size: 11px;
     color: #3f3f46;
     margin-top: 5px;
+    font-family: var(--font-body);
 }
 
 /* ─── Per-message Star Buttons ──────────────────────────────────── */
@@ -399,7 +584,6 @@
     transition: color 0.15s ease, background 0.15s ease, transform 0.1s ease;
 }
 
-/* Reveal on parent hover */
 *:hover > .cv-star-btn,
 *:focus-within > .cv-star-btn {
     opacity: 1;
@@ -423,71 +607,7 @@
     background: rgba(251, 191, 36, 0.18);
 }
 
-/* ─── ConVX Badge (for @convx + auto-inject) ───────────────────── */
-.cv-badge {
-    position: fixed;
-    bottom: 90px;
-    left: 50%;
-    transform: translateX(-50%) translateY(10px);
-    background: #111113;
-    color: #f4f4f5;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 8px 14px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    z-index: 999997;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    backdrop-filter: blur(12px);
-    opacity: 0;
-    pointer-events: none;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-}
-
-.cv-badge.cv-badge-visible {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-    pointer-events: auto;
-}
-
-.cv-badge-text {
-    flex: 1;
-}
-
-.cv-badge-btn {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: none;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 0.15s;
-}
-
-.cv-badge-inject {
-    background: rgba(255, 255, 255, 0.9);
-    color: #111113;
-}
-.cv-badge-inject:hover {
-    background: #fff;
-}
-
-.cv-badge-dismiss {
-    background: rgba(255, 255, 255, 0.08);
-    color: #a1a1aa;
-}
-.cv-badge-dismiss:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #f4f4f5;
-}
-
-/* ─── Brief Toast Notification ─────────────────────────────────── */
+/* ─── Brief Toast ───────────────────────────────────────────────── */
 #cv-toast {
     position: fixed;
     bottom: 32px;
@@ -498,22 +618,24 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
     padding: 8px 16px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    font-family: var(--font-body);
     font-size: 13px;
     font-weight: 500;
+    letter-spacing: -0.01em;
     z-index: 9999999;
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.2s ease, transform 0.2s ease;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     white-space: nowrap;
+    -webkit-font-smoothing: antialiased;
 }
 #cv-toast.cv-toast-visible {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
 
-/* ─── Long-press Preview Tooltip ────────────────────────────────── */
+/* ─── Hover Preview Tooltip ─────────────────────────────────────── */
 #cv-preview-tooltip {
     position: fixed;
     z-index: 9999999;
@@ -522,12 +644,13 @@
     border-radius: 14px;
     padding: 16px 18px;
     width: 280px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.5);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 4px 16px rgba(0,0,0,0.5);
+    font-family: var(--font-body);
     pointer-events: none;
     opacity: 0;
     transform: scale(0.92) translateY(6px);
     transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.34, 1.3, 0.64, 1);
+    -webkit-font-smoothing: antialiased;
 }
 
 #cv-preview-tooltip.cv-preview-visible {
@@ -536,7 +659,8 @@
 }
 
 .cv-preview-title {
-    font-size: 15px;
+    font-family: var(--font-display);
+    font-size: 14px;
     font-weight: 600;
     color: #f4f4f5;
     line-height: 1.4;
@@ -551,6 +675,7 @@
 }
 
 .cv-preview-source {
+    font-family: var(--font-display);
     font-size: 10px;
     font-weight: 600;
     color: #71717a;
@@ -565,12 +690,38 @@
 .cv-preview-date {
     font-size: 11px;
     color: #52525b;
+    font-family: var(--font-body);
 }
 
 .cv-preview-hint {
     font-size: 10.5px;
     color: #3f3f46;
+    font-family: var(--font-body);
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cv-preview-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.06);
+    margin: 10px 0;
+}
+
+.cv-preview-ideas {
+    margin-bottom: 2px;
+}
+
+.cv-preview-idea {
+    font-size: 11px;
+    color: #a1a1aa;
+    line-height: 1.6;
+    font-family: var(--font-body);
+}
+
+.cv-preview-snippet {
+    font-size: 11px;
+    color: #a1a1aa;
+    line-height: 1.55;
+    font-family: var(--font-body);
 }

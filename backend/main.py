@@ -731,21 +731,35 @@ def api_list_contexts_lightweight(q: str = Query(default="", description="Search
     # Strip heavy fields to keep the payload small
     result = []
     for ctx in contexts:
-        # Extract a short summary text
-        summary = ctx.get("summary", "")
-        if isinstance(summary, dict):
-            summary = summary.get("summary", summary.get("main_topics", ""))
-            if isinstance(summary, list):
-                summary = ", ".join(summary[:3])
-        if isinstance(summary, str) and len(summary) > 120:
-            summary = summary[:120]
+        # Extract a short summary snippet from the structured summary dict
+        summary_data = ctx.get("summary", "")
+        snippet = ""
+        key_ideas: list[str] = []
+        if isinstance(summary_data, dict):
+            snippet = (
+                summary_data.get("snapshot") or
+                summary_data.get("main_topic") or
+                ""
+            )
+            raw_ideas = summary_data.get("key_ideas", [])
+            if isinstance(raw_ideas, list):
+                key_ideas = [str(k) for k in raw_ideas[:3] if k]
+            if not snippet and key_ideas:
+                snippet = key_ideas[0]
+        elif isinstance(summary_data, str):
+            snippet = summary_data
+        if len(snippet) > 140:
+            snippet = snippet[:140].rsplit(" ", 1)[0] + "…"
 
         result.append({
             "id": ctx["id"],
             "title": ctx["title"],
-            "summary": summary,
+            "summary": snippet,
+            "key_ideas": key_ideas,
             "source": ctx.get("source", ""),
             "tags": ctx.get("tags", []),
+            "starred": ctx.get("starred", False),
+            "status": ctx.get("status", "ready"),
             "created_at": ctx["created_at"],
         })
     return result
@@ -1478,10 +1492,11 @@ def api_generate_prompt(
                 "mode": mode,
             }
 
-    # ── Static path: no query or no chunks (backward compat) ──
+    # ── No-query path: full context prompt ──
     summary = ctx["summary"]
     if isinstance(summary, dict):
         all_chunks_static = get_chunks_by_context(context_id)
+        has_real_summary = bool(summary.get("key_ideas"))
         prompt = generate_continuation_prompt(
             summary,
             ctx.get("original_chat", ""),
@@ -1491,14 +1506,15 @@ def api_generate_prompt(
             prompt_size=effective_size,
             chunks=all_chunks_static or None,
         )
+        mode = "context" if all_chunks_static else "static"
         return {
             "prompt": prompt,
             "context_id": context_id,
             "title": ctx["title"],
-            "mode": "static",
+            "mode": mode,
         }
 
-    # Fallback for string summaries (legacy data)
+    # Fallback for legacy string summaries
     prompt = f"Context:\n{summary}\n\nContinue the discussion from this point."
     return {"prompt": prompt, "context_id": context_id, "title": ctx["title"], "mode": "static"}
 

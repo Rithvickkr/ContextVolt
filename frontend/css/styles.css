@@ -3888,6 +3888,14 @@ body {
     flex-shrink: 0;
 }
 
+.provider-card-icon .provider-brand-logo {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    object-fit: contain;
+    display: block;
+}
+
 .provider-card-name {
     font-size: 12px;
     font-weight: 600;
@@ -7529,22 +7537,22 @@ kbd {
 }
 [data-theme="light"] .cv-card-capture { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #71717a; }
 
-/* ── Live summarizing / failed indicator (top-right glass pill) ── */
+/* ── Live summarizing / failed indicator (bottom-left glass pill) ── */
 .cv-card-live {
-    position: absolute; top: 10px; right: 10px; z-index: 3;
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 5px 12px 5px 10px;
+    position: absolute; bottom: 10px; left: 10px; z-index: 3;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 8px;
     border-radius: 100px;
-    background: rgba(8,8,10,0.72);
+    background: color-mix(in oklab, var(--cv-volt) 14%, rgba(8,8,10,0.78));
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    border: 1px solid color-mix(in oklab, var(--cv-volt) 38%, transparent);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 45%, transparent);
     color: var(--cv-volt);
-    font: 600 10px/1 var(--cv-mono);
-    letter-spacing: 0.1em; text-transform: uppercase;
+    font: 600 9.5px/1 var(--cv-mono);
+    letter-spacing: 0.09em; text-transform: uppercase;
     overflow: hidden;
     isolation: isolate;
     box-shadow:
-        0 4px 14px color-mix(in oklab, var(--cv-volt) 18%, transparent),
+        0 2px 10px color-mix(in oklab, var(--cv-volt) 22%, transparent),
         0 0 0 1px rgba(255,255,255,0.02) inset;
 }
 [data-theme="light"] .cv-card-live {
@@ -7621,28 +7629,7 @@ kbd {
 .cv-card.cv-card-summarizing {
     border-color: color-mix(in oklab, var(--cv-volt) 22%, var(--cv-line));
 }
-.cv-card.cv-card-summarizing::after {
-    content: ""; position: absolute; inset: 0;
-    border-radius: inherit; pointer-events: none;
-    background: conic-gradient(
-        from 0deg,
-        transparent 0deg,
-        color-mix(in oklab, var(--cv-volt) 60%, transparent) 30deg,
-        transparent 70deg,
-        transparent 360deg
-    );
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
-    padding: 1.5px;
-    animation: cv-card-ring 3s linear infinite;
-    opacity: 0.7;
-    z-index: 1;
-}
-@keyframes cv-card-ring {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-}
+/* Rotating border ring removed — the bottom-left badge is enough signal. */
 
 /* Legacy status class kept as safe fallback (in case any other code references it). */
 .cv-card-status { display: none; }

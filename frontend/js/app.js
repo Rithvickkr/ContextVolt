@@ -2446,16 +2446,7 @@ async function exportContext(format) {
 }
 
 async function _copyText(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-    } catch {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-    }
+    await navigator.clipboard.writeText(text);
 }
 
 // â”€â”€â”€ Copy to Clipboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2465,18 +2456,43 @@ async function copyPrompt() {
         await navigator.clipboard.writeText(state.currentPrompt);
         showToast('Copied to clipboard!', 'success');
     } catch {
-        // Fallback
-        const ta = document.createElement('textarea');
-        ta.value = state.currentPrompt;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast('Copied to clipboard!', 'success');
+        showToast('Copy failed — clipboard access denied', 'error');
     }
 }
 
 // â”€â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function showConfirm({ title, message, confirmLabel = 'Confirm', danger = false }) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'cv-confirm-overlay';
+        overlay.innerHTML = `
+            <div class="cv-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cv-confirm-title">
+                <div class="cv-confirm-title" id="cv-confirm-title">${escapeHtml(title)}</div>
+                ${message ? `<div class="cv-confirm-message">${escapeHtml(message)}</div>` : ''}
+                <div class="cv-confirm-actions">
+                    <button class="cv-confirm-cancel">Cancel</button>
+                    <button class="cv-confirm-ok${danger ? ' danger' : ''}">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+
+        const dismiss = (result) => {
+            overlay.classList.add('cv-confirm-out');
+            setTimeout(() => { overlay.remove(); resolve(result); }, 150);
+        };
+
+        const confirmCancel = overlay.querySelector('.cv-confirm-cancel');
+        const confirmOk = overlay.querySelector('.cv-confirm-ok');
+        if (confirmCancel) confirmCancel.addEventListener('click', () => dismiss(false));
+        if (confirmOk) confirmOk.addEventListener('click', () => dismiss(true));
+        overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(false); });
+        overlay.addEventListener('keydown', e => { if (e.key === 'Escape') dismiss(false); });
+
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('cv-confirm-in'));
+        overlay.querySelector('.cv-confirm-cancel').focus();
+    });
+}
+
 function showToast(message, type = 'success') {
     const stack = $('#toast-stack');
     const toast = document.createElement('div');
@@ -2511,7 +2527,7 @@ function _showUndoToast(message, onUndo) {
     stack.appendChild(toast);
 
     const undoBtn = toast.querySelector('.toast-undo-btn');
-    undoBtn.addEventListener('click', () => {
+    if (undoBtn) undoBtn.addEventListener('click', () => {
         if (onUndo) onUndo();
         toast.remove();
     });
@@ -2655,6 +2671,9 @@ async function openSettingsModal() {
 }
 
 function closeSettingsModal() {
+    // Detach card references so downloads continue headlessly
+    for (const dl of _downloads.values()) dl.card = null;
+
     const overlay = $('#settings-modal');
     const inner = overlay.querySelector('.settings-modal');
     releaseFocus(inner);
@@ -2671,6 +2690,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const card = document.createElement('div');
     card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '');
     card.dataset.id = item.id;
+    card.dataset.installed = item.installed ? 'true' : 'false';
 
     const label = item.label || item.id;
     const desc  = item.desc  || '';
@@ -2679,8 +2699,10 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const inst  = item.installed;
 
     const statusBadge = inst
-        ? '<span class=”settings-installed-badge”>✓ Installed</span>'
+        ? '<span class="settings-installed-badge">✓ Installed</span>'
         : '<span class="settings-not-installed-badge">Not downloaded</span>';
+
+    const downloadIcon = `<svg class="settings-download-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 12h10"/></svg>`;
 
     card.innerHTML = `
         <div class="settings-model-card-left">
@@ -2692,6 +2714,9 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
             <span class="settings-status-badge" id="status-badge-${item.id.replace(/[:.]/g, '-')}">${statusBadge.replace(/<\/?span[^>]*>/g, '')}</span>
             ${rec ? '<span class="settings-model-badge">Recommended</span>' : ''}
             <span class="settings-model-size">${escapeHtml(size)}</span>
+            ${inst
+                ? `<button class="settings-delete-btn" title="Delete model" aria-label="Delete ${escapeHtml(label)}">✕</button>`
+                : `<span class="settings-dl-icon" title="Not downloaded">${downloadIcon}</span>`}
             <div class="settings-model-radio"></div>
         </div>`;
 
@@ -2705,49 +2730,324 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
         badge.textContent = 'Not downloaded';
     }
 
-    card.addEventListener('click', () => {
+    // If this model is currently downloading (settings was closed mid-download),
+    // reattach the card so progress is reflected again.
+    if (_downloads.has(item.id)) {
+        _downloads.get(item.id).card = card;
+        _attachCardDownloadUI(item.id, card);
+    }
+
+    const deleteBtn = card.querySelector('.settings-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const ok = await showConfirm({
+                title: `Delete "${label}"?`,
+                message: `This will remove the model from Ollama. You can re-download it later.`,
+                confirmLabel: 'Delete',
+                danger: true,
+            });
+            if (ok) _deleteModelInline(item.id, card, containerId, onSelect);
+        });
+    }
+
+    card.addEventListener('click', async () => {
         document.querySelectorAll(`#${containerId} .settings-model-card`)
             .forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         onSelect(item.id);
 
-        // P2-3: Auto-pull if not installed
-        if (!inst && !card.classList.contains('downloading')) {
-            _pullModelInline(item.id, card);
+        // Auto-pull if not installed and not already downloading
+        // (consult dataset, not the stale `inst` closure — it goes stale after delete)
+        if (card.dataset.installed !== 'true' && !card.classList.contains('downloading') && !_downloads.has(item.id)) {
+            const ok = await showConfirm({
+                title: `Download "${label}"?`,
+                message: `${size ? size + ' — ' : ''}${desc || 'This model will be pulled from Ollama.'}`,
+                confirmLabel: 'Download',
+            });
+            if (ok) _pullModelInline(item.id, card);
         }
     });
 
     return card;
 }
 
-// â”€â”€â”€ P2-3: Inline Model Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-async function _pullModelInline(modelId, card) {
+async function _deleteModelInline(modelId, card, containerId, onSelect) {
+    // Re-resolve card in case the grid was re-rendered while confirm was open
+    const liveCard = document.querySelector(`.settings-model-card[data-id="${modelId}"]`);
+    if (liveCard) card = liveCard;
+
+    if (card.classList.contains('deleting') || card.classList.contains('downloading')) return;
+
     const safeId = modelId.replace(/[:.]/g, '-');
     const dlArea = card.querySelector(`#dl-area-${safeId}`);
     const badge = card.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+    const deleteBtn = card.querySelector('.settings-delete-btn');
 
-    card.classList.add('downloading');
-    if (badge) {
-        badge.className = 'settings-not-installed-badge';
-        badge.textContent = 'Downloadingâ€¦';
-    }
+    card.classList.add('deleting');
+    if (badge) { badge.className = 'settings-not-installed-badge'; badge.textContent = 'Deleting…'; }
+    if (deleteBtn) deleteBtn.disabled = true;
 
     if (dlArea) {
         dlArea.style.display = 'block';
         dlArea.innerHTML = `
-            <div class="settings-download-bar-bg"><div class="settings-download-bar-fill" id="dl-fill-${safeId}"></div></div>
-            <div class="settings-download-status" id="dl-status-${safeId}">Starting downloadâ€¦</div>
+            <div class="settings-download-bar-bg"><div class="settings-delete-bar-fill" id="dl-fill-${safeId}"></div></div>
+            <div class="settings-dl-meta-row"><span class="settings-download-status" id="dl-status-${safeId}">Removing model files…</span></div>
         `;
     }
+
+    // Animate fake progress: eases toward 85% until the request resolves
+    let pct = 0;
+    const fill = document.getElementById(`dl-fill-${safeId}`);
+    const ticker = setInterval(() => {
+        pct = Math.min(pct + (85 - pct) * 0.12, 84);
+        if (fill) fill.style.width = pct.toFixed(1) + '%';
+    }, 80);
+
+    try {
+        const res = await fetch(`${API}/api/setup/delete-model/${encodeURIComponent(modelId)}`, { method: 'DELETE' });
+        clearInterval(ticker);
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Delete failed' }));
+            throw new Error(err.detail || 'Delete failed');
+        }
+
+        // Complete the bar then clean up
+        if (fill) fill.style.width = '100%';
+        const statusEl = document.getElementById(`dl-status-${safeId}`);
+        if (statusEl) statusEl.textContent = 'Deleted';
+
+        setTimeout(() => {
+            const wasSelected = card.classList.contains('selected');
+            card.classList.remove('deleting', 'selected');
+            card.dataset.installed = 'false';
+            if (badge) { badge.className = 'settings-not-installed-badge'; badge.textContent = 'Not downloaded'; }
+            if (deleteBtn) deleteBtn.remove();
+            if (dlArea) dlArea.style.display = 'none';
+
+            // Restore download icon so the card is immediately re-downloadable without a reload
+            const right = card.querySelector('.settings-model-card-right');
+            if (right && !right.querySelector('.settings-dl-icon')) {
+                const dlIcon = document.createElement('span');
+                dlIcon.className = 'settings-dl-icon';
+                dlIcon.title = 'Not downloaded';
+                dlIcon.innerHTML = `<svg class="settings-download-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3"/><path d="M3 12h10"/></svg>`;
+                const radio = right.querySelector('.settings-model-radio');
+                if (radio) right.insertBefore(dlIcon, radio); else right.appendChild(dlIcon);
+            }
+
+            // Mirror the change in cached config so re-opening Settings reflects reality
+            const allMeta = [
+                ...(_settingsConfig?.available_models || []),
+                ...(_settingsConfig?.available_embed_models || []),
+            ];
+            const meta = allMeta.find(m => m.id === modelId);
+            if (meta) meta.installed = false;
+
+            if (wasSelected) {
+                const firstOther = document.querySelector(`#${containerId} .settings-model-card:not([class*="deleting"])`);
+                if (firstOther) { firstOther.classList.add('selected'); onSelect(firstOther.dataset.id); }
+            }
+        }, 500);
+
+        // Refresh authoritative config from server (non-blocking)
+        fetch(`${API}/api/setup/config`).then(r => r.json()).then(d => { _settingsConfig = d; }).catch(() => {});
+
+        showToast(`Model "${modelId}" deleted`, 'success');
+    } catch (err) {
+        clearInterval(ticker);
+        card.classList.remove('deleting');
+        if (badge) { badge.className = 'settings-installed-badge'; badge.textContent = '✓ Installed'; }
+        if (deleteBtn) deleteBtn.disabled = false;
+        if (dlArea) {
+            if (fill) fill.style.width = '0%';
+            const statusEl = document.getElementById(`dl-status-${safeId}`);
+            if (statusEl) { statusEl.className = 'settings-download-error'; statusEl.textContent = err.message || 'Delete failed'; }
+        }
+        showToast(err.message || 'Delete failed', 'error');
+    }
+}
+
+// ─── Global download tracker ──────────────────────────────────────────────────
+// modelId → { label, size, pct, statusText, abortController, card, done, cancelled }
+const _downloads = new Map();
+
+function _dlBadgeHtml() {
+    return `
+        <div class="cv-dl-badge-head">
+            <span class="cv-dl-badge-spinner"></span>
+            <span class="cv-dl-badge-label"></span>
+            <span class="cv-dl-badge-chevron">▾</span>
+        </div>
+        <div class="cv-dl-badge-head-bar"><div class="cv-dl-badge-head-bar-fill" style="width:0%"></div></div>
+        <div class="cv-dl-badge-panel" id="cv-dl-panel"></div>`;
+}
+
+function _ensureDlBadge() {
+    if (document.getElementById('cv-dl-badge')) return;
+    const el = document.createElement('div');
+    el.id = 'cv-dl-badge';
+    el.className = 'cv-dl-badge';
+    el.innerHTML = _dlBadgeHtml();
+    const head = el.querySelector('.cv-dl-badge-head');
+    if (head) head.addEventListener('click', () => el.classList.toggle('cv-dl-open'));
+    document.body.appendChild(el);
+}
+
+function _updateDlBadge() {
+    const active = [..._downloads.entries()].filter(([, d]) => !d.done && !d.cancelled);
+    const badge = document.getElementById('cv-dl-badge');
+
+    if (active.length === 0) {
+        if (badge) badge.classList.remove('cv-dl-visible', 'cv-dl-open');
+        return;
+    }
+
+    _ensureDlBadge();
+    const el = document.getElementById('cv-dl-badge');
+    el.classList.add('cv-dl-visible', 'cv-dl-open'); // auto-open panel when downloads are active
+
+    const labelEl = el.querySelector('.cv-dl-badge-label');
+    if (labelEl) {
+        labelEl.textContent = active.length === 1
+            ? `${active[0][1].label} — ${active[0][1].pct}%`
+            : `${active.length} downloading`;
+    }
+
+    const avgPct = active.reduce((s, [, d]) => s + d.pct, 0) / active.length;
+    const headBarFill = el.querySelector('.cv-dl-badge-head-bar-fill');
+    if (headBarFill) headBarFill.style.width = Math.round(avgPct) + '%';
+
+    // Reconcile rows in place — rebuilding innerHTML on every tick caused flicker
+    const panel = el.querySelector('#cv-dl-panel');
+    if (!panel) return;
+
+    const activeIds = new Set(active.map(([id]) => id));
+
+    // Remove rows for downloads that ended
+    for (const child of [...panel.children]) {
+        if (!activeIds.has(child.dataset.modelId)) child.remove();
+    }
+
+    for (const [modelId, dl] of active) {
+        let item = panel.querySelector(`[data-model-id="${CSS.escape(modelId)}"]`);
+        if (!item) {
+            item = document.createElement('div');
+            item.className = 'cv-dl-panel-item';
+            item.dataset.modelId = modelId;
+            item.innerHTML = `
+                <div class="cv-dl-panel-row">
+                    <span class="cv-dl-panel-name"></span>
+                    <button class="cv-dl-panel-cancel" title="Cancel">&times;</button>
+                </div>
+                <div class="cv-dl-bar-bg"><div class="cv-dl-bar-fill"></div></div>
+                <div class="cv-dl-panel-status"></div>`;
+            item.querySelector('.cv-dl-panel-name').textContent = dl.label;
+            item.querySelector('.cv-dl-panel-cancel').addEventListener('click', (e) => {
+                e.stopPropagation();
+                _cancelDownload(modelId);
+            });
+            panel.appendChild(item);
+        }
+        // Only touch the fields that change
+        const fill = item.querySelector('.cv-dl-bar-fill');
+        const status = item.querySelector('.cv-dl-panel-status');
+        const newWidth = dl.pct + '%';
+        if (fill.style.width !== newWidth) fill.style.width = newWidth;
+        const newStatus = dl.statusText || 'Starting…';
+        if (status.textContent !== newStatus) status.textContent = newStatus;
+    }
+}
+
+function _cancelDownload(modelId) {
+    const dl = _downloads.get(modelId);
+    if (!dl || dl.done) return;
+    dl.cancelled = true;
+    dl.abortController.abort();
+    _downloads.delete(modelId);
+    _updateDlBadge();
+    const card = dl.card;
+    if (card) {
+        card.classList.remove('downloading');
+        const b = card.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+        if (b) { b.className = 'settings-not-installed-badge'; b.textContent = 'Not downloaded'; }
+        const area = card.querySelector('.settings-download-area');
+        if (area) area.style.display = 'none';
+    }
+}
+
+function _updateDownloadCard(modelId) {
+    const dl = _downloads.get(modelId);
+    if (!dl || !dl.card) return;
+    const safeId = modelId.replace(/[:.]/g, '-');
+    const fill = dl.card.querySelector(`#dl-fill-${safeId}`);
+    const pctEl = dl.card.querySelector(`#dl-pct-${safeId}`);
+    const statusEl = dl.card.querySelector(`#dl-status-${safeId}`);
+    if (fill) fill.style.width = dl.pct + '%';
+    if (pctEl) pctEl.textContent = dl.pct + '%';
+    if (statusEl) statusEl.textContent = dl.statusText || '';
+}
+
+function _attachCardDownloadUI(modelId, card) {
+    const safeId = modelId.replace(/[:.]/g, '-');
+    const dl = _downloads.get(modelId);
+    const dlArea = card.querySelector('.settings-download-area');
+    const badge = card.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+    card.classList.add('downloading');
+    if (badge) { badge.className = 'settings-not-installed-badge'; badge.textContent = 'Downloading…'; }
+    if (dlArea) {
+        dlArea.style.display = 'block';
+        dlArea.innerHTML = `
+            <div class="settings-download-bar-bg"><div class="settings-download-bar-fill" id="dl-fill-${safeId}" style="width:${dl ? dl.pct : 0}%"></div></div>
+            <div class="settings-dl-meta-row">
+                <span class="settings-download-status" id="dl-status-${safeId}">${dl ? escapeHtml(dl.statusText || 'Starting…') : 'Starting…'}</span>
+                <span class="settings-dl-pct" id="dl-pct-${safeId}">${dl ? dl.pct : 0}%</span>
+                <button class="settings-dl-cancel-btn" title="Cancel download">&times;</button>
+            </div>`;
+        const cancelBtn = dlArea.querySelector('.settings-dl-cancel-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _cancelDownload(modelId);
+        });
+    }
+}
+
+// ─── P2-3: Inline Model Download ─────────────────────────────────────────────
+async function _pullModelInline(modelId, card) {
+    // Re-resolve card in case settings grid was re-rendered while confirm was open
+    const liveCard = document.querySelector(`.settings-model-card[data-id="${modelId}"]`);
+    if (liveCard) card = liveCard;
+
+    // Resolve label/size from cached config
+    const allMeta = [
+        ...(_settingsConfig?.available_models || []),
+        ...(_settingsConfig?.available_embed_models || []),
+    ];
+    const meta = allMeta.find(m => m.id === modelId) || {};
+    const label = meta.label || modelId;
+    const size  = meta.size  || '';
+
+    // Register in global tracker
+    const abortController = new AbortController();
+    _downloads.set(modelId, { label, size, pct: 0, statusText: 'Starting…', abortController, card, done: false, cancelled: false });
+    _updateDlBadge();
+
+    // Set up card UI
+    if (card) _attachCardDownloadUI(modelId, card);
 
     try {
         const res = await fetch(`${API}/api/setup/pull-model-stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model: modelId }),
+            signal: abortController.signal,
         });
 
-        if (!res.ok) throw new Error('Pull request failed');
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Download failed (${res.status})`);
+        }
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -2764,50 +3064,83 @@ async function _pullModelInline(modelId, card) {
                 if (!line.trim()) continue;
                 try {
                     const data = JSON.parse(line);
-                    const fill = document.getElementById(`dl-fill-${safeId}`);
-                    const statusEl = document.getElementById(`dl-status-${safeId}`);
-
                     if (data.error) throw new Error(data.error);
 
-                    lastStatus = data.status || '';
+                    const dl = _downloads.get(modelId);
+                    if (!dl) return; // cancelled externally
 
                     if (data.total && data.completed) {
                         const pct = Math.round((data.completed / data.total) * 100);
-                        if (fill) fill.style.width = pct + '%';
                         const mb = (data.completed / (1024 * 1024)).toFixed(0);
                         const totalMb = (data.total / (1024 * 1024)).toFixed(0);
-                        if (statusEl) statusEl.textContent = `${data.status || 'Downloading'} â€” ${mb} / ${totalMb} MB (${pct}%)`;
-                    } else if (statusEl) {
-                        statusEl.textContent = data.status || 'Processingâ€¦';
+                        dl.pct = pct;
+                        dl.statusText = `${data.status || 'Downloading'} — ${mb} / ${totalMb} MB (${pct}%)`;
+                    } else {
+                        dl.statusText = data.status || 'Processing…';
                     }
+
+                    _updateDownloadCard(modelId);
+                    _updateDlBadge();
                 } catch (e) {
-                    if (e.message && e.message !== line) {
-                        throw e;
-                    }
+                    if (e.message && e.message !== line) throw e;
                 }
             }
         }
 
-        // Success
-        card.classList.remove('downloading');
-        if (badge) {
-            badge.className = 'settings-installed-badge';
-            badge.textContent = '✓ Installed';
+        // ── Success ──
+        const dl = _downloads.get(modelId);
+        const finishedCard = dl?.card || null;
+        _downloads.delete(modelId);
+        _updateDlBadge();
+
+        if (finishedCard) {
+            finishedCard.dataset.installed = 'true';
+            finishedCard.classList.remove('downloading');
+            const b = finishedCard.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+            if (b) { b.className = 'settings-installed-badge'; b.textContent = '✓ Installed'; }
+            const area = finishedCard.querySelector('.settings-download-area');
+            if (area) area.style.display = 'none';
+            // Swap download icon for delete button
+            const right = finishedCard.querySelector('.settings-model-card-right');
+            right?.querySelector('.settings-dl-icon')?.remove();
+            right?.querySelector('.settings-dl-cancel-btn')?.remove();
+            const radio = right?.querySelector('.settings-model-radio');
+            if (right && radio) {
+                const delBtn = document.createElement('button');
+                delBtn.className = 'settings-delete-btn';
+                delBtn.title = 'Delete model';
+                delBtn.textContent = '✕';
+                const capturedLabel = label;
+                delBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const ok = await showConfirm({ title: `Delete “${capturedLabel}”?`, message: 'This will remove the model from Ollama. You can re-download it later.', confirmLabel: 'Delete', danger: true });
+                    if (ok) _deleteModelInline(modelId, finishedCard, finishedCard.closest('[id]')?.id || '', () => {});
+                });
+                right.insertBefore(delBtn, radio);
+            }
         }
-        if (dlArea) dlArea.style.display = 'none';
-        showToast(`Model "${modelId}" downloaded!`, 'success');
+
+        // Refresh config so install state is current
+        fetch(`${API}/api/setup/config`).then(r => r.json()).then(d => { _settingsConfig = d; }).catch(() => {});
+        showToast(`Model “${label}” downloaded!`, 'success');
 
     } catch (err) {
-        card.classList.remove('downloading');
-        if (badge) {
-            badge.className = 'settings-not-installed-badge';
-            badge.textContent = 'Download failed';
+        if (err.name === 'AbortError') return; // user cancelled
+
+        const dl = _downloads.get(modelId);
+        const failedCard = dl?.card || null;
+        _downloads.delete(modelId);
+        _updateDlBadge();
+
+        if (failedCard) {
+            failedCard.classList.remove('downloading');
+            const b = failedCard.querySelector('.settings-installed-badge, .settings-not-installed-badge');
+            if (b) { b.className = 'settings-not-installed-badge'; b.textContent = 'Download failed'; }
+            const statusEl = failedCard.querySelector('.settings-download-status');
+            if (statusEl) { statusEl.className = 'settings-download-error'; statusEl.textContent = err.message || 'Download failed'; }
         }
-        const statusEl = document.getElementById(`dl-status-${safeId}`);
-        if (statusEl) {
-            statusEl.className = 'settings-download-error';
-            statusEl.textContent = err.message || 'Download failed';
-        }
+
+        showToast(err.message || 'Download failed', 'error');
     }
 }
 
@@ -3454,28 +3787,32 @@ function _askRenderAssistantMsg() {
     _askScrollToBottom();
 }
 
+let _askRafScheduled = false;
+
 function _askAppendToken(token) {
     const content = $('#ask-streaming-content');
     if (!content) return;
 
-    // Remove cursor, wrap-append the new token, re-add cursor at end.
-    const cursor = content.querySelector('.ask-cursor');
-    if (cursor) cursor.remove();
+    // Accumulate raw text; let rAF coalesce paints so streaming feels smooth
+    // instead of strobing once per token.
+    const raw = (content.getAttribute('data-raw') || '') + token;
+    content.setAttribute('data-raw', raw);
 
-    // Keep the raw source text for final markdown rendering.
-    const rawAttr = content.getAttribute('data-raw') || '';
-    content.setAttribute('data-raw', rawAttr + token);
+    if (!_askRafScheduled) {
+        _askRafScheduled = true;
+        requestAnimationFrame(_askFlushStream);
+    }
+}
 
-    // Append the new token as a span so it fades in.
-    const tokenSpan = document.createElement('span');
-    tokenSpan.className = 'ask-token';
-    tokenSpan.textContent = token;
-    content.appendChild(tokenSpan);
-
-    const newCursor = document.createElement('span');
-    newCursor.className = 'ask-cursor';
-    content.appendChild(newCursor);
-
+function _askFlushStream() {
+    _askRafScheduled = false;
+    const content = $('#ask-streaming-content');
+    if (!content) return;
+    const raw = content.getAttribute('data-raw') || '';
+    // Render markdown progressively — partial **bold or ```code blocks just
+    // stay as plain text until their closing token arrives, then snap into
+    // formatted form on the next frame.
+    content.innerHTML = _askSimpleMarkdown(raw) + '<span class="ask-cursor"></span>';
     _askScrollToBottom();
 }
 

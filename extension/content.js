@@ -686,6 +686,20 @@ function showBriefToast(message) {
     }, 2200);
 }
 
+function showPersistentToast(message) {
+    const existing = document.getElementById("cv-toast");
+    if (existing) existing.remove();
+    const toast = document.createElement("div");
+    toast.id = "cv-toast";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("cv-toast-visible"));
+    return () => {
+        toast.classList.remove("cv-toast-visible");
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+    };
+}
+
 function showContextPreview(item, ctx) {
     const existing = document.getElementById("cv-preview-tooltip");
     if (existing) existing.remove();
@@ -839,6 +853,8 @@ function loadContexts(query = "") {
                 if (tip) tip.remove();
 
                 item.classList.add("cv-loading");
+                const dismissLoading = showPersistentToast("⏳ Pasting context…");
+
                 const queryInput = document.getElementById("cv-query-input");
                 const query = queryInput ? queryInput.value.trim() : "";
 
@@ -847,6 +863,7 @@ function loadContexts(query = "") {
 
                 chrome.runtime.sendMessage({ action: "fetch_prompt", contextId: ctx.id, size, query }, (res) => {
                     item.classList.remove("cv-loading");
+                    dismissLoading();
 
                     if (res && res.success && res.prompt) {
                         const mode = res.mode === "hybrid" ? "⚡ Hybrid" : res.mode === "retrieval" ? "🎯 Retrieved" : res.mode === "context" ? "📋 Context" : "📄 Static";
@@ -869,6 +886,7 @@ function loadContexts(query = "") {
                     } else {
                         item.classList.add("cv-insert-failed");
                         setTimeout(() => item.classList.remove("cv-insert-failed"), 2000);
+                        showBriefToast("❌ Failed to fetch context");
                     }
                 });
             });

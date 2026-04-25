@@ -320,12 +320,14 @@ def get_config():
             pass
 
     def _is_installed(model_id: str) -> bool:
-        return any(
-            n == model_id
-            or n.split(":")[0] == model_id
-            or model_id.split(":")[0] == n.split(":")[0]
-            for n in installed_names
-        )
+        for n in installed_names:
+            if n == model_id:
+                return True
+            # Only do base-name fallback when model_id has no explicit tag
+            # (e.g. "nomic-embed-text" should match "nomic-embed-text:latest")
+            if ":" not in model_id and n.split(":")[0] == model_id:
+                return True
+        return False
 
     llm_models = [
         {"id": "qwen2.5:1.5b", "label": "Qwen 2.5 1.5B", "size": "~1 GB",
@@ -411,7 +413,7 @@ def pull_model_stream(body: ModelSelect):
         try:
             resp = _req.post(
                 "http://localhost:11434/api/pull",
-                json={"name": body.model, "stream": True},
+                json={"model": body.model, "name": body.model, "stream": True},
                 stream=True,
                 timeout=600,
             )
@@ -426,6 +428,48 @@ def pull_model_stream(body: ModelSelect):
             yield _json.dumps({"status": "error", "error": str(e)}) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+@app.delete("/api/setup/delete-model/{model_id:path}")
+def delete_ollama_model(model_id: str):
+    """Delete an installed Ollama model.
+
+    Resolves the actual Ollama model name (e.g. qwen2.5:latest) from the
+    config model ID (e.g. qwen2.5:3b) using the same fuzzy base-name match
+    that _is_installed uses, so the delete never fails with 'model not found'.
+    """
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
+    import requests as _req
+    try:
+        # Resolve actual installed name that matches the requested model_id
+        actual_name = model_id
+        try:
+            r = _req.get("http://localhost:11434/api/tags", timeout=4)
+            if r.status_code == 200:
+                installed = [m.get("name", "") for m in r.json().get("models", [])]
+                for n in installed:
+                    if n == model_id:
+                        actual_name = n
+                        break
+                    if ":" not in model_id and n.split(":")[0] == model_id:
+                        actual_name = n
+                        break
+        except Exception:
+            pass
+
+        resp = _req.delete(
+            "http://localhost:11434/api/delete",
+            json={"name": actual_name, "model": actual_name},
+            timeout=30,
+        )
+        if resp.status_code in (200, 204):
+            return {"status": "deleted", "model": model_id, "actual": actual_name}
+        raise HTTPException(status_code=resp.status_code, detail=f"Ollama error: {resp.text}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

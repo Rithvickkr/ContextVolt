@@ -20,21 +20,28 @@
 
     <!-- ── Welcome Splash ─────────────────────────────────────────────── -->
     <div id="inst-welcome" class="inst-welcome" aria-hidden="true">
+        <div class="iw-bg-grid" aria-hidden="true"></div>
         <div class="iw-glow" aria-hidden="true"></div>
+        <div class="iw-orbit" aria-hidden="true">
+            <span class="iw-orbit-ring iw-orbit-1"></span>
+            <span class="iw-orbit-ring iw-orbit-2"></span>
+            <span class="iw-orbit-ring iw-orbit-3"></span>
+        </div>
         <div class="iw-content">
             <div class="iw-logo">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
                     <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="currentColor" stroke="currentColor" stroke-width="0.4" stroke-linejoin="round"/>
                 </svg>
             </div>
             <h1 class="iw-name">ContextVolt</h1>
             <p class="iw-tag">Local-first AI memory</p>
-            <div class="iw-hint">Setting things up…</div>
+            <div class="iw-progress" aria-hidden="true"><span class="iw-progress-fill"></span></div>
+            <div class="iw-hint">Initializing environment…</div>
         </div>
-        <div class="iw-dots" aria-hidden="true">
-            <span class="iw-dot"></span>
-            <span class="iw-dot"></span>
-            <span class="iw-dot"></span>
+        <div class="iw-footer" aria-hidden="true">
+            <span class="iw-foot-l">v1.0</span>
+            <span class="iw-foot-sep">·</span>
+            <span class="iw-foot-r">Setup Wizard</span>
         </div>
     </div>
 
@@ -277,13 +284,32 @@
 
                         <div class="ipp-log" role="log" aria-label="Installation log">
                             <div class="ipp-log-header">
-                                <span class="ipp-log-label">Output</span>
+                                <div class="ipp-log-dots" aria-hidden="true">
+                                    <span class="ipp-log-dot ipp-log-dot-r"></span>
+                                    <span class="ipp-log-dot ipp-log-dot-y"></span>
+                                    <span class="ipp-log-dot ipp-log-dot-g"></span>
+                                </div>
+                                <span class="ipp-log-title">convx-installer — output</span>
+                                <div class="ipp-log-actions">
+                                    <button class="ipp-log-iconbtn" id="log-copy-btn" type="button" title="Copy log" aria-label="Copy log">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    </button>
+                                    <button class="ipp-log-iconbtn" id="log-clear-btn" type="button" title="Clear" aria-label="Clear log">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg>
+                                    </button>
+                                </div>
                             </div>
                             <div class="ipp-log-body" id="log-content">
                                 <div class="ipp-log-entry ipp-log-init">
+                                    <span class="ipp-log-gutter">~</span>
                                     <span class="ipp-log-time">--:--</span>
                                     <span class="ipp-log-msg">Waiting to start installation…</span>
                                 </div>
+                            </div>
+                            <div class="ipp-log-footer" id="log-footer">
+                                <span class="ipp-log-prompt">$</span>
+                                <span class="ipp-log-cursor" aria-hidden="true"></span>
+                                <span class="ipp-log-foot-meta" id="log-foot-meta">idle</span>
                             </div>
                         </div>
 
@@ -618,14 +644,47 @@
         });
 
         let initCleared = false;
+        let logLineNo = 0;
+        function _classifyLog(msg) {
+            const m = String(msg || '').toLowerCase();
+            if (/\b(error|fail(ed)?|cannot|unable|exception|traceback)\b/.test(m)) return 'error';
+            if (/\b(warn(ing)?|deprecat|skip(ped)?)\b/.test(m)) return 'warn';
+            if (/\b(success|complete[d]?|done|ready|installed|✓|ok)\b/.test(m)) return 'ok';
+            if (/\b(install|download|fetch|pull|build|run|start|launch)\w*/.test(m)) return 'info';
+            return '';
+        }
         function appendLog(logEntry) {
             if (!initCleared) { logContent.innerHTML = ''; initCleared = true; }
+            logLineNo += 1;
+            const sev = _classifyLog(logEntry.message);
             const entry = document.createElement('div');
-            entry.className = 'ipp-log-entry';
-            entry.innerHTML = '<span class="ipp-log-time">' + _esc(logEntry.time) + '</span><span class="ipp-log-msg">' + _esc(logEntry.message) + '</span>';
+            entry.className = 'ipp-log-entry' + (sev ? ' ipp-log-' + sev : '');
+            entry.innerHTML =
+                '<span class="ipp-log-gutter">' + String(logLineNo).padStart(3, ' ').replace(/ /g, ' ') + '</span>' +
+                '<span class="ipp-log-time">' + _esc(logEntry.time) + '</span>' +
+                '<span class="ipp-log-msg">' + _esc(logEntry.message) + '</span>';
             logContent.appendChild(entry);
             logContent.scrollTop = logContent.scrollHeight;
+            const meta = document.getElementById('log-foot-meta');
+            if (meta) meta.textContent = logLineNo + ' line' + (logLineNo === 1 ? '' : 's');
         }
+
+        // Log header actions
+        document.getElementById('log-copy-btn')?.addEventListener('click', () => {
+            const text = Array.from(logContent.querySelectorAll('.ipp-log-entry'))
+                .map(e => {
+                    const t = e.querySelector('.ipp-log-time')?.textContent || '';
+                    const m = e.querySelector('.ipp-log-msg')?.textContent || '';
+                    return (t ? '[' + t + '] ' : '') + m;
+                }).join('\n');
+            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => {});
+        });
+        document.getElementById('log-clear-btn')?.addEventListener('click', () => {
+            logContent.innerHTML = '';
+            logLineNo = 0;
+            const meta = document.getElementById('log-foot-meta');
+            if (meta) meta.textContent = 'cleared';
+        });
 
         function updateUI(s) {
             const { steps, newLogs, hasError, installationComplete: isComplete } = s;
@@ -646,6 +705,13 @@
             progressFill.style.width = pct + '%';
             progressText.textContent = pct + '%';
             retryBtn.style.display = hasError ? 'flex' : 'none';
+
+            const logFooter = document.getElementById('log-footer');
+            if (logFooter) {
+                logFooter.classList.toggle('running', steps.some(s => s.status === 'running'));
+                logFooter.classList.toggle('error', !!hasError);
+                logFooter.classList.toggle('ok', !!isComplete);
+            }
 
             if (isComplete && !installationComplete) {
                 installationComplete = true;

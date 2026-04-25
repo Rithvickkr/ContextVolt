@@ -8394,3 +8394,391 @@ kbd {
     #view-ask .ask-input-bar.cv-ask-composer { padding: 10px 14px 14px; }
     #view-ask .ask-msg { margin-bottom: 16px; }
 }
+
+/* ================================================================
+   Setup Wizard — UI Polish Layer
+   ================================================================ */
+
+.setup-wizard {
+    background:
+        radial-gradient(900px 600px at 20% 10%, rgba(120,140,200,0.06), transparent 55%),
+        radial-gradient(800px 500px at 80% 90%, rgba(180,140,255,0.05), transparent 60%),
+        var(--bg-primary);
+    overflow: hidden;
+}
+
+/* Faint dotted backdrop, softly masked to a vignette */
+.setup-wizard::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: center;
+    -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 70%);
+    mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 70%);
+    opacity: 0.55;
+    pointer-events: none;
+    animation: setupBgFade 1.2s ease 0.1s both;
+}
+
+@keyframes setupBgFade {
+    from { opacity: 0; }
+    to   { opacity: 0.55; }
+}
+
+/* Two ambient orbital rings around the shell */
+.setup-wizard::after {
+    content: "";
+    position: absolute;
+    width: 700px;
+    height: 700px;
+    top: 50%;
+    left: 50%;
+    margin: -350px 0 0 -350px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.04);
+    pointer-events: none;
+    animation: setupRingDrift 6s ease-in-out infinite;
+    z-index: 0;
+}
+
+@keyframes setupRingDrift {
+    0%,100% { transform: scale(1);    opacity: 0.6; }
+    50%     { transform: scale(1.05); opacity: 0.2; }
+}
+
+/* Shell surface — gradient + softer corners + larger lift */
+.setup-shell {
+    position: relative;
+    z-index: 1;
+    max-width: 540px;
+    padding: 36px 38px 32px;
+    background:
+        radial-gradient(700px 200px at 50% -50%, rgba(255,255,255,0.04), transparent 60%),
+        linear-gradient(180deg, #14141a 0%, #0c0c10 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.05) inset,
+        0 32px 100px -20px rgba(0,0,0,0.85),
+        0 0 0 1px rgba(255,255,255,0.02);
+}
+
+/* Shell highlight ring at the top */
+.setup-shell::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 14%;
+    right: 14%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+}
+
+/* Header — refined logo + animated underline accent */
+.setup-header {
+    align-items: center;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    position: relative;
+}
+
+.setup-header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    height: 1px;
+    width: 60px;
+    background: linear-gradient(90deg, var(--text-primary), transparent);
+    opacity: 0.5;
+}
+
+.setup-logo-wrap {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #d8d8e0 100%);
+    box-shadow:
+        0 0 0 1px rgba(255,255,255,0.18),
+        0 4px 14px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.9);
+}
+
+.setup-title {
+    font-size: 16.5px;
+    background: linear-gradient(180deg, #ffffff 0%, #b8b8c0 120%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.setup-badge {
+    background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* Hero — bigger gradient title */
+.setup-hero-heading {
+    font-size: 24px;
+    background: linear-gradient(180deg, #ffffff 0%, #c0c0c8 110%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    line-height: 1.15;
+}
+
+.setup-hero-sub {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* Progress track — thicker, gradient fill, glow */
+.setup-progress-track {
+    height: 5px;
+    background: rgba(255,255,255,0.05);
+    box-shadow: inset 0 1px 0 rgba(0,0,0,0.4);
+    border-radius: 100px;
+    position: relative;
+    overflow: hidden;
+}
+
+.setup-progress-fill {
+    background: linear-gradient(90deg, #d8d8e0 0%, #ffffff 60%, #d8d8e0 100%);
+    box-shadow: 0 0 12px rgba(255,255,255,0.18);
+    position: relative;
+    overflow: hidden;
+}
+
+.setup-progress-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+    transform: translateX(-100%);
+    animation: setupShimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes setupShimmer {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(120%);  }
+}
+
+/* Service cards — gradient surface, lift on hover */
+.setup-card {
+    padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.022) 0%, rgba(255,255,255,0.008) 100%);
+    border: 1px solid var(--border);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.025) inset,
+        0 1px 2px rgba(0,0,0,0.3);
+    overflow: hidden;
+    position: relative;
+}
+
+/* Hover light sweep */
+.setup-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(180px 100px at 0% 0%, rgba(255,255,255,0.05), transparent 60%);
+    opacity: 0;
+    transition: opacity 0.3s var(--ease);
+    pointer-events: none;
+}
+.setup-card:hover::after { opacity: 1; }
+
+/* Pending shimmer line */
+.setup-step.pending.setup-card::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+    animation: setupCardShine 1.8s ease-in-out infinite;
+}
+
+@keyframes setupCardShine {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%);  }
+}
+
+/* OK card — soft green glow */
+.setup-step.ok.setup-card {
+    border-color: rgba(52, 211, 153, 0.32);
+    box-shadow:
+        0 1px 0 rgba(52,211,153,0.06) inset,
+        0 0 0 1px rgba(52,211,153,0.06),
+        0 8px 24px -10px rgba(52,211,153,0.18);
+}
+
+/* Warn card — soft red glow */
+.setup-step.warn.setup-card {
+    border-color: rgba(248, 113, 113, 0.32);
+    box-shadow:
+        0 1px 0 rgba(248,113,113,0.06) inset,
+        0 0 0 1px rgba(248,113,113,0.06),
+        0 8px 24px -10px rgba(248,113,113,0.16);
+}
+
+/* Card icon box */
+.setup-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.05) inset,
+        0 4px 10px rgba(0,0,0,0.35);
+}
+
+.setup-card-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Card name + desc readability */
+.setup-card-name {
+    font-size: 13.5px;
+    letter-spacing: -0.01em;
+}
+
+.setup-card-desc {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+/* State dot — outer ring + ripple when pending */
+.setup-card-state {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.setup-card-dot {
+    width: 8px;
+    height: 8px;
+}
+
+.setup-step.pending .setup-card-state::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.18);
+    animation: setupRipple 1.8s ease-out infinite;
+}
+
+.setup-step.ok .setup-card-state::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(52,211,153,0.12);
+}
+
+.setup-step.warn .setup-card-state::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(248,113,113,0.12);
+}
+
+@keyframes setupRipple {
+    0%   { transform: scale(0.6); opacity: 1;   }
+    100% { transform: scale(1.6); opacity: 0;   }
+}
+
+/* Footer — separator + arranged layout */
+.setup-footer {
+    margin-top: 4px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-subtle);
+    gap: 12px;
+    position: relative;
+}
+
+.setup-status-text {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+}
+
+.setup-status-text::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin-right: 8px;
+    margin-bottom: 1px;
+    box-shadow: 0 0 0 0 rgba(255,255,255,0.4);
+    animation: setupStatusDot 1.8s ease-in-out infinite;
+    vertical-align: middle;
+}
+
+@keyframes setupStatusDot {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.3); opacity: 0.4; }
+    50%     { box-shadow: 0 0 0 6px rgba(255,255,255,0); opacity: 1;   }
+}
+
+/* Skip / continue button — refined primary look */
+.setup-skip-btn {
+    padding: 10px 22px;
+    background: linear-gradient(180deg, #ffffff 0%, #e7e7ec 100%);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.6) inset,
+        0 6px 18px -6px rgba(255,255,255,0.18),
+        0 1px 2px rgba(0,0,0,0.4);
+    transition: all 0.18s var(--ease);
+    position: relative;
+    overflow: hidden;
+}
+
+.setup-skip-btn:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.7) inset,
+        0 10px 28px -8px rgba(255,255,255,0.28),
+        0 2px 6px rgba(0,0,0,0.5);
+}
+
+.setup-skip-btn:active {
+    transform: translateY(0);
+    transition-duration: 0.08s;
+}
+
+.setup-skip-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.45) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.6s var(--ease);
+    pointer-events: none;
+}
+.setup-skip-btn:hover::before { transform: translateX(100%); }
+
+/* Embed model area refinement */
+.setup-embed-heading {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    letter-spacing: -0.01em;
+}

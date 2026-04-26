@@ -8782,3 +8782,326 @@ kbd {
     color: var(--text-secondary);
     letter-spacing: -0.01em;
 }
+
+/* ================================================================
+   Noir Vibe — premium dark monochrome theme
+   ================================================================ */
+
+[data-vibe="noir"] {
+  --cv-bg-0: #06060a;
+  --cv-bg-1: #0a0a0f;
+  --cv-bg-2: #0e0e14;
+  --cv-bg-3: #14141a;
+  --cv-bg-4: #1a1a22;
+
+  /* Strip volt/plasma color — replace with neutral whites */
+  --cv-volt:      #f0f0f0;
+  --cv-volt-2:    #c8c8d0;
+  --cv-volt-dim:  rgba(255,255,255,0.08);
+  --cv-volt-glow: rgba(255,255,255,0.14);
+  --cv-plasma:    rgba(180,200,255,0.12);
+
+  --cv-line:   rgba(255,255,255,0.06);
+  --cv-line-2: rgba(255,255,255,0.12);
+}
+
+/* Ambient backdrop — cool radial washes + dotted vignette */
+[data-vibe="noir"] .cv-ambient {
+  background:
+    radial-gradient(1100px 700px at 18% 8%, rgba(120,140,200,0.07) 0%, transparent 55%),
+    radial-gradient(900px 600px at 82% 92%, rgba(180,140,255,0.05) 0%, transparent 60%),
+    radial-gradient(700px 500px at 50% 50%, rgba(255,255,255,0.018) 0%, transparent 70%),
+    linear-gradient(180deg, #06060a 0%, #04040a 100%);
+  filter: none;
+}
+
+[data-vibe="noir"] .cv-stars { opacity: 0; animation: none; }
+
+[data-vibe="noir"] #app.app-container {
+  background: transparent;
+  position: relative;
+}
+
+[data-vibe="noir"] #app.app-container::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 70%);
+  opacity: 0.5;
+}
+
+/* Topbar — frosted floating bar */
+[data-vibe="noir"] .cv-topbar {
+  background: linear-gradient(180deg, rgba(20,20,26,0.78), rgba(12,12,16,0.78));
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+}
+
+[data-vibe="noir"] .cv-breadcrumb b {
+  background: linear-gradient(180deg, #ffffff 0%, #b8b8c0 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Vibe toggle — glass surface */
+[data-vibe="noir"] .cv-vibe {
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.012));
+  border-color: rgba(255,255,255,0.07);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+[data-vibe="noir"] .cv-vibe button.on {
+  background: linear-gradient(180deg, #25252c 0%, #1a1a20 100%);
+  color: #ffffff;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 4px 12px rgba(0,0,0,0.35);
+}
+
+/* Quick Capture button — refined white pill */
+[data-vibe="noir"] .cv-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #e7e7ec 100%);
+  color: #09090b;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 6px 18px -6px rgba(255,255,255,0.18),
+    0 1px 2px rgba(0,0,0,0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+[data-vibe="noir"] .cv-primary:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 10px 28px -8px rgba(255,255,255,0.28),
+    0 2px 6px rgba(0,0,0,0.5);
+}
+
+[data-vibe="noir"] .cv-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+  transform: translateX(-100%);
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+[data-vibe="noir"] .cv-primary:hover::before { transform: translateX(100%); }
+
+/* Hero — gradient title, refined eyebrow */
+[data-vibe="noir"] .cv-hero {
+  border-bottom-color: rgba(255,255,255,0.06);
+  position: relative;
+}
+
+[data-vibe="noir"] .cv-hero::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  width: 80px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.5), transparent);
+}
+
+[data-vibe="noir"] .cv-hero-eyebrow {
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.14em;
+}
+
+[data-vibe="noir"] .cv-hero-eyebrow::before {
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255,255,255,0.5);
+}
+
+[data-vibe="noir"] .cv-hero h1 {
+  background: linear-gradient(180deg, #ffffff 0%, #c0c0c8 70%, #8c8c95 130%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+[data-vibe="noir"] .cv-hero h1 .voltword,
+[data-vibe="noir"] .voltword {
+  background: linear-gradient(180deg, #ffffff 0%, #d0d0d8 60%, #8888a0 110%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+[data-vibe="noir"] .cv-hero h1 .voltword::after {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+}
+
+/* Stats — premium gradient cards */
+[data-vibe="noir"] .cv-stat {
+  background:
+    radial-gradient(400px 100px at 50% -50%, rgba(255,255,255,0.04), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,0.022) 0%, rgba(255,255,255,0.008) 100%);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    0 1px 2px rgba(0,0,0,0.3),
+    0 18px 40px -22px rgba(0,0,0,0.7);
+  transition: border-color 0.25s, transform 0.18s, box-shadow 0.25s;
+}
+
+[data-vibe="noir"] .cv-stat:hover {
+  border-color: rgba(255,255,255,0.14);
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 1px 2px rgba(0,0,0,0.35),
+    0 24px 48px -22px rgba(0,0,0,0.8),
+    0 0 0 1px rgba(255,255,255,0.04);
+}
+
+[data-vibe="noir"] .cv-stat::before {
+  background: radial-gradient(600px 200px at var(--mx,50%) var(--my,0%), rgba(255,255,255,0.07), transparent 60%);
+}
+
+[data-vibe="noir"] .cv-stat .k {
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.14em;
+  font-size: 10px;
+}
+
+[data-vibe="noir"] .cv-stat .k .dot,
+[data-vibe="noir"] .cv-stat:nth-child(1) .k .dot,
+[data-vibe="noir"] .cv-stat:nth-child(2) .k .dot,
+[data-vibe="noir"] .cv-stat:nth-child(3) .k .dot,
+[data-vibe="noir"] .cv-stat:nth-child(4) .k .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  box-shadow:
+    0 0 0 2px rgba(255,255,255,0.06),
+    0 0 10px rgba(255,255,255,0.25);
+}
+
+[data-vibe="noir"] .cv-stat .v {
+  background: linear-gradient(180deg, #ffffff 0%, #b8b8c0 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+[data-vibe="noir"] .cv-stat .v .unit {
+  -webkit-text-fill-color: rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.4);
+  background: none;
+}
+
+[data-vibe="noir"] .cv-stat .meta {
+  color: rgba(255,255,255,0.38);
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 10px;
+  margin-top: 14px;
+}
+
+/* Section header */
+[data-vibe="noir"] .cv-sec-title {
+  background: linear-gradient(180deg, #ffffff 0%, #b8b8c0 120%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+[data-vibe="noir"] .cv-sec-title .idx {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.5);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* Chips */
+[data-vibe="noir"] .cv-chip {
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01));
+  border-color: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.65);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-vibe="noir"] .cv-chip:hover {
+  border-color: rgba(255,255,255,0.16);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 4px 12px rgba(0,0,0,0.4);
+}
+
+[data-vibe="noir"] .cv-chip.on {
+  background: linear-gradient(180deg, #25252c 0%, #1a1a20 100%);
+  border-color: rgba(255,255,255,0.18);
+  color: #ffffff;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Recent cards — apply gradient surface to context cards inside the grid */
+[data-vibe="noir"] .cv-recent-grid > article,
+[data-vibe="noir"] .cv-recent-grid > .ctx-card,
+[data-vibe="noir"] .cv-recent-grid > .cv-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.022) 0%, rgba(255,255,255,0.008) 100%);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    0 1px 2px rgba(0,0,0,0.3),
+    0 16px 36px -22px rgba(0,0,0,0.7);
+  transition: border-color 0.22s, transform 0.18s, box-shadow 0.22s;
+}
+
+[data-vibe="noir"] .cv-recent-grid > article:hover,
+[data-vibe="noir"] .cv-recent-grid > .ctx-card:hover,
+[data-vibe="noir"] .cv-recent-grid > .cv-card:hover {
+  border-color: rgba(255,255,255,0.14);
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 22px 48px -22px rgba(0,0,0,0.85);
+}
+
+/* Empty state */
+[data-vibe="noir"] .cv-empty-state {
+  border: 1px dashed rgba(255,255,255,0.1);
+  background:
+    radial-gradient(400px 120px at 50% 0%, rgba(255,255,255,0.02), transparent 60%);
+  color: rgba(255,255,255,0.45);
+}
+
+/* Pipeline panel (when summarizing) */
+[data-vibe="noir"] .cv-pipeline {
+  background:
+    radial-gradient(700px 180px at 50% -40%, rgba(255,255,255,0.03), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0.005));
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    0 18px 48px -24px rgba(0,0,0,0.7);
+}
+
+[data-vibe="noir"] .cv-pipe-step .bar i {
+  background: linear-gradient(90deg, #d8d8e0 0%, #ffffff 60%, #d8d8e0 100%);
+  box-shadow: 0 0 12px rgba(255,255,255,0.18);
+}

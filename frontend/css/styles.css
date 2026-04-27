@@ -5975,6 +5975,26 @@ kbd {
     font-family: var(--font-mono);
 }
 
+.ask-source-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 320px;
+}
+
+.ask-source-snippet {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    padding: 0 4px;
+    opacity: 0.85;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
 /* â”€â”€ Thinking indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .ask-thinking {
     display: flex;

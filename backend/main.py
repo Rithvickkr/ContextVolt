@@ -26,6 +26,8 @@ from backend.database import (
     get_context,
     get_contexts_by_ids,
     get_chunks_by_context,
+    get_chunks_by_ids,
+    get_chunk_neighbors,
     update_context,
     delete_context,
     delete_chunks_by_context,
@@ -59,6 +61,7 @@ from backend.ollama_client import (
     build_retrieval_prompt,
     build_cross_context_prompt,
     embed_text,
+    _truncate_at_sentence,
     check_ollama_running,
     check_model_available,
     DEFAULT_MODEL,
@@ -1138,36 +1141,232 @@ def _keyword_search_hybrid(question: str) -> list[dict]:
     return results
 
 
-def _hybrid_retrieve(question: str, query_vec: list[float] | None, top_k: int = 12) -> list[dict]:
-    """Run hybrid retrieval: semantic + keyword with merge and deduplication."""
-    # Semantic search
-    semantic_chunks = []
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity between two equal-length vectors. Returns 0.0 on degenerate input."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / ((na ** 0.5) * (nb ** 0.5))
+
+
+def _decode_embedding(ch: dict) -> list[float] | None:
+    """Pull embedding off a chunk dict, JSON-decoding if needed."""
+    emb = ch.get("embedding")
+    if emb is None:
+        return None
+    if isinstance(emb, str):
+        try:
+            emb = json.loads(emb)
+        except Exception:
+            return None
+    if isinstance(emb, list) and emb:
+        return emb
+    return None
+
+
+def _rrf_fuse(semantic: list[dict], keyword: list[dict], k: int = 60) -> list[dict]:
+    """Reciprocal Rank Fusion of two ranked lists. Returns chunks sorted by fused score.
+
+    When a chunk appears in both lists, flags from both are preserved (e.g. a chunk
+    that's both a semantic hit AND a keyword hit must keep its `_keyword_match` flag —
+    otherwise downstream code that treats keyword matches as a strong signal misses it).
+    """
+    by_id: dict[int, dict] = {}
+    fused: dict[int, float] = {}
+
+    def _accumulate(lst: list[dict]) -> None:
+        for rank, ch in enumerate(lst):
+            cid = ch.get("id")
+            if cid is None:
+                continue
+            fused[cid] = fused.get(cid, 0.0) + 1.0 / (k + rank + 1)
+            existing = by_id.get(cid)
+            if existing is None:
+                by_id[cid] = dict(ch)
+            else:
+                # Merge: keep best _score, preserve embedding (semantic), OR _keyword_match flag
+                if ch.get("_keyword_match"):
+                    existing["_keyword_match"] = True
+                if existing.get("embedding") is None and ch.get("embedding") is not None:
+                    existing["embedding"] = ch["embedding"]
+                a = existing.get("_score") or 0.0
+                b = ch.get("_score") or 0.0
+                if b > a:
+                    existing["_score"] = b
+
+    _accumulate(semantic)
+    _accumulate(keyword)
+
+    out = []
+    for cid, score in sorted(fused.items(), key=lambda kv: kv[1], reverse=True):
+        ch = dict(by_id[cid])
+        ch["_rrf"] = score
+        out.append(ch)
+    return out
+
+
+def _mmr_select(
+    candidates: list[dict],
+    query_vec: list[float] | None,
+    k: int = 8,
+    lambda_: float = 0.7,
+) -> list[dict]:
+    """Maximal Marginal Relevance selection. Falls back to head(k) if embeddings unavailable."""
+    if not candidates or not query_vec:
+        return candidates[:k]
+
+    # Hydrate embeddings for any chunk missing one (keyword-only hits)
+    missing = [ch["id"] for ch in candidates if _decode_embedding(ch) is None and ch.get("id") is not None]
+    if missing:
+        hydrated = get_chunks_by_ids(missing)
+        for ch in candidates:
+            if _decode_embedding(ch) is None and ch.get("id") in hydrated:
+                ch["embedding"] = hydrated[ch["id"]].get("embedding")
+
+    # Pre-decode + score against query
+    pool = []
+    for ch in candidates:
+        emb = _decode_embedding(ch)
+        if emb is None:
+            pool.append((ch, None, 0.0))
+        else:
+            pool.append((ch, emb, _cosine(query_vec, emb)))
+
+    selected: list[dict] = []
+    selected_embs: list[list[float]] = []
+
+    while pool and len(selected) < k:
+        best_idx = -1
+        best_score = -1e9
+        for i, (ch, emb, q_sim) in enumerate(pool):
+            if emb is None:
+                # Unembeddable chunk: low priority but keep eligible if pool allows
+                relevance = q_sim
+                diversity_penalty = 0.0
+            else:
+                relevance = q_sim
+                if selected_embs:
+                    diversity_penalty = max(_cosine(emb, se) for se in selected_embs)
+                else:
+                    diversity_penalty = 0.0
+            mmr = lambda_ * relevance - (1 - lambda_) * diversity_penalty
+            if mmr > best_score:
+                best_score = mmr
+                best_idx = i
+        if best_idx < 0:
+            break
+        ch, emb, _ = pool.pop(best_idx)
+        selected.append(ch)
+        if emb is not None:
+            selected_embs.append(emb)
+
+    return selected
+
+
+def _hybrid_retrieve(question: str, query_vec: list[float] | None, top_k: int = 8) -> list[dict]:
+    """Hybrid retrieval: RRF-fuse semantic + keyword, then MMR-diversify.
+
+    Returns up to top_k chunks. Drops semantic hits whose score is far below the top
+    semantic match (relative threshold replaces the old hardcoded 0.35 short-query gate).
+    """
+    semantic_chunks: list[dict] = []
     if query_vec:
-        semantic_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=top_k)
-        if len(question.split()) <= 2:
-            semantic_chunks = [ch for ch in semantic_chunks if ch.get("_score", 0) >= 0.35]
+        semantic_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=30)
+        if semantic_chunks:
+            top_score = semantic_chunks[0].get("_score", 0)
+            # Relative drop: discard hits more than 0.15 below the leader
+            cutoff = max(0.15, top_score - 0.15)
+            semantic_chunks = [ch for ch in semantic_chunks if ch.get("_score", 0) >= cutoff]
 
-    # Keyword search (whole-word, phrase-boosted)
-    kw_chunks = _keyword_search_hybrid(question)
+    kw_chunks = _keyword_search_hybrid(question)[:30]
 
-    # Merge: keyword matches first (exact hits), then semantic
-    seen_ids: set = set()
-    merged: list = []
-    for kch in kw_chunks:
-        if kch.get("id") not in seen_ids:
-            merged.append(kch)
-            seen_ids.add(kch.get("id"))
-    for sch in semantic_chunks:
-        if sch.get("id") not in seen_ids:
-            merged.append(sch)
-            seen_ids.add(sch.get("id"))
+    fused = _rrf_fuse(semantic_chunks, kw_chunks)
+    if not fused:
+        return []
 
-    return merged[:top_k]
+    # Diversify with MMR (limit candidate pool to top 20 by RRF for speed)
+    return _mmr_select(fused[:20], query_vec, k=top_k, lambda_=0.7)
 
 
 # ---------------------------------------------------------------------------
 # Ask Your Vault — RAG Chat
 # ---------------------------------------------------------------------------
+
+def _rewrite_query_with_history(question: str, history: list[dict]) -> str:
+    """Rewrite a follow-up question into a standalone search query using history.
+
+    Returns the rewritten query, or the original question on any failure / no history.
+    Uses the active LLM router with temperature 0 and a tight token budget.
+    """
+    if not history:
+        return question
+
+    # Use only the last few turns to keep the rewrite prompt compact
+    turns = []
+    for msg in history[-4:]:
+        role = (msg.get("role") or "user").upper()
+        content = (msg.get("content") or "").strip()
+        if content:
+            turns.append(f"{role}: {content[:500]}")
+    if not turns:
+        return question
+
+    history_block = "\n".join(turns)
+    prompt = (
+        "You are a query-rewriting assistant for a vector search system. "
+        "The user is asking a follow-up question. Rewrite it into ONE standalone "
+        "search query that contains the specific topic/entity being discussed "
+        "(carry forward proper nouns, project names, or subjects from the prior "
+        "turns into the rewritten query).\n\n"
+        "Rules:\n"
+        "- Output ONLY the rewritten query, on a single line.\n"
+        "- No preamble, no labels, no quotes, no explanation.\n"
+        "- 5–20 words. Keep concrete nouns from the prior turns.\n\n"
+        f"<conversation>\n{history_block}\n</conversation>\n\n"
+        f"Latest question from user: {question}\n\n"
+        "Rewritten standalone query:"
+    )
+    try:
+        result = router_generate(prompt, temperature=0.0, max_tokens=120, timeout=30)
+        raw = (result.get("response") or "").strip()
+        if not raw:
+            return question
+        # Collapse the full output to a single line. Some models (e.g. Gemini)
+        # emit soft line breaks mid-query — taking only the first line truncates
+        # the rewrite and corrupts retrieval ("script for the Alan" instead of
+        # "script for the Alan Turing reel").
+        flat = " ".join(ln.strip() for ln in raw.splitlines() if ln.strip())
+        # Drop any preamble paragraph if the model added one (e.g. "Sure! Here's
+        # the rewritten query: ..."). Keep everything after the last colon if
+        # the prefix looks like a label.
+        rewritten = re.sub(
+            r"^(here(?:'s| is) (?:the )?(?:rewritten )?(?:standalone )?(?:search )?query[:\-]?|"
+            r"sure[!,]?|"
+            r"query|standalone query|rewritten( standalone)?( query)?|search query)\s*[:\-]\s*",
+            "",
+            flat,
+            flags=re.IGNORECASE,
+        )
+        rewritten = rewritten.strip().strip('"').strip("'").strip()
+        # Cap absurdly long output (some models ramble); trim at the first sentence break.
+        if len(rewritten) > 200:
+            cut = re.search(r"[.!?]\s", rewritten)
+            if cut:
+                rewritten = rewritten[: cut.start() + 1].strip()
+        if 3 <= len(rewritten) <= 400:
+            return rewritten
+    except Exception:
+        pass
+    return question
+
 
 @app.post("/api/vault/ask")
 def api_vault_ask(body: dict):
@@ -1193,64 +1392,108 @@ def api_vault_ask(body: dict):
         if not check_ollama_running():
             raise HTTPException(status_code=503, detail="Ollama is not running")
 
-    # 1. Embed the question (always local — Ollama)
-    query_vec = embed_text(question)
+    # 1. Rewrite follow-up questions into standalone queries (skipped on first turn).
+    #    The rewrite is *additive*: we run retrieval with both the original question
+    #    and the rewritten one, then fuse — a bad rewrite can't poison results.
+    rewritten = _rewrite_query_with_history(question, history) if history else question
 
-    # 2. Hybrid retrieval: semantic + keyword, merged
-    top_chunks = _hybrid_retrieve(question, query_vec, top_k=12)
+    # 2. Embed both queries (Ollama, local)
+    primary_vec = embed_text(question)
+    rewritten_vec = embed_text(rewritten) if rewritten and rewritten != question else None
 
-    # Also search at context level if still thin
-    if len(top_chunks) < 5:
+    # 3. Hybrid retrieval — fuse results from primary + rewritten queries
+    primary_chunks = _hybrid_retrieve(question, primary_vec, top_k=12)
+    if rewritten_vec is not None:
+        secondary_chunks = _hybrid_retrieve(rewritten, rewritten_vec, top_k=12)
+        # Fuse the two ranked lists with RRF (treat each as a single ranking)
+        top_chunks = _rrf_fuse(primary_chunks, secondary_chunks)[:8]
+    else:
+        top_chunks = primary_chunks[:8]
+
+    # 4. Neighbor expansion — pull adjacent chunks (chunk_index ± 1) for local coherence.
+    #    Replaces the old "first 2 chunks of any matching context" fallback.
+    if top_chunks:
         seen_ids = {ch.get("id") for ch in top_chunks}
-        ctx_matches = search_contexts(question)
-        if ctx_matches:
-            matched_cids = [c["id"] for c in ctx_matches[:3]]
-            for mcid in matched_cids:
-                ctx_chunks = get_chunks_by_context(mcid)[:2]
-                for cch in ctx_chunks:
-                    if cch.get("id") not in seen_ids:
-                        cch["_score"] = 0.45
-                        top_chunks.append(cch)
-                        seen_ids.add(cch.get("id"))
-            top_chunks = top_chunks[:12]
+        neighbors: list[dict] = []
+        for ch in list(top_chunks):
+            cid = ch.get("context_id")
+            idx = ch.get("chunk_index")
+            if cid is None or idx is None:
+                continue
+            for nb in get_chunk_neighbors(cid, idx):
+                if nb.get("id") not in seen_ids:
+                    nb["_score"] = (ch.get("_score") or 0.0) * 0.6
+                    nb["_neighbor"] = True
+                    neighbors.append(nb)
+                    seen_ids.add(nb.get("id"))
+        top_chunks.extend(neighbors)
+        # Cap final feed to the LLM
+        top_chunks = top_chunks[:12]
 
-    # 3. Gather source context metadata
+    # 5. Score-floor short-circuit: if nothing retrieved is meaningfully relevant,
+    #    return a deterministic "I don't know" without invoking the LLM.
+    #    Threshold is intentionally permissive — we'd rather feed weak context to
+    #    the LLM (which can still say "I don't know") than miss a valid hit.
+    def _is_weak_result(chunks: list[dict]) -> bool:
+        if not chunks:
+            return True
+        # Any keyword hit is a strong signal — never short-circuit
+        if any(ch.get("_keyword_match") for ch in chunks):
+            return False
+        top_sem = max((ch.get("_score") or 0.0) for ch in chunks)
+        return top_sem < 0.18
+
+    if _is_weak_result(top_chunks):
+        def _empty_stream():
+            msg = "I don't have information about that in your vault."
+            for tok in msg.split(" "):
+                yield json.dumps({"token": tok + " "}) + "\n"
+            yield json.dumps({"done": True, "sources": []}) + "\n"
+        return StreamingResponse(_empty_stream(), media_type="application/x-ndjson")
+
+    # 6. Build context blocks + chunk-level source citations
     sources = []
     context_text_parts = []
 
-    if top_chunks:
-        unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
-        ctx_map = get_contexts_by_ids(unique_cids)
+    unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
+    ctx_map = get_contexts_by_ids(unique_cids)
 
-        seen_contexts = set()
-        for ch in top_chunks:
-            cid = ch.get("context_id")
-            ctx = ctx_map.get(cid, {})
-            tags = ctx.get("tags", [])
-            if isinstance(tags, str):
-                tags = [t.strip() for t in tags.split(",")]
-            source_llm = next((t for t in tags if t in _KNOWN_SOURCES_SET), "")
-            title = ctx.get("title", "Unknown")
-            created_at = ctx.get("created_at", "")[:10]
-            score = round(ch.get("_score", 0), 2)
+    seen_chunk_ids: set = set()
+    for ch in top_chunks:
+        cid = ch.get("context_id")
+        ctx = ctx_map.get(cid, {})
+        tags = ctx.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",")]
+        source_llm = next((t for t in tags if t in _KNOWN_SOURCES_SET), "")
+        title = ctx.get("title", "Unknown")
+        created_at = ctx.get("created_at", "")[:10]
+        score = round(ch.get("_score") or 0.0, 2)
 
-            # Build context line
-            header = f'[From "{title}"'
-            if source_llm:
-                header += f" ({source_llm})"
-            header += f" — {created_at}, relevance {score}]"
-            context_text_parts.append(f"{header}:\n{ch['text'][:1500]}")
+        body_text = _truncate_at_sentence(ch.get("text", ""), 1500)
 
-            # Add to sources (deduplicate by context_id)
-            if cid and cid not in seen_contexts:
-                seen_contexts.add(cid)
-                sources.append({
-                    "context_id": cid,
-                    "title": title,
-                    "score": score,
-                    "created_at": created_at,
-                    "source": source_llm,
-                })
+        header = f'[From "{title}"'
+        if source_llm:
+            header += f" ({source_llm})"
+        header += f" — {created_at}, relevance {score}]"
+        context_text_parts.append(f"{header}:\n{body_text}")
+
+        chunk_id = ch.get("id")
+        if chunk_id and chunk_id not in seen_chunk_ids:
+            seen_chunk_ids.add(chunk_id)
+            snippet_raw = (ch.get("text") or "").strip().replace("\n", " ")
+            snippet = _truncate_at_sentence(snippet_raw, 220) if snippet_raw else ""
+            sources.append({
+                "context_id": cid,
+                "chunk_id": chunk_id,
+                "chunk_index": ch.get("chunk_index"),
+                "title": title,
+                "score": score,
+                "created_at": created_at,
+                "source": source_llm,
+                "snippet": snippet,
+                "neighbor": bool(ch.get("_neighbor")),
+            })
 
     retrieved_context = "\n\n".join(context_text_parts) if context_text_parts else "No relevant context found in your vault."
 

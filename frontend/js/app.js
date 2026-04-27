@@ -3844,25 +3844,57 @@ function _askFinalizeMsg(sources) {
 
     // Source chips — each chip colored by its source AI brand (ChatGPT green,
     // Claude orange, Grok white, Gemini blue, etc.) using the shared _AI_BRAND map.
+    // Backend returns chunk-level sources; dedupe by context_id (best-scoring chunk wins),
+    // de-prioritize neighbor-expansion chunks, and surface the matched-passage snippet
+    // as a tooltip + a faint line under the chip.
     if (sources && sources.length > 0) {
+        const bestByCtx = new Map();
+        for (const s of sources) {
+            const cid = s.context_id;
+            if (cid == null) continue;
+            const prev = bestByCtx.get(cid);
+            const sScore = typeof s.score === 'number' ? s.score : 0;
+            const pScore = prev && typeof prev.score === 'number' ? prev.score : -1;
+            // Prefer non-neighbor chunks; among same kind, prefer higher score
+            const sIsPrimary = !s.neighbor;
+            const pIsPrimary = prev ? !prev.neighbor : false;
+            const replace =
+                !prev ||
+                (sIsPrimary && !pIsPrimary) ||
+                (sIsPrimary === pIsPrimary && sScore > pScore);
+            if (replace) bestByCtx.set(cid, s);
+        }
+        const deduped = Array.from(bestByCtx.values());
+
         const body = content.parentElement; // .ask-msg-body
         const sourcesDiv = document.createElement('div');
         sourcesDiv.className = 'ask-sources';
 
-        const chipsHtml = sources.map(s => {
+        const chipsHtml = deduped.map(s => {
             const brand = s.source ? _AI_BRAND[s.source] : null;
             const color = brand ? brand.color : 'var(--cv-volt)';
             const title = String(s.title || 'Untitled');
             const short = title.length > 42 ? title.slice(0, 40) + '…' : title;
             const pct = typeof s.score === 'number' ? Math.round(s.score * 100) : null;
             const score = pct !== null ? `<span class="ask-source-score">${pct}%</span>` : '';
-            return `<button class="ask-source-chip" style="--src-color:${color}"
-                            onclick="showDetail(${s.context_id})"
-                            title="${escapeHtml(title)}${brand ? ' · ' + brand.label : ''}">
-                        <span class="ask-source-dot" aria-hidden="true"></span>
-                        <span class="ask-source-title">${escapeHtml(short)}</span>
-                        ${score}
-                    </button>`;
+            const snippet = s.snippet ? String(s.snippet) : '';
+            const tooltipParts = [title];
+            if (brand) tooltipParts.push(brand.label);
+            if (snippet) tooltipParts.push(snippet);
+            const tooltip = tooltipParts.join(' · ');
+            const snippetLine = snippet
+                ? `<div class="ask-source-snippet">${escapeHtml(snippet)}</div>`
+                : '';
+            return `<div class="ask-source-card">
+                        <button class="ask-source-chip" style="--src-color:${color}"
+                                onclick="showDetail(${s.context_id})"
+                                title="${escapeHtml(tooltip)}">
+                            <span class="ask-source-dot" aria-hidden="true"></span>
+                            <span class="ask-source-title">${escapeHtml(short)}</span>
+                            ${score}
+                        </button>
+                        ${snippetLine}
+                    </div>`;
         }).join('');
 
         sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources</span>${chipsHtml}`;

@@ -606,6 +606,32 @@ def get_chunks_by_context(context_id: int) -> list[dict]:
     return [_chunk_row_to_dict(r) for r in rows]
 
 
+def get_chunks_by_ids(chunk_ids: list[int]) -> dict[int, dict]:
+    """Batch fetch full chunk rows (including embedding) by IDs. Returns id -> chunk dict."""
+    if not chunk_ids:
+        return {}
+    conn = _get_conn()
+    placeholders = ",".join("?" * len(chunk_ids))
+    rows = conn.execute(
+        f"SELECT * FROM chunks WHERE id IN ({placeholders})", chunk_ids
+    ).fetchall()
+    out: dict[int, dict] = {}
+    for r in rows:
+        ch = _chunk_row_to_dict(r)
+        out[ch["id"]] = ch
+    return out
+
+
+def get_chunk_neighbors(context_id: int, chunk_index: int) -> list[dict]:
+    """Return chunks at chunk_index-1 and chunk_index+1 within the same context."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM chunks WHERE context_id = ? AND chunk_index IN (?, ?)",
+        (context_id, chunk_index - 1, chunk_index + 1),
+    ).fetchall()
+    return [_chunk_row_to_dict(r) for r in rows]
+
+
 def update_chunk_embedding(chunk_id: int, embedding: list[float]) -> None:
     """Update the embedding for an existing chunk and sync to vec table."""
     conn = _get_conn()

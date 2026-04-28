@@ -44,6 +44,12 @@ from backend.database import (
     delete_collection,
     set_context_collection,
     increment_stat,
+    create_ask_session,
+    list_ask_sessions,
+    get_ask_session,
+    append_ask_message,
+    update_ask_session,
+    delete_ask_session,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -158,10 +164,20 @@ def _try_embed_context(context_id: int | None, summary: dict) -> None:
         pass
 
 
-# Mount static frontend files
+# Mount static frontend files. Disable HTTP caching so JS/CSS edits are
+# always picked up — pywebview/WebView2 caches aggressively otherwise.
+class _NoCacheStatic(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
 if os.path.isdir(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+    app.mount("/static", _NoCacheStatic(directory=FRONTEND_DIR), name="static")
 
 
 # ---------------------------------------------------------------------------
@@ -1376,7 +1392,12 @@ def api_vault_ask(body: dict):
       {"token": "..."} — during generation
       {"done": true, "sources": [...], "usage": {...}, "cost": ...} — final line with citations
 
-    Body: {"question": "...", "history": [{"role": "user"|"assistant", "content": "..."}]}
+    Body: {
+        "question": "...",
+        "history": [{"role": "user"|"assistant", "content": "..."}],
+        "session_id": optional int — if omitted, a new session is created and returned
+                      in the final 'done' line as session_id (+ session_title for new ones)
+    }
     """
     question = (body.get("question") or "").strip()
     if not question:
@@ -1385,6 +1406,29 @@ def api_vault_ask(body: dict):
     increment_stat("questions_asked")
 
     history = body.get("history") or []
+
+    # Persistence: resolve or create the Ask Vault session.
+    session_id = body.get("session_id")
+    new_session_title: str | None = None
+    if session_id is None:
+        # Auto-title from the question — first 60 chars, single line.
+        title_seed = " ".join(question.split())[:60].strip() or "Untitled"
+        new_session_title = title_seed
+        session = create_ask_session(title_seed)
+        session_id = session["id"]
+    else:
+        # Validate it exists; treat unknown id as start-fresh
+        existing = get_ask_session(int(session_id))
+        if not existing:
+            title_seed = " ".join(question.split())[:60].strip() or "Untitled"
+            new_session_title = title_seed
+            session = create_ask_session(title_seed)
+            session_id = session["id"]
+        else:
+            session_id = int(session_id)
+
+    # Persist the user turn now (before LLM call) so it survives crashes mid-stream.
+    append_ask_message(session_id, "user", question)
 
     # Check provider availability
     active = get_active_provider()
@@ -1444,11 +1488,16 @@ def api_vault_ask(body: dict):
         return top_sem < 0.18
 
     if _is_weak_result(top_chunks):
+        empty_msg = "I don't have information about that in your vault."
+        append_ask_message(session_id, "assistant", empty_msg, citations=[])
+
         def _empty_stream():
-            msg = "I don't have information about that in your vault."
-            for tok in msg.split(" "):
+            for tok in empty_msg.split(" "):
                 yield json.dumps({"token": tok + " "}) + "\n"
-            yield json.dumps({"done": True, "sources": []}) + "\n"
+            final = {"done": True, "sources": [], "session_id": session_id}
+            if new_session_title is not None:
+                final["session_title"] = new_session_title
+            yield json.dumps(final) + "\n"
         return StreamingResponse(_empty_stream(), media_type="application/x-ndjson")
 
     # 6. Build context blocks + chunk-level source citations
@@ -1531,15 +1580,26 @@ RULES:
 
     # 5. Stream the response via the LLM router (works for both Ollama and cloud)
     def _stream():
+        accumulated: list[str] = []
+        persisted = False
         try:
             for event in router_generate_stream(full_prompt, temperature=0.3, max_tokens=4000):
                 if event.get("token"):
+                    accumulated.append(event["token"])
                     yield json.dumps({"token": event["token"]}) + "\n"
                 elif event.get("error"):
                     yield json.dumps({"error": event["error"]}) + "\n"
                 elif event.get("done"):
+                    # Persist assistant turn with citations
+                    if not persisted:
+                        append_ask_message(
+                            session_id, "assistant", "".join(accumulated), citations=sources
+                        )
+                        persisted = True
                     # Final line with sources + usage info
-                    final = {"done": True, "sources": sources}
+                    final = {"done": True, "sources": sources, "session_id": session_id}
+                    if new_session_title is not None:
+                        final["session_title"] = new_session_title
                     if event.get("usage"):
                         final["usage"] = event["usage"]
                     if event.get("cost") is not None:
@@ -1554,9 +1614,56 @@ RULES:
             yield json.dumps({"error": str(e)}) + "\n"
 
         # Fallback final line if stream didn't send done
-        yield json.dumps({"done": True, "sources": sources}) + "\n"
+        if not persisted and accumulated:
+            append_ask_message(
+                session_id, "assistant", "".join(accumulated), citations=sources
+            )
+        final = {"done": True, "sources": sources, "session_id": session_id}
+        if new_session_title is not None:
+            final["session_title"] = new_session_title
+        yield json.dumps(final) + "\n"
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------------------
+# Ask Vault — sessions API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/vault/sessions")
+def api_vault_sessions_list():
+    """Return all saved Ask Vault sessions (pinned first, then newest)."""
+    return {"sessions": list_ask_sessions()}
+
+
+@app.get("/api/vault/sessions/{session_id}")
+def api_vault_session_get(session_id: int):
+    """Return a single session with its full message history."""
+    session = get_ask_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.patch("/api/vault/sessions/{session_id}")
+def api_vault_session_update(session_id: int, body: dict):
+    """Rename or pin/unpin a session. Body: {title?: str, pinned?: bool}"""
+    title = body.get("title")
+    pinned = body.get("pinned")
+    if title is None and pinned is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    updated = update_ask_session(session_id, title=title, pinned=pinned)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return updated
+
+
+@app.delete("/api/vault/sessions/{session_id}")
+def api_vault_session_delete(session_id: int):
+    """Delete a session and its messages."""
+    if not delete_ask_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True}
 
 
 # ---------------------------------------------------------------------------

@@ -242,6 +242,35 @@ def init_db():
     """)
     conn.commit()
 
+    # Ask Vault sessions + messages
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ask_sessions (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            title      TEXT    NOT NULL,
+            pinned     INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ask_messages (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id     INTEGER NOT NULL,
+            role           TEXT    NOT NULL,
+            content        TEXT    NOT NULL,
+            citations_json TEXT    DEFAULT NULL,
+            created_at     TEXT    NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES ask_sessions(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ask_messages_session ON ask_messages(session_id, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ask_sessions_updated ON ask_sessions(pinned DESC, updated_at DESC)"
+    )
+    conn.commit()
+
     # sqlite-vec virtual tables
     dim = _detect_embed_dim(conn)
     if dim > 0:
@@ -887,6 +916,127 @@ def delete_collection(collection_id: int) -> bool:
     # connection reused (thread-local pool)
     return cur.rowcount > 0
 
+
+# ---------------------------------------------------------------------------
+# Ask Vault sessions + messages
+# ---------------------------------------------------------------------------
+
+def create_ask_session(title: str) -> dict:
+    """Create a new Ask Vault session and return it."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT INTO ask_sessions (title, pinned, created_at, updated_at) VALUES (?, 0, ?, ?)",
+        (title.strip() or "Untitled", now, now),
+    )
+    sid = cur.lastrowid
+    conn.commit()
+    return {"id": sid, "title": title, "pinned": False,
+            "created_at": now, "updated_at": now, "message_count": 0}
+
+
+def list_ask_sessions() -> list[dict]:
+    """Return all sessions, pinned first then newest, with message counts."""
+    conn = _get_conn()
+    rows = conn.execute(
+        """SELECT s.id, s.title, s.pinned, s.created_at, s.updated_at,
+                  (SELECT COUNT(*) FROM ask_messages m WHERE m.session_id = s.id) AS message_count
+           FROM ask_sessions s
+           ORDER BY s.pinned DESC, s.updated_at DESC"""
+    ).fetchall()
+    return [
+        {"id": r[0], "title": r[1], "pinned": bool(r[2]),
+         "created_at": r[3], "updated_at": r[4], "message_count": r[5]}
+        for r in rows
+    ]
+
+
+def get_ask_session(session_id: int) -> dict | None:
+    """Return a session with its full message list (ordered oldest → newest)."""
+    conn = _get_conn()
+    srow = conn.execute(
+        "SELECT id, title, pinned, created_at, updated_at FROM ask_sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    if not srow:
+        return None
+    mrows = conn.execute(
+        """SELECT id, role, content, citations_json, created_at
+           FROM ask_messages WHERE session_id = ?
+           ORDER BY id ASC""",
+        (session_id,),
+    ).fetchall()
+    messages = []
+    for m in mrows:
+        cites = []
+        if m[3]:
+            try:
+                cites = json.loads(m[3])
+            except Exception:
+                cites = []
+        messages.append({"id": m[0], "role": m[1], "content": m[2],
+                         "citations": cites, "created_at": m[4]})
+    return {"id": srow[0], "title": srow[1], "pinned": bool(srow[2]),
+            "created_at": srow[3], "updated_at": srow[4], "messages": messages}
+
+
+def append_ask_message(
+    session_id: int,
+    role: str,
+    content: str,
+    citations: list[dict] | None = None,
+) -> dict:
+    """Append a message to a session and bump the session's updated_at."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    cites_json = json.dumps(citations) if citations else None
+    cur = conn.execute(
+        """INSERT INTO ask_messages (session_id, role, content, citations_json, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (session_id, role, content, cites_json, now),
+    )
+    mid = cur.lastrowid
+    conn.execute("UPDATE ask_sessions SET updated_at = ? WHERE id = ?", (now, session_id))
+    conn.commit()
+    return {"id": mid, "session_id": session_id, "role": role,
+            "content": content, "citations": citations or [], "created_at": now}
+
+
+def update_ask_session(session_id: int, title: str | None = None, pinned: bool | None = None) -> dict | None:
+    """Rename or pin/unpin a session."""
+    conn = _get_conn()
+    updates, params = [], []
+    if title is not None:
+        updates.append("title = ?"); params.append(title.strip() or "Untitled")
+    if pinned is not None:
+        updates.append("pinned = ?"); params.append(1 if pinned else 0)
+    if updates:
+        params.append(session_id)
+        conn.execute(f"UPDATE ask_sessions SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    row = conn.execute(
+        """SELECT id, title, pinned, created_at, updated_at,
+                  (SELECT COUNT(*) FROM ask_messages m WHERE m.session_id = ask_sessions.id)
+           FROM ask_sessions WHERE id = ?""",
+        (session_id,),
+    ).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "title": row[1], "pinned": bool(row[2]),
+            "created_at": row[3], "updated_at": row[4], "message_count": row[5]}
+
+
+def delete_ask_session(session_id: int) -> bool:
+    """Delete a session and all its messages (FK cascade)."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM ask_sessions WHERE id = ?", (session_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Collection assignment
+# ---------------------------------------------------------------------------
 
 def set_context_collection(context_id: int, collection_id: int | None) -> dict | None:
     """Assign (or unassign with None) a context to a collection."""

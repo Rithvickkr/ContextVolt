@@ -9,11 +9,11 @@ const API = 'http://localhost:8000';
 
 // â”€â”€â”€ Global error handler â€” prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {
-    console.error('Uncaught error:', e.message, e.filename, e.lineno);
+    console.error('Uncaught error:', e.message, e.filename, e.lineno, e.error && e.error.stack);
     try { showToast(`JS Error: ${e.message}`, 'error'); } catch (_) {}
 });
 window.addEventListener('unhandledrejection', e => {
-    console.error('Unhandled promise rejection:', e.reason);
+    console.error('Unhandled promise rejection:', e.reason, e.reason && e.reason.stack);
     try { showToast(`Error: ${e.reason?.message || e.reason}`, 'error'); } catch (_) {}
 });
 
@@ -959,8 +959,16 @@ async function submitRenameCollection(id, newName) {
     }
 }
 
-async function confirmDeleteCollection(id, name) {
-    if (!confirm(`Delete collection "${name}"?\n\nContexts inside will not be deleted â€” they'll just become uncollected.`)) return;
+function confirmDeleteCollection(id, name) {
+    openConfirmDeleteModal({
+        title: 'Delete collection?',
+        message: `Delete collection <b>"${escapeHtml(name)}"</b>?<br><span style="color:var(--text-muted);font-size:13px;">Contexts inside won't be deleted â€” they'll just become uncollected.</span>`,
+        confirmLabel: 'Delete collection',
+        onConfirm: () => _performDeleteCollection(id, name),
+    });
+}
+
+async function _performDeleteCollection(id, name) {
     try {
         const res = await fetch(`${API}/api/collections/${id}`, { method: 'DELETE' });
         if (!res.ok) throw new Error();
@@ -1524,6 +1532,12 @@ function _renderDeepResults(data, query) {
 }
 
 function deleteFromLibrary(id) {
+    const ctx = state.contexts.find(c => c.id === id);
+    if (!ctx) return;
+    openConfirmDeleteModal(ctx, () => _performLibraryDelete(id));
+}
+
+function _performLibraryDelete(id) {
     // P2-10: Undo delete â€” hide card immediately, commit after 5s
     const ctx = state.contexts.find(c => c.id === id);
     if (!ctx) return;
@@ -2352,6 +2366,61 @@ async function saveEdit() {
 function deleteCurrentContext() {
     const ctx = state.currentContext;
     if (!ctx) return;
+    openConfirmDeleteModal(ctx);
+}
+
+function openConfirmDeleteModal(ctxOrOpts, onConfirm) {
+    const overlay = $('#confirm-delete-modal');
+
+    // Support two call shapes:
+    //   openConfirmDeleteModal(ctx, onConfirm?)            â€” context delete
+    //   openConfirmDeleteModal({title, message, confirmLabel, onConfirm})
+    let title, messageHtml, confirmLabel, action;
+    if (ctxOrOpts && typeof ctxOrOpts === 'object' && ('message' in ctxOrOpts || 'title' in ctxOrOpts) && !('id' in ctxOrOpts)) {
+        title = ctxOrOpts.title || 'Are you sure?';
+        messageHtml = ctxOrOpts.message || '';
+        confirmLabel = ctxOrOpts.confirmLabel || 'Delete';
+        action = ctxOrOpts.onConfirm;
+    } else {
+        const ctx = ctxOrOpts;
+        title = 'Delete this context?';
+        messageHtml = `Delete <b>"${escapeHtml(ctx.title || 'Untitled')}"</b>? You'll have 5 seconds to undo from the toast.`;
+        confirmLabel = 'Delete';
+        action = onConfirm || (() => _performDeleteCurrentContext(ctx));
+    }
+
+    if (!overlay) { if (action) action(); return; }
+    state._pendingConfirmDeleteAction = action;
+
+    const titleEl = $('#confirm-delete-title');
+    if (titleEl) titleEl.textContent = title;
+    const msg = $('#confirm-delete-message');
+    if (msg) msg.innerHTML = messageHtml;
+    const confirmBtn = $('#confirm-delete-btn');
+    if (confirmBtn) confirmBtn.textContent = confirmLabel;
+
+    overlay.style.display = 'flex';
+    trapFocus(overlay.querySelector('.modal'), document.activeElement);
+    if (confirmBtn) confirmBtn.focus();
+}
+
+function closeConfirmDeleteModal() {
+    const overlay = $('#confirm-delete-modal');
+    if (!overlay) return;
+    const inner = overlay.querySelector('.modal');
+    releaseFocus(inner);
+    inner.style.animation = 'shellOut 0.18s var(--ease) forwards';
+    overlay.style.animation = 'fadeOut 0.18s var(--ease) forwards';
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        inner.style.animation = '';
+        overlay.style.animation = '';
+    }, 180);
+    state._pendingConfirmDeleteAction = null;
+}
+
+function _performDeleteCurrentContext(ctx) {
+    if (!ctx) return;
 
     // P2-10: Undo delete from detail view
     if (state.pendingDeletes.has(ctx.id)) {
@@ -2493,6 +2562,53 @@ function showConfirm({ title, message, confirmLabel = 'Confirm', danger = false 
     });
 }
 
+function showPrompt({ title, message, defaultValue = '', placeholder = '', confirmLabel = 'Save', maxLength = 200 }) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'cv-confirm-overlay';
+        overlay.innerHTML = `
+            <div class="cv-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="cv-prompt-title">
+                <div class="cv-confirm-title" id="cv-prompt-title">${escapeHtml(title)}</div>
+                ${message ? `<div class="cv-confirm-message">${escapeHtml(message)}</div>` : ''}
+                <input type="text" class="cv-confirm-input"
+                       value="${escapeHtml(defaultValue)}"
+                       placeholder="${escapeHtml(placeholder)}"
+                       maxlength="${maxLength}" autocomplete="off" spellcheck="false" />
+                <div class="cv-confirm-actions">
+                    <button class="cv-confirm-cancel">Cancel</button>
+                    <button class="cv-confirm-ok">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+
+        const dismiss = (result) => {
+            overlay.classList.add('cv-confirm-out');
+            setTimeout(() => { overlay.remove(); resolve(result); }, 150);
+        };
+
+        const input = overlay.querySelector('.cv-confirm-input');
+        const cancelBtn = overlay.querySelector('.cv-confirm-cancel');
+        const okBtn = overlay.querySelector('.cv-confirm-ok');
+
+        const submit = () => {
+            const v = (input.value || '').trim();
+            dismiss(v || null);
+        };
+
+        cancelBtn.addEventListener('click', () => dismiss(null));
+        okBtn.addEventListener('click', submit);
+        overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(null); });
+        overlay.addEventListener('keydown', e => {
+            if (e.key === 'Escape') dismiss(null);
+            if (e.key === 'Enter' && document.activeElement === input) submit();
+        });
+
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => overlay.classList.add('cv-confirm-in'));
+        // Focus input + select existing text so the user can immediately type a replacement.
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+    });
+}
+
 function showToast(message, type = 'success') {
     const stack = $('#toast-stack');
     const toast = document.createElement('div');
@@ -2519,7 +2635,7 @@ function _showUndoToast(message, onUndo) {
     const toast = document.createElement('div');
     toast.className = 'toast undo';
     toast.innerHTML = `
-        <span class="toast-icon">ðŸ—‘ï¸</span>
+        <span class="toast-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></span>
         <span class="toast-message">${escapeHtml(message)}</span>
         <button class="toast-undo-btn">Undo</button>
         <div class="toast-countdown"></div>
@@ -3617,6 +3733,9 @@ function _initSidebarTooltips() {
 // â”€â”€â”€ Ask Your Vault â€” RAG Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 state.askHistory = [];     // [{role: 'user'|'assistant', content: ''}]
 state.askStreaming = false; // true while streaming response
+state.askSessionId = null;  // current persisted session id (null = new chat)
+state.askSessions = [];     // cached list of {id, title, pinned, message_count, updated_at}
+state.askSessionFilter = ''; // filter typed in the past-chats search
 
 function _initAskVault() {
     const input = $('#ask-input');
@@ -3683,15 +3802,452 @@ function _initAskVault() {
     if (newChatBtn) {
         newChatBtn.addEventListener('click', () => {
             if (state.askStreaming) return;
-            state.askHistory = [];
-            const container = $('#ask-messages');
-            const empty = $('#ask-empty');
-            if (container) container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
-            if (empty) empty.style.display = '';
-            if (clearBtn) clearBtn.style.display = 'none';
-            if (input) input.value = '';
-            _askScrollToBottom();
+            _askResetChat();
         });
+    }
+
+    // Past-chats panel
+    const histToggle = $('#cv-ask-history-toggle');
+    const histPanel = $('#cv-ask-history-panel');
+    const histSearch = $('#cv-ask-history-search');
+
+    if (histToggle && histPanel) {
+        histToggle.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const isOpen = !histPanel.hasAttribute('hidden');
+            if (isOpen) _askCloseHistoryPanel();
+            else await _askOpenHistoryPanel();
+        });
+    }
+
+    // Delegated click handler on the panel (survives re-renders).
+    if (histPanel) {
+        histPanel.addEventListener('click', (e) => {
+            try {
+                e.stopPropagation();
+
+                if (e.target.closest('#cv-ask-history-close')) {
+                    _askCloseHistoryPanel();
+                    return;
+                }
+                const actBtn = e.target.closest('button[data-act]');
+                if (actBtn) {
+                    const row = actBtn.closest('.cv-ask-history-item');
+                    if (!row) return;
+                    const sid = parseInt(row.getAttribute('data-session-id'), 10);
+                    if (Number.isNaN(sid)) return;
+                    const act = actBtn.getAttribute('data-act');
+                    if (act === 'pin') _askToggleSessionPin(sid);
+                    else if (act === 'rename') _askRenameSession(sid);
+                    else if (act === 'delete') _askDeleteSession(sid);
+                    return;
+                }
+                const row = e.target.closest('.cv-ask-history-item');
+                if (row) {
+                    const sid = parseInt(row.getAttribute('data-session-id'), 10);
+                    if (!Number.isNaN(sid)) _askLoadSession(sid);
+                }
+            } catch (err) {
+                console.error('[ask] panel click handler crashed:', err, err && err.stack);
+            }
+        });
+        histPanel.addEventListener('keydown', (e) => {
+            const row = e.target.closest('.cv-ask-history-item');
+            if (!row) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const sid = parseInt(row.getAttribute('data-session-id'), 10);
+                if (!Number.isNaN(sid)) _askLoadSession(sid);
+            }
+        });
+    }
+
+    // Click-outside (document level — runs only when panel is open).
+    document.addEventListener('click', (e) => {
+        if (!histPanel || histPanel.hasAttribute('hidden')) return;
+        if (histPanel.contains(e.target)) return;
+        if (histToggle && histToggle.contains(e.target)) return;
+        _askCloseHistoryPanel();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && histPanel && !histPanel.hasAttribute('hidden')) {
+            _askCloseHistoryPanel();
+        }
+    });
+
+    if (histSearch) {
+        histSearch.addEventListener('input', () => {
+            state.askSessionFilter = histSearch.value.trim().toLowerCase();
+            _askRenderSessionList();
+        });
+    }
+}
+
+// (No wrapper needed — function declarations at script scope are already
+//  exposed on window, so inline onclick="_askCloseHistoryPanel()" works.)
+
+async function _askOpenHistoryPanel() {
+    const panel = $('#cv-ask-history-panel');
+    const toggle = $('#cv-ask-history-toggle');
+    const search = $('#cv-ask-history-search');
+    if (!panel) return;
+    panel.removeAttribute('hidden');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+    await _askLoadSessions();
+    if (search) setTimeout(() => search.focus(), 60);
+}
+
+function _askCloseHistoryPanel() {
+    const panel = $('#cv-ask-history-panel');
+    const toggle = $('#cv-ask-history-toggle');
+    const search = $('#cv-ask-history-search');
+    if (panel) panel.setAttribute('hidden', '');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    if (search) {
+        search.value = '';
+        state.askSessionFilter = '';
+    }
+}
+
+function _askUpdateRailSession() {
+    const label = $('#cv-ask-current-session');
+    const sep = $('#cv-ask-current-session-sep');
+    if (!label || !sep) return;
+    if (!state.askSessionId) {
+        label.setAttribute('hidden', '');
+        sep.setAttribute('hidden', '');
+        return;
+    }
+    const s = (state.askSessions || []).find(x => x.id === state.askSessionId);
+    const title = s ? s.title : 'Saved chat';
+    label.textContent = title || 'Saved chat';
+    label.removeAttribute('hidden');
+    sep.removeAttribute('hidden');
+}
+
+function _askResetChat() {
+    state.askHistory = [];
+    state.askSessionId = null;
+    const container = $('#ask-messages');
+    const empty = $('#ask-empty');
+    const clearBtn = $('#ask-clear-btn');
+    const input = $('#ask-input');
+    if (container) container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
+    if (empty) empty.style.display = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (input) input.value = '';
+    _askScrollToBottom();
+    _askUpdateRailSession();
+    _askRenderSessionList();
+}
+
+async function _askLoadSessions() {
+    const list = $('#cv-ask-history-list');
+    if (!list) return;
+    try {
+        const res = await fetch(`${API}/api/vault/sessions`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        state.askSessions = data.sessions || [];
+        _askRenderSessionList();
+    } catch (err) {
+        list.innerHTML = `<div class="cv-ask-history-empty">Couldn't load: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function _askRenderSessionList() {
+    const list = $('#cv-ask-history-list');
+    const countEl = $('#cv-ask-history-count');
+    if (!list) return;
+
+    const all = state.askSessions || [];
+    const filter = (state.askSessionFilter || '').trim().toLowerCase();
+    const sessions = filter
+        ? all.filter(s => (s.title || '').toLowerCase().includes(filter))
+        : all;
+
+    if (countEl) {
+        if (all.length > 0) {
+            countEl.textContent = String(all.length);
+            countEl.removeAttribute('hidden');
+        } else {
+            countEl.setAttribute('hidden', '');
+        }
+    }
+
+    if (sessions.length === 0) {
+        const msg = filter
+            ? `<span>No matches for <b>${escapeHtml(filter)}</b>.</span>`
+            : `<span>No past chats yet.<br>Ask something to start one.</span>`;
+        list.innerHTML = `
+            <div class="cv-ask-history-empty">
+                <span class="cv-ask-history-empty-ic" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </span>
+                ${msg}
+            </div>`;
+        return;
+    }
+
+    // Bucket by date relative to now: Pinned / Today / Yesterday / Last 7 days / Older.
+    const now = new Date();
+    const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const today = startOfDay(now);
+    const yesterday = today - 86400000;
+    const week = today - 6 * 86400000;
+
+    const groups = { pinned: [], today: [], yesterday: [], week: [], older: [] };
+    for (const s of sessions) {
+        if (s.pinned) { groups.pinned.push(s); continue; }
+        let ts = 0;
+        try { ts = startOfDay(new Date(s.updated_at)); } catch (_) {}
+        if (ts >= today) groups.today.push(s);
+        else if (ts >= yesterday) groups.yesterday.push(s);
+        else if (ts >= week) groups.week.push(s);
+        else groups.older.push(s);
+    }
+
+    const fmt = (iso) => {
+        try {
+            const d = new Date(iso);
+            const sameDay = d.toDateString() === now.toDateString();
+            return sameDay
+                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        } catch (_) { return ''; }
+    };
+
+    const renderItem = (s) => {
+        const active = state.askSessionId === s.id ? ' is-active' : '';
+        const pinned = s.pinned;
+        const count = s.message_count || 0;
+        const pinIcon = pinned
+            ? `<span class="cv-ask-history-item-pin" aria-hidden="true" title="Pinned">
+                   <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76a2 2 0 0 0 .59 1.41l1.59 1.59a1 1 0 0 1-.71 1.71H7.53a1 1 0 0 1-.71-1.71l1.59-1.59A2 2 0 0 0 9 10.76z"/></svg>
+               </span>`
+            : `<span class="cv-ask-history-item-pin" hidden></span>`;
+        return `
+            <div class="cv-ask-history-item${active}" data-session-id="${s.id}" tabindex="0" role="button" aria-label="${escapeHtml(s.title || 'Untitled')}">
+                ${pinIcon}
+                <div class="cv-ask-history-item-body">
+                    <div class="cv-ask-history-item-title">${escapeHtml(s.title || 'Untitled')}</div>
+                    <div class="cv-ask-history-item-meta">
+                        <span>${fmt(s.updated_at)}</span>
+                        <span>·</span>
+                        <span>${count} msg${count === 1 ? '' : 's'}</span>
+                    </div>
+                </div>
+                <div class="cv-ask-history-item-actions">
+                    <button data-act="pin" class="${pinned ? 'is-pinned' : ''}" title="${pinned ? 'Unpin' : 'Pin'}" aria-label="${pinned ? 'Unpin chat' : 'Pin chat'}">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="${pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76a2 2 0 0 0 .59 1.41l1.59 1.59a1 1 0 0 1-.71 1.71H7.53a1 1 0 0 1-.71-1.71l1.59-1.59A2 2 0 0 0 9 10.76z"/></svg>
+                    </button>
+                    <button data-act="rename" title="Rename" aria-label="Rename chat">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                    </button>
+                    <button data-act="delete" title="Delete" aria-label="Delete chat">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    };
+
+    const renderGroup = (label, items) => items.length
+        ? `<div class="cv-ask-history-group">${label}</div>${items.map(renderItem).join('')}`
+        : '';
+
+    list.innerHTML =
+        renderGroup('Pinned', groups.pinned) +
+        renderGroup('Today', groups.today) +
+        renderGroup('Yesterday', groups.yesterday) +
+        renderGroup('Last 7 days', groups.week) +
+        renderGroup('Older', groups.older);
+
+    // Click + keyboard activation handled via delegation in _initAskVault.
+}
+
+async function _askLoadSession(sessionId) {
+    if (state.askStreaming) return;
+    try {
+        const res = await fetch(`${API}/api/vault/sessions/${sessionId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const session = await res.json();
+        const messages = session.messages || [];
+        state.askSessionId = session.id;
+        state.askHistory = messages.map(m => ({ role: m.role, content: m.content }));
+
+        const container = $('#ask-messages');
+        const empty = $('#ask-empty');
+        const clearBtn = $('#ask-clear-btn');
+        if (container) container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
+        if (empty) empty.style.display = messages.length ? 'none' : '';
+        if (clearBtn) clearBtn.style.display = messages.length ? '' : 'none';
+
+        for (const m of messages) {
+            try {
+                if (m.role === 'user') _askRenderUserMsg(m.content || '');
+                else _askRenderHistoricalAssistantMsg(m.content || '', m.citations || []);
+            } catch (msgErr) {
+                console.error('Failed rendering message', m, msgErr);
+            }
+        }
+
+        _askScrollToBottom();
+        _askRenderSessionList();
+        _askUpdateRailSession();
+        _askCloseHistoryPanel();
+    } catch (err) {
+        console.error('Failed to load session', err);
+    }
+}
+
+// Render a saved assistant message — no streaming-bubble IDs, no data-raw,
+// no shared state with the live-stream path. Self-contained DOM build.
+function _askRenderHistoricalAssistantMsg(text, citations) {
+    const container = $('#ask-messages');
+    if (!container) return;
+
+    const div = document.createElement('div');
+    div.className = 'ask-msg ask-msg-assistant';
+
+    const safeText = String(text || '');
+    let html;
+    try {
+        html = _askSimpleMarkdown(safeText);
+    } catch (err) {
+        console.warn('Markdown render failed, falling back to plain text', err);
+        html = `<p>${escapeHtml(safeText).replace(/\n/g, '<br>')}</p>`;
+    }
+
+    // Build the message body
+    div.innerHTML = `
+        <div class="ask-msg-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+        </div>
+        <div class="ask-msg-body">
+            <div class="ask-msg-content"></div>
+        </div>
+    `;
+    div.querySelector('.ask-msg-content').innerHTML = html;
+    container.appendChild(div);
+
+    // Source chips (same dedupe rules as the streaming path).
+    if (Array.isArray(citations) && citations.length > 0) {
+        const bestByCtx = new Map();
+        for (const s of citations) {
+            const cid = s && s.context_id;
+            if (cid == null) continue;
+            const prev = bestByCtx.get(cid);
+            const sScore = typeof s.score === 'number' ? s.score : 0;
+            const pScore = prev && typeof prev.score === 'number' ? prev.score : -1;
+            const sIsPrimary = !s.neighbor;
+            const pIsPrimary = prev ? !prev.neighbor : false;
+            const replace =
+                !prev ||
+                (sIsPrimary && !pIsPrimary) ||
+                (sIsPrimary === pIsPrimary && sScore > pScore);
+            if (replace) bestByCtx.set(cid, s);
+        }
+        const deduped = Array.from(bestByCtx.values());
+
+        const body = div.querySelector('.ask-msg-body');
+        const sourcesDiv = document.createElement('div');
+        sourcesDiv.className = 'ask-sources';
+
+        const chipsHtml = deduped.map(s => {
+            const brand = s.source ? _AI_BRAND[s.source] : null;
+            const color = brand ? brand.color : 'var(--cv-volt)';
+            const title = String(s.title || 'Untitled');
+            const short = title.length > 42 ? title.slice(0, 40) + '…' : title;
+            const pct = typeof s.score === 'number' ? Math.round(s.score * 100) : null;
+            const score = pct !== null ? `<span class="ask-source-score">${pct}%</span>` : '';
+            const snippet = s.snippet ? String(s.snippet) : '';
+            const tooltipParts = [title];
+            if (brand) tooltipParts.push(brand.label);
+            if (snippet) tooltipParts.push(snippet);
+            const tooltip = tooltipParts.join(' · ');
+            const snippetLine = snippet
+                ? `<div class="ask-source-snippet">${escapeHtml(snippet)}</div>`
+                : '';
+            const cidAttr = s.context_id != null ? Number(s.context_id) : '';
+            return `<div class="ask-source-card">
+                        <button class="ask-source-chip" style="--src-color:${color}"
+                                onclick="showDetail(${cidAttr})"
+                                title="${escapeHtml(tooltip)}">
+                            <span class="ask-source-dot" aria-hidden="true"></span>
+                            <span class="ask-source-title">${escapeHtml(short)}</span>
+                            ${score}
+                        </button>
+                        ${snippetLine}
+                    </div>`;
+        }).join('');
+
+        sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources</span>${chipsHtml}`;
+        body.appendChild(sourcesDiv);
+    }
+}
+
+async function _askToggleSessionPin(sessionId) {
+    const s = state.askSessions.find(x => x.id === sessionId);
+    if (!s) return;
+    const next = !s.pinned;
+    try {
+        const res = await fetch(`${API}/api/vault/sessions/${sessionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pinned: next }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await _askLoadSessions();
+    } catch (err) { console.error(err); }
+}
+
+async function _askRenameSession(sessionId) {
+    const s = state.askSessions.find(x => x.id === sessionId);
+    if (!s) return;
+    const next = await showPrompt({
+        title: 'Rename chat',
+        message: 'Give this conversation a clearer name.',
+        defaultValue: s.title || '',
+        placeholder: 'Untitled',
+        confirmLabel: 'Save',
+        maxLength: 200,
+    });
+    if (!next || next === s.title) return;
+    try {
+        const res = await fetch(`${API}/api/vault/sessions/${sessionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: next }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await _askLoadSessions();
+    } catch (err) {
+        console.error(err);
+        showToast('Rename failed', 'error');
+    }
+}
+
+async function _askDeleteSession(sessionId) {
+    const s = state.askSessions.find(x => x.id === sessionId);
+    const title = s && s.title ? `"${s.title}"` : 'this chat';
+    const ok = await showConfirm({
+        title: 'Delete chat?',
+        message: `${title} will be permanently removed from your vault. This can't be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+    });
+    if (!ok) return;
+    try {
+        const res = await fetch(`${API}/api/vault/sessions/${sessionId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (state.askSessionId === sessionId) _askResetChat();
+        await _askLoadSessions();
+        showToast('Chat deleted', 'success');
+    } catch (err) {
+        console.error(err);
+        showToast('Delete failed', 'error');
     }
 }
 
@@ -3756,12 +4312,25 @@ function _askSimpleMarkdown(text) {
     // Italic (but not if part of a list marker **)
     html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
 
-    // Unordered lists
+    // Unordered + numbered list markers → <li>
     html = html.replace(/^[-â€¢*]\s+(.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
-
-    // Numbered lists
     html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+    // Wrap consecutive <li> lines into <ul> — done by line-walk, not regex,
+    // so it can't backtrack catastrophically on long output.
+    {
+        const lines = html.split('\n');
+        const out = [];
+        let inList = false;
+        for (const line of lines) {
+            const isLi = line.startsWith('<li>') && line.endsWith('</li>');
+            if (isLi && !inList) { out.push('<ul>'); inList = true; }
+            else if (!isLi && inList) { out.push('</ul>'); inList = false; }
+            out.push(line);
+        }
+        if (inList) out.push('</ul>');
+        html = out.join('\n');
+    }
 
     // Line breaks â†’ paragraphs
     html = html.replace(/\n\n+/g, '</p><p>');
@@ -3935,6 +4504,7 @@ async function askVault(question) {
             body: JSON.stringify({
                 question,
                 history: state.askHistory.slice(-6),
+                session_id: state.askSessionId,
             }),
         });
 
@@ -3983,6 +4553,7 @@ async function askVault(question) {
                     }
                     if (data.done) {
                         _ensureAssistantBubble();
+                        if (data.session_id) state.askSessionId = data.session_id;
                         _askFinalizeMsg(data.sources || []);
                     }
                 } catch (_) { /* skip bad lines */ }
@@ -4000,6 +4571,7 @@ async function askVault(question) {
                 }
                 if (data.done) {
                     _ensureAssistantBubble();
+                    if (data.session_id) state.askSessionId = data.session_id;
                     _askFinalizeMsg(data.sources || []);
                 }
             } catch (_) {}
@@ -4021,6 +4593,20 @@ async function askVault(question) {
     state.askStreaming = false;
     if (sendBtn && input) sendBtn.disabled = !input.value.trim();
     _askSetStatus('Ready');
+
+    // Refresh sidebar list silently so the new/updated session shows up next open
+    // and the rail label has the correct title.
+    try {
+        const r = await fetch(`${API}/api/vault/sessions`);
+        if (r.ok) {
+            const d = await r.json();
+            state.askSessions = d.sessions || [];
+            _askUpdateRailSession();
+            // If the panel happens to be open, re-render in place.
+            const panel = $('#cv-ask-history-panel');
+            if (panel && !panel.hasAttribute('hidden')) _askRenderSessionList();
+        }
+    } catch (_) {}
 }
 
 // â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4123,11 +4709,78 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Sort control
-    if ($('#sort-select')) {
-        $('#sort-select').addEventListener('change', (e) => {
-            state.sortOrder = e.target.value;
-            loadContexts($('#search-input').value.trim());
+    // Sort control (custom popover)
+    const _sortRoot = $('#cv-sort');
+    const _sortBtn = $('#cv-sort-btn');
+    const _sortMenu = $('#cv-sort-menu');
+    const _sortValue = $('#cv-sort-value');
+    if (_sortRoot && _sortBtn && _sortMenu) {
+        const SORT_LABELS = { newest: 'Newest', oldest: 'Oldest', alpha: 'A — Z' };
+
+        const setSort = (val) => {
+            state.sortOrder = val;
+            if (_sortValue) _sortValue.textContent = SORT_LABELS[val] || 'Newest';
+            _sortMenu.querySelectorAll('.cv-sort-opt').forEach(opt => {
+                opt.setAttribute('aria-selected', String(opt.getAttribute('data-sort') === val));
+            });
+            try { localStorage.setItem('cv-sort-order', val); } catch (e) {}
+        };
+
+        const openMenu = () => {
+            _sortMenu.hidden = false;
+            _sortBtn.setAttribute('aria-expanded', 'true');
+            const selected = _sortMenu.querySelector('.cv-sort-opt[aria-selected="true"]') || _sortMenu.querySelector('.cv-sort-opt');
+            if (selected) selected.focus();
+        };
+        const closeMenu = () => {
+            _sortMenu.hidden = true;
+            _sortBtn.setAttribute('aria-expanded', 'false');
+        };
+        const toggleMenu = () => (_sortMenu.hidden ? openMenu() : closeMenu());
+
+        // Restore saved sort
+        try {
+            const saved = localStorage.getItem('cv-sort-order');
+            if (saved && SORT_LABELS[saved]) setSort(saved);
+            else setSort(state.sortOrder || 'newest');
+        } catch (e) { setSort(state.sortOrder || 'newest'); }
+
+        _sortBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
+
+        _sortMenu.querySelectorAll('.cv-sort-opt').forEach(opt => {
+            opt.addEventListener('click', () => {
+                const val = opt.getAttribute('data-sort');
+                if (!val) return;
+                setSort(val);
+                closeMenu();
+                _sortBtn.focus();
+                loadContexts($('#search-input').value.trim());
+            });
+        });
+
+        // Keyboard nav inside the menu
+        _sortMenu.addEventListener('keydown', (e) => {
+            const opts = Array.from(_sortMenu.querySelectorAll('.cv-sort-opt'));
+            const idx = opts.indexOf(document.activeElement);
+            if (e.key === 'ArrowDown') { e.preventDefault(); opts[(idx + 1) % opts.length]?.focus(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); opts[(idx - 1 + opts.length) % opts.length]?.focus(); }
+            else if (e.key === 'Home') { e.preventDefault(); opts[0]?.focus(); }
+            else if (e.key === 'End') { e.preventDefault(); opts[opts.length - 1]?.focus(); }
+            else if (e.key === 'Escape') { e.preventDefault(); closeMenu(); _sortBtn.focus(); }
+        });
+
+        // Click outside / Escape on button
+        document.addEventListener('click', (e) => {
+            if (!_sortMenu.hidden && !_sortRoot.contains(e.target)) closeMenu();
+        });
+        _sortBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openMenu();
+            } else if (e.key === 'Escape' && !_sortMenu.hidden) {
+                e.preventDefault();
+                closeMenu();
+            }
         });
     }
 
@@ -4187,6 +4840,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close modal on overlay click
     $('#edit-modal').addEventListener('click', (e) => {
         if (e.target === $('#edit-modal')) closeEditModal();
+    });
+
+    // Confirm delete modal
+    if ($('#cancel-delete-btn')) $('#cancel-delete-btn').addEventListener('click', closeConfirmDeleteModal);
+    if ($('#confirm-delete-btn')) $('#confirm-delete-btn').addEventListener('click', () => {
+        const action = state._pendingConfirmDeleteAction;
+        closeConfirmDeleteModal();
+        if (action) action();
+    });
+    if ($('#confirm-delete-modal')) $('#confirm-delete-modal').addEventListener('click', (e) => {
+        if (e.target === $('#confirm-delete-modal')) closeConfirmDeleteModal();
     });
 
     // Theme toggle
@@ -4252,6 +4916,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Esc â€” close modals
         if (e.key === 'Escape') {
+            if ($('#confirm-delete-modal') && $('#confirm-delete-modal').style.display !== 'none') { closeConfirmDeleteModal(); return; }
             if ($('#shortcuts-modal').style.display !== 'none') { closeShortcutsModal(); return; }
             if ($('#edit-modal').style.display !== 'none') { closeEditModal(); return; }
             if ($('#settings-modal').style.display !== 'none') { closeSettingsModal(); return; }

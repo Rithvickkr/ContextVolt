@@ -40,7 +40,11 @@ node_modules/
 context_volt.db-shm
 context_volt.db-wal
 config.json
-config.json
 backend/tools/rag_eval_fixtures.json
 backend/tools/rag_eval.py
 backend/tools/rag_test.py
+
+# ─── Local / scratch ─────────────────────────────
+.claude/settings.local.json
+_patch_settings.py
+dom result.md

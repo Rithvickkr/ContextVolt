@@ -1,5 +1,5 @@
 ﻿/* ================================================================
-   ContextVolt â€” Premium Monochrome Theme
+   ContextVolt — Premium Monochrome Theme
    ================================================================ */
 
 /* Screen-reader only utility */
@@ -125,7 +125,7 @@
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: #c8c8ce; }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #9898a0; }
 
-/* Light mode â€” card */
+/* Light mode — card */
 [data-theme="light"] .context-card {
     background: #ffffff;
     border-color: rgba(0, 0, 0, 0.08);
@@ -142,13 +142,13 @@
     background: linear-gradient(90deg, var(--text-primary), transparent);
 }
 
-/* Light mode â€” sidebar */
+/* Light mode — sidebar */
 [data-theme="light"] .sidebar {
     background: #ffffff;
     border-right-color: rgba(0, 0, 0, 0.1);
 }
 
-/* Light mode â€” sidebar nav text & icons need more contrast */
+/* Light mode — sidebar nav text & icons need more contrast */
 [data-theme="light"] .nav-item {
     color: #52525b;
 }
@@ -202,14 +202,14 @@
 [data-theme="light"] .setup-progress-fill {
     background: #09090b;
 }
-/* Light mode â€” tooltips */
+/* Light mode — tooltips */
 [data-theme="light"] [data-tooltip]::after {
     background: #1c1c21;
     color: #f0f0f0;
     border-color: rgba(255,255,255,0.08);
 }
 
-/* Light mode â€” nav active */
+/* Light mode — nav active */
 [data-theme="light"] .nav-item.active {
     background: rgba(0, 0, 0, 0.05);
 }
@@ -218,12 +218,12 @@
     background: rgba(0, 0, 0, 0.03);
 }
 
-/* Light mode â€” main content area background */
+/* Light mode — main content area background */
 [data-theme="light"] .main-content {
     background: #f7f7f8;
 }
 
-/* Light mode â€” primary button */
+/* Light mode — primary button */
 [data-theme="light"] .btn-primary {
     background: #09090b;
     color: #ffffff;
@@ -235,28 +235,28 @@
     box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
 
-/* Light mode â€” search box */
+/* Light mode — search box */
 [data-theme="light"] .search-box {
     background: #ffffff;
     border-color: rgba(0,0,0,0.1);
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
-/* Light mode â€” modals */
+/* Light mode — modals */
 [data-theme="light"] .modal,
 [data-theme="light"] .settings-modal {
     background: #ffffff;
     border-color: rgba(0,0,0,0.08);
 }
 
-/* Light mode â€” toast */
+/* Light mode — toast */
 [data-theme="light"] .toast {
     background: #ffffff;
     border-color: rgba(0,0,0,0.1);
     box-shadow: 0 4px 20px rgba(0,0,0,0.12);
 }
 
-/* Light mode â€” progress bar */
+/* Light mode — progress bar */
 [data-theme="light"] .summarize-progress-bar {
     background: rgba(0, 0, 0, 0.1);
 }
@@ -265,6 +265,233 @@
     background: #09090b;
     box-shadow: none;
 }
+
+/* ================================================================
+   Light mode — comprehensive fixes
+   Problems fixed:
+   - App shell hardcoded dark bg
+   - Sidebar gradient overlay
+   - Nav active: white glow removed
+   - Context card hover: dark bg removed, top line fixed
+   - Search/textarea focus: dark bg removed
+   - Primary btn hover: white bg replaced
+   - Setup pending step: white borders/bg
+   - Vitals code cyan unreadable
+   - Code snippet indigo unreadable
+   - Status banners amber too light
+   - Settings embed warning amber too light
+   - Download progress bars (white bg invisible)
+   - Confirm dialog OK button
+   - CV cmdk / nav-kbd / vibe / side-iconbtn
+   - CV stat mouse-tracking glow
+   - CV pipeline status badge
+   - Voltword glow line
+   - Collection items hover/active
+   - Input focus borders
+   ================================================================ */
+
+/* App shell */
+[data-theme="light"] #app.app-container { background: #f5f5f7; }
+
+/* Sidebar overlay — dark rgba lines invisible on white */
+[data-theme="light"] .sidebar::before {
+    background: linear-gradient(180deg, rgba(0,0,0,0.008) 0%, transparent 40%, transparent 60%, rgba(0,0,0,0.025) 100%);
+}
+
+/* Main content vignette — white glow pointless on light */
+[data-theme="light"] .main-content::before {
+    background: none;
+}
+
+/* Nav active — white glow + white shadow removed */
+[data-theme="light"] .nav-item.active {
+    box-shadow: none;
+}
+
+/* Context card hover — remove dark background */
+[data-theme="light"] .context-card:hover {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.16);
+}
+
+/* Context card top-line gradient — rgba(255,255,255) invisible on white */
+[data-theme="light"] .context-card::before {
+    background: linear-gradient(90deg, rgba(0,0,0,0.07), transparent 80%);
+}
+[data-theme="light"] .context-card:hover::before {
+    background: linear-gradient(90deg, rgba(0,0,0,0.18), transparent 80%);
+}
+
+/* Search box focus — dark bg removed */
+[data-theme="light"] .search-box:focus-within {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.22);
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.06);
+}
+
+/* Chat textarea focus — dark bg removed */
+[data-theme="light"] .chat-textarea:focus {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.2);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.04), 0 0 0 3px rgba(0,0,0,0.06);
+}
+
+/* Primary btn hover — hardcoded #ffffff replaced */
+[data-theme="light"] .btn-primary:hover:not(:disabled) {
+    background: #27272a;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Setup wizard — pending step white bg/border */
+[data-theme="light"] .setup-step.pending.setup-card { border-color: rgba(0,0,0,0.1); }
+[data-theme="light"] .setup-step.pending .setup-card-icon {
+    background: rgba(0,0,0,0.03);
+    border-color: rgba(0,0,0,0.08);
+}
+[data-theme="light"] .setup-step.pending .setup-card-dot { background: rgba(0,0,0,0.18); }
+
+/* Prompt size btn hover — rgba(255,255,255,0.04) invisible */
+[data-theme="light"] .prompt-size-btn:hover { background: rgba(0,0,0,0.04); }
+
+/* Code snippet header — rgba(255,255,255,0.03) invisible */
+[data-theme="light"] .code-snippet-header { background: rgba(0,0,0,0.025); border-bottom-color: rgba(0,0,0,0.06); }
+
+/* Vitals code — cyan (#67e8f9) unreadable on white */
+[data-theme="light"] .vitals-item code {
+    color: #0369a1;
+    background: rgba(3,105,161,0.06);
+    border-color: rgba(3,105,161,0.14);
+}
+
+/* Code snippet — light indigo unreadable on white */
+[data-theme="light"] .code-snippet-lang { color: #4338ca; }
+[data-theme="light"] .snippets-count { color: #4338ca; background: rgba(99,102,241,0.1); }
+[data-theme="light"] .code-snippet-copy {
+    background: rgba(99,102,241,0.08);
+    color: #4338ca;
+    border-color: rgba(99,102,241,0.2);
+}
+[data-theme="light"] .code-snippet-copy:hover { background: rgba(99,102,241,0.15); }
+[data-theme="light"] .code-snippet-copy.copied { color: #047857; background: rgba(5,150,105,0.1); border-color: rgba(5,150,105,0.25); }
+
+/* Status banners — amber (#fcd34d, #fbbf24) too light on white */
+[data-theme="light"] .detail-status-banner.status-summarizing {
+    color: #92400e;
+    background: rgba(217,119,6,0.07);
+    border-color: rgba(217,119,6,0.2);
+}
+[data-theme="light"] .detail-spinner { border-color: rgba(217,119,6,0.2); border-top-color: #d97706; }
+[data-theme="light"] .status-badge.status-summarizing {
+    color: #92400e;
+    background: rgba(217,119,6,0.1);
+    border-color: rgba(217,119,6,0.25);
+}
+[data-theme="light"] .badge-spinner { border-color: rgba(217,119,6,0.2); border-top-color: #d97706; }
+
+/* Settings embed warning — amber on white */
+[data-theme="light"] .settings-embed-warning {
+    color: #92400e;
+    background: rgba(217,119,6,0.07);
+    border-color: rgba(217,119,6,0.2);
+}
+
+/* Download progress bars — rgba(255,255,255,0.x) invisible on white */
+[data-theme="light"] .settings-download-bar-bg { background: rgba(0,0,0,0.08); }
+[data-theme="light"] .cv-dl-badge-head-bar { background: rgba(0,0,0,0.06); }
+[data-theme="light"] .cv-dl-bar-bg { background: rgba(0,0,0,0.07); }
+[data-theme="light"] .cv-dl-badge.cv-dl-open .cv-dl-badge-panel { border-top-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .cv-dl-badge {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+/* Confirm dialog OK button — white border/bg */
+[data-theme="light"] .cv-confirm-ok {
+    border-color: rgba(0,0,0,0.14);
+    background: rgba(0,0,0,0.05);
+    color: var(--text-primary);
+}
+[data-theme="light"] .cv-confirm-ok:hover { background: rgba(0,0,0,0.09); }
+[data-theme="light"] .cv-confirm-ok.danger {
+    background: rgba(220,38,38,0.08);
+    border-color: rgba(220,38,38,0.25);
+    color: #dc2626;
+}
+
+/* Collection items hover/active — white rgba invisible */
+[data-theme="light"] .collections-list .collection-item:hover { background: rgba(0,0,0,0.04); color: #2e2e33; }
+[data-theme="light"] .collections-list .collection-item.active { background: rgba(0,0,0,0.06); color: #111113; border-color: rgba(0,0,0,0.1); }
+
+/* Input focus borders — white rgba meaningless on light */
+[data-theme="light"] .settings-profile-input:focus,
+[data-theme="light"] .settings-profile-textarea:focus,
+[data-theme="light"] .form-input:focus,
+[data-theme="light"] .cloud-key-input:focus { border-color: rgba(0,0,0,0.28); }
+
+/* CV topbar cmdk — white rgba bg on light */
+[data-theme="light"] .cv-cmdk {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.09);
+    color: #52525b;
+}
+[data-theme="light"] .cv-cmdk:hover { background: rgba(0,0,0,0.06); color: #2e2e33; border-color: rgba(0,0,0,0.14); }
+[data-theme="light"] .cv-cmdk kbd { background: rgba(0,0,0,0.05); color: #71717a; border-color: rgba(0,0,0,0.1); }
+
+/* CV nav-kbd badge in sidebar */
+[data-theme="light"] .cv-nav-kbd { background: rgba(0,0,0,0.04); color: #a1a1aa; border-color: rgba(0,0,0,0.09); }
+
+/* CV side icon button */
+[data-theme="light"] .cv-side-iconbtn { border-color: rgba(0,0,0,0.1); color: #71717a; }
+[data-theme="light"] .cv-side-iconbtn:hover { color: #d97706; border-color: rgba(217,119,6,0.3); background: rgba(217,119,6,0.07); }
+
+/* CV vibe toggle */
+[data-theme="light"] .cv-vibe { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
+[data-theme="light"] .cv-vibe button { color: #71717a; }
+[data-theme="light"] .cv-vibe button:hover { color: #2e2e33; }
+[data-theme="light"] .cv-vibe button.on { background: rgba(217,119,6,0.08); color: #d97706; box-shadow: inset 0 0 0 1px rgba(217,119,6,0.25); }
+
+/* CV primary (volt) button */
+[data-theme="light"] .cv-primary {
+    background: linear-gradient(180deg, #f5d020, #d97706);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 0 0 1px rgba(0,0,0,0.12), 0 4px 16px -4px rgba(217,119,6,0.35);
+}
+[data-theme="light"] .cv-primary:hover { box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 0 0 1px rgba(0,0,0,0.12), 0 10px 28px -4px rgba(217,119,6,0.45); }
+
+/* CV stat mouse-tracking glow — white glow invisible on light */
+[data-theme="light"] .cv-stat::before {
+    background: radial-gradient(600px 180px at var(--mx,50%) var(--my,-20%), rgba(0,0,0,0.035), transparent 60%);
+}
+
+/* CV stat nth-child(1) dot — volt (bright yellow-green) on white */
+[data-theme="light"] .cv-stat:nth-child(1) .k .dot { background: #d97706; box-shadow: 0 0 6px rgba(217,119,6,0.3); }
+
+/* CV pipeline status badge — volt green on white */
+[data-theme="light"] .cv-pipe-status {
+    color: #d97706;
+    background: rgba(217,119,6,0.08);
+    border-color: rgba(217,119,6,0.2);
+}
+[data-theme="light"] .cv-pipe-status::before { background: #d97706; box-shadow: 0 0 8px rgba(217,119,6,0.35); animation: cv-blink 1.2s infinite; }
+
+/* Pipeline progress fill on light */
+[data-theme="light"] .summarize-progress-fill {
+    background: linear-gradient(90deg, #e8a500, #d97706);
+    box-shadow: 0 0 6px rgba(217,119,6,0.3);
+}
+
+/* Voltword underline glow — volt color too light on white */
+[data-theme="light"] .cv-hero h1 .voltword::after,
+[data-theme="light"] .cv-capture-title .voltword::after {
+    background: linear-gradient(90deg, transparent, #e8a500 20%, #e8a500 80%, transparent);
+}
+
+/* Spinner in buttons — border should be dark on light */
+[data-theme="light"] .spinner { border-color: rgba(0,0,0,0.15); border-top-color: #ffffff; }
+
+/* Ask page suggestion pills */
+[data-theme="light"] .ask-suggestion { background: #ffffff; border-color: rgba(0,0,0,0.09); }
+[data-theme="light"] .ask-suggestion:hover { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.16); }
 
 /* ================================================================
    Reset & Base
@@ -716,7 +943,7 @@ body {
 }
 
 /* ================================================================
-   Sidebar â€” Premium Design
+   Sidebar — Premium Design
    ================================================================ */
 
 .sidebar {
@@ -1055,7 +1282,7 @@ body {
 
 .collection-select:focus { border-color: var(--border-accent); }
 
-/* â”€â”€ Sidebar Footer â€” Grouped & Refined â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Sidebar Footer — Grouped & Refined â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .sidebar-footer {
     padding: 10px 14px 14px;
     border-top: 1px solid var(--border);
@@ -1175,7 +1402,7 @@ body {
 }
 
 /* ================================================================
-   Main Content â€” with vignette
+   Main Content — with vignette
    ================================================================ */
 
 .main-content {
@@ -1266,7 +1493,7 @@ body {
 }
 
 /* ================================================================
-   Dashboard â€” Premium Home Screen
+   Dashboard — Premium Home Screen
    ================================================================ */
 
 #view-input {
@@ -1442,7 +1669,7 @@ body {
     color: var(--text-primary);
 }
 
-/* â”€â”€ Dashboard Recent Contexts â€” 2-Column Grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Dashboard Recent Contexts — 2-Column Grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .dashboard-recent-section {
     margin-bottom: 24px;
 }
@@ -1797,7 +2024,7 @@ body {
 .stat-card:nth-child(2) { animation-delay: 0.1s; }
 .stat-card:nth-child(3) { animation-delay: 0.15s; }
 
-/* â”€â”€ Responsive â€” dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Responsive — dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 768px) {
     .dashboard-header {
         flex-direction: column;
@@ -1865,7 +2092,7 @@ body {
 }
 
 /* ================================================================
-   Chat Input â€” Premium Textarea
+   Chat Input — Premium Textarea
    ================================================================ */
 
 .input-area {
@@ -1922,7 +2149,7 @@ body {
 }
 
 /* ================================================================
-   Buttons â€” Premium Design
+   Buttons — Premium Design
    ================================================================ */
 
 .btn {
@@ -2144,7 +2371,7 @@ body {
     z-index: 2;
 }
 
-/* Search Box â€” Premium */
+/* Search Box — Premium */
 .search-box {
     display: flex;
     align-items: center;
@@ -2197,7 +2424,7 @@ body {
     gap: 16px;
 }
 
-/* Context Card â€” Premium Design */
+/* Context Card — Premium Design */
 .context-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -2212,7 +2439,7 @@ body {
     backdrop-filter: blur(8px);
 }
 
-/* Subtle top gradient line â€” always visible */
+/* Subtle top gradient line — always visible */
 .context-card::before {
     content: '';
     position: absolute;
@@ -2334,7 +2561,7 @@ body {
 }
 
 /* ================================================================
-   Worker Status Badges â€” Card & Detail
+   Worker Status Badges — Card & Detail
    ================================================================ */
 
 /* Card badge */
@@ -2654,7 +2881,7 @@ body {
 }
 
 /* ================================================================
-   Context Detail â€” Clean Professional Layout
+   Context Detail — Clean Professional Layout
    ================================================================ */
 
 .detail-content {
@@ -3183,7 +3410,7 @@ body {
 }
 
 /* ================================================================
-   Modal â€” Premium
+   Modal — Premium
    ================================================================ */
 
 .modal-overlay {
@@ -3262,7 +3489,7 @@ body {
 }
 
 /* ================================================================
-   Toast â€” Premium
+   Toast — Premium
    ================================================================ */
 
 .toast-stack {
@@ -3591,6 +3818,56 @@ body {
     color: var(--text-muted);
     margin-bottom: 12px;
     line-height: 1.5;
+}
+
+/* Profile section */
+.settings-profile-section {
+    margin-bottom: 4px;
+}
+
+.settings-profile-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.settings-profile-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.settings-profile-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.settings-profile-input,
+.settings-profile-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13px;
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    box-sizing: border-box;
+}
+
+.settings-profile-textarea {
+    resize: vertical;
+    min-height: 72px;
+    line-height: 1.5;
+}
+
+.settings-profile-input:focus,
+.settings-profile-textarea:focus {
+    border-color: rgba(255,255,255,0.2);
+    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 /* Skeleton shimmer for settings loading */
@@ -5436,7 +5713,7 @@ kbd {
    Feature 2: Fluid Typography with clamp()
    ================================================================ */
 
-/* Already applied via view-header h1 etc â€” adding responsive scaling */
+/* Already applied via view-header h1 etc — adding responsive scaling */
 @media (min-width: 768px) {
     .view-header h1 {
         font-size: clamp(24px, 2.5vw, 32px);
@@ -5552,7 +5829,7 @@ kbd {
     z-index: 1000;
 }
 
-/* Hide tooltips in expanded sidebar â€” labels are already visible */
+/* Hide tooltips in expanded sidebar — labels are already visible */
 .app-container:not(.sidebar-collapsed) .sidebar-footer [data-tooltip]::after {
     display: none;
 }
@@ -5573,7 +5850,7 @@ kbd {
 }
 
 /* ================================================================
-   Feature 6: Better Empty State â€” Animated
+   Feature 6: Better Empty State — Animated
    ================================================================ */
 
 .empty-state {
@@ -5726,7 +6003,7 @@ kbd {
 }
 
 /* ================================================================
-   Ask Your Vault â€” RAG Chat UI
+   Ask Your Vault — RAG Chat UI
    ================================================================ */
 
 #view-ask {
@@ -8443,6 +8720,53 @@ kbd {
     color: #111113;
 }
 
+/* User message action buttons (retry / edit) */
+#view-ask .ask-msg-actions {
+    display: flex; gap: 4px;
+    justify-content: flex-end;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+#view-ask .ask-msg-user:hover .ask-msg-actions,
+#view-ask .ask-msg-user:focus-within .ask-msg-actions {
+    opacity: 1;
+}
+#view-ask .ask-msg-action-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--cv-line-2);
+    border-radius: 20px;
+    color: var(--cv-text-2);
+    font: 400 11px/1 var(--cv-body);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+#view-ask .ask-msg-action-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--cv-text-0);
+    border-color: var(--cv-line);
+}
+#view-ask .ask-msg-action-btn:disabled {
+    opacity: 0.35; cursor: not-allowed;
+}
+[data-theme="light"] #view-ask .ask-msg-action-btn {
+    background: rgba(0,0,0,0.04);
+    border-color: rgba(0,0,0,0.1);
+    color: #555;
+}
+[data-theme="light"] #view-ask .ask-msg-action-btn:hover {
+    background: rgba(0,0,0,0.08);
+    color: #111;
+}
+
+/* Edit-in-progress input highlight */
+#view-ask .ask-input.editing {
+    outline: 2px solid var(--cv-volt);
+    outline-offset: -2px;
+}
+
 /* Assistant bubble — bolt avatar + glass card */
 #view-ask .ask-msg.ask-msg-assistant .ask-msg-avatar {
     width: 32px; height: 32px; border-radius: 10px;
@@ -9487,3 +9811,509 @@ kbd {
   background: linear-gradient(90deg, #d8d8e0 0%, #ffffff 60%, #d8d8e0 100%);
   box-shadow: 0 0 12px rgba(255,255,255,0.18);
 }
+
+/* ================================================================
+   Space vibe + Light mode
+   Space only changes cv-* tokens (deep navy/cyan palette) — the
+   ambient gradient is the biggest visual problem; white stars on
+   light bg are invisible (harmless). Cyan volt needs darkening so
+   it's readable on a white surface.
+   ================================================================ */
+
+[data-theme="light"][data-vibe="space"] {
+  --cv-volt:      #0e7490;
+  --cv-volt-2:    #0c4a6e;
+  --cv-volt-dim:  rgba(14,116,144,0.1);
+  --cv-volt-glow: rgba(14,116,144,0.2);
+}
+
+/* Ambient: replace deep-space dark with a light sky wash */
+[data-theme="light"][data-vibe="space"] .cv-ambient {
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgba(14,116,144,0.07) 0%, transparent 55%),
+    radial-gradient(800px 500px at 10% 100%, rgba(59,130,246,0.05) 0%, transparent 55%);
+  filter: none;
+}
+
+/* Stars: white dots on white = invisible but harmless; hide explicitly */
+[data-theme="light"][data-vibe="space"] .cv-stars { opacity: 0; }
+
+/* Eyebrow dot */
+[data-theme="light"][data-vibe="space"] .cv-hero-eyebrow::before {
+  background: #0e7490;
+  box-shadow: 0 0 8px rgba(14,116,144,0.35);
+}
+
+/* Voltword */
+[data-theme="light"][data-vibe="space"] .cv-hero h1 .voltword,
+[data-theme="light"][data-vibe="space"] .voltword {
+  background: linear-gradient(180deg, #0e7490, #0c4a6e 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+[data-theme="light"][data-vibe="space"] .cv-hero h1 .voltword::after,
+[data-theme="light"][data-vibe="space"] .cv-capture-title .voltword::after {
+  background: linear-gradient(90deg, transparent, #0e7490 20%, #0e7490 80%, transparent);
+}
+
+/* Primary button */
+[data-theme="light"][data-vibe="space"] .cv-primary {
+  background: linear-gradient(180deg, #22d3ee, #0e7490);
+  color: #ffffff;
+  border-color: rgba(0,0,0,0.12);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 4px 16px -4px rgba(14,116,144,0.4);
+}
+[data-theme="light"][data-vibe="space"] .cv-primary:hover {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 28px -4px rgba(14,116,144,0.5);
+}
+
+/* Active nav icon */
+[data-theme="light"][data-vibe="space"] .nav-item.cv-nav.active .cv-nav-ic { color: #0e7490; }
+
+/* Side icon btn */
+[data-theme="light"][data-vibe="space"] .cv-side-iconbtn:hover {
+  color: #0e7490;
+  border-color: rgba(14,116,144,0.3);
+  background: rgba(14,116,144,0.07);
+}
+
+/* Vibe toggle active */
+[data-theme="light"][data-vibe="space"] .cv-vibe button.on {
+  background: rgba(14,116,144,0.08);
+  color: #0e7490;
+  box-shadow: inset 0 0 0 1px rgba(14,116,144,0.25);
+}
+
+/* Stat dot 1 */
+[data-theme="light"][data-vibe="space"] .cv-stat:nth-child(1) .k .dot {
+  background: #0e7490;
+  box-shadow: 0 0 6px rgba(14,116,144,0.3);
+}
+
+/* Pipeline status badge */
+[data-theme="light"][data-vibe="space"] .cv-pipe-status {
+  color: #0e7490;
+  background: rgba(14,116,144,0.08);
+  border-color: rgba(14,116,144,0.2);
+}
+[data-theme="light"][data-vibe="space"] .cv-pipe-status::before {
+  background: #0e7490;
+  box-shadow: 0 0 8px rgba(14,116,144,0.4);
+  animation: cv-blink 1.2s infinite;
+}
+
+/* Summarize progress */
+[data-theme="light"][data-vibe="space"] .summarize-progress-fill {
+  background: linear-gradient(90deg, #22d3ee, #0e7490);
+  box-shadow: 0 0 6px rgba(14,116,144,0.3);
+}
+
+/* Capture orb */
+[data-theme="light"][data-vibe="space"] .cv-capture-orb {
+  border-color: rgba(14,116,144,0.25);
+  box-shadow: 0 0 32px rgba(14,116,144,0.18);
+  color: #0e7490;
+}
+
+/* ================================================================
+   Noir vibe + Light mode
+   Noir uses all-white gradients, rgba(255,255,255,x) backgrounds,
+   and white glow effects — every one of those is invisible on a
+   white surface. We flip the palette to a clean monochrome:
+   charcoal for accents, white cards, subtle dark borders.
+   ================================================================ */
+
+[data-theme="light"][data-vibe="noir"] {
+  --cv-volt:      #27272a;
+  --cv-volt-2:    #52525b;
+  --cv-volt-dim:  rgba(39,39,42,0.07);
+  --cv-volt-glow: rgba(39,39,42,0.12);
+  --cv-line:      rgba(0,0,0,0.07);
+  --cv-line-2:    rgba(0,0,0,0.14);
+}
+
+/* Ambient: subtle cool washes, no dark base */
+[data-theme="light"][data-vibe="noir"] .cv-ambient {
+  background:
+    radial-gradient(1100px 700px at 18% 8%, rgba(0,0,0,0.02) 0%, transparent 55%),
+    radial-gradient(900px 600px at 82% 92%, rgba(0,0,0,0.015) 0%, transparent 60%);
+  filter: none;
+}
+
+/* Dot grid: flip white dots to very subtle dark */
+[data-theme="light"][data-vibe="noir"] #app.app-container::before {
+  background-image: radial-gradient(circle, rgba(0,0,0,0.07) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 70%);
+  opacity: 0.55;
+}
+
+/* Topbar */
+[data-theme="light"][data-vibe="noir"] .cv-topbar {
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(250,250,252,0.82));
+  border-bottom-color: rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+}
+
+/* Breadcrumb bold text */
+[data-theme="light"][data-vibe="noir"] .cv-breadcrumb b {
+  background: linear-gradient(180deg, #111113 0%, #52525b 120%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* Vibe toggle */
+[data-theme="light"][data-vibe="noir"] .cv-vibe {
+  background: linear-gradient(180deg, rgba(0,0,0,0.03), rgba(0,0,0,0.015));
+  border-color: rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+}
+[data-theme="light"][data-vibe="noir"] .cv-vibe button.on {
+  background: linear-gradient(180deg, #27272a, #18181b);
+  color: #ffffff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Primary button: charcoal pill (inverts noir's white pill) */
+[data-theme="light"][data-vibe="noir"] .cv-primary {
+  background: linear-gradient(180deg, #3f3f46, #18181b);
+  color: #ffffff;
+  border-color: rgba(0,0,0,0.4);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 4px 16px -6px rgba(0,0,0,0.35);
+}
+[data-theme="light"][data-vibe="noir"] .cv-primary:hover {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 10px 28px -6px rgba(0,0,0,0.4);
+}
+[data-theme="light"][data-vibe="noir"] .cv-primary::before {
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+}
+
+/* Hero border + accent line */
+[data-theme="light"][data-vibe="noir"] .cv-hero { border-bottom-color: rgba(0,0,0,0.08); }
+[data-theme="light"][data-vibe="noir"] .cv-hero::after {
+  background: linear-gradient(90deg, rgba(0,0,0,0.25), transparent);
+}
+
+/* Eyebrow */
+[data-theme="light"][data-vibe="noir"] .cv-hero-eyebrow { color: rgba(0,0,0,0.4); }
+[data-theme="light"][data-vibe="noir"] .cv-hero-eyebrow::before {
+  background: #27272a;
+  box-shadow: 0 0 8px rgba(0,0,0,0.2);
+}
+
+/* Hero h1 */
+[data-theme="light"][data-vibe="noir"] .cv-hero h1 {
+  background: linear-gradient(180deg, #111113 0%, #52525b 70%, #a1a1aa 130%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+
+/* Voltword: dark monochrome */
+[data-theme="light"][data-vibe="noir"] .cv-hero h1 .voltword,
+[data-theme="light"][data-vibe="noir"] .voltword {
+  background: linear-gradient(180deg, #27272a 0%, #71717a 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+[data-theme="light"][data-vibe="noir"] .cv-hero h1 .voltword::after,
+[data-theme="light"][data-vibe="noir"] .cv-capture-title .voltword::after {
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.3) 20%, rgba(0,0,0,0.3) 80%, transparent);
+}
+
+/* Stat cards */
+[data-theme="light"][data-vibe="noir"] .cv-stat {
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 1px 3px rgba(0,0,0,0.05), 0 10px 28px -14px rgba(0,0,0,0.12);
+}
+[data-theme="light"][data-vibe="noir"] .cv-stat:hover {
+  border-color: rgba(0,0,0,0.16);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 2px 8px rgba(0,0,0,0.07), 0 18px 40px -16px rgba(0,0,0,0.16);
+}
+[data-theme="light"][data-vibe="noir"] .cv-stat::before {
+  background: radial-gradient(600px 200px at var(--mx,50%) var(--my,0%), rgba(0,0,0,0.04), transparent 60%);
+}
+
+/* Stat labels & dots */
+[data-theme="light"][data-vibe="noir"] .cv-stat .k { color: #a1a1aa; letter-spacing: 0.12em; font-size: 10.5px; }
+[data-theme="light"][data-vibe="noir"] .cv-stat .k .dot,
+[data-theme="light"][data-vibe="noir"] .cv-stat:nth-child(1) .k .dot,
+[data-theme="light"][data-vibe="noir"] .cv-stat:nth-child(2) .k .dot,
+[data-theme="light"][data-vibe="noir"] .cv-stat:nth-child(3) .k .dot,
+[data-theme="light"][data-vibe="noir"] .cv-stat:nth-child(4) .k .dot {
+  background: #71717a;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.04), 0 0 6px rgba(0,0,0,0.1);
+}
+
+/* Stat value */
+[data-theme="light"][data-vibe="noir"] .cv-stat .v {
+  background: linear-gradient(180deg, #111113 0%, #52525b 120%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+[data-theme="light"][data-vibe="noir"] .cv-stat .v .unit {
+  -webkit-text-fill-color: #a1a1aa; color: #a1a1aa; background: none;
+}
+[data-theme="light"][data-vibe="noir"] .cv-stat .meta { color: #a1a1aa; border-top-color: rgba(0,0,0,0.06); }
+
+/* Section title */
+[data-theme="light"][data-vibe="noir"] .cv-sec-title {
+  background: linear-gradient(180deg, #111113 0%, #52525b 120%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+[data-theme="light"][data-vibe="noir"] .cv-sec-title .idx {
+  background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08);
+  color: #71717a; box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+}
+
+/* Chips */
+[data-theme="light"][data-vibe="noir"] .cv-chip {
+  background: linear-gradient(180deg, #ffffff, #f7f7f8);
+  border-color: rgba(0,0,0,0.09); color: #52525b;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset;
+}
+[data-theme="light"][data-vibe="noir"] .cv-chip:hover {
+  border-color: rgba(0,0,0,0.18); color: #111113;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 3px 10px rgba(0,0,0,0.08);
+}
+[data-theme="light"][data-vibe="noir"] .cv-chip.on {
+  background: linear-gradient(180deg, #27272a, #18181b);
+  border-color: rgba(0,0,0,0.3); color: #ffffff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 3px 10px rgba(0,0,0,0.2);
+}
+
+/* Active nav icon */
+[data-theme="light"][data-vibe="noir"] .nav-item.cv-nav.active .cv-nav-ic { color: #27272a; }
+
+/* Side icon btn */
+[data-theme="light"][data-vibe="noir"] .cv-side-iconbtn:hover {
+  color: #27272a; border-color: rgba(39,39,42,0.25); background: rgba(39,39,42,0.06);
+}
+
+/* Recent grid cards */
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > article,
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > .ctx-card,
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > .cv-card {
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 1px 3px rgba(0,0,0,0.05), 0 8px 24px -12px rgba(0,0,0,0.1);
+}
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > article:hover,
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > .ctx-card:hover,
+[data-theme="light"][data-vibe="noir"] .cv-recent-grid > .cv-card:hover {
+  border-color: rgba(0,0,0,0.16);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 8px 24px rgba(0,0,0,0.09);
+}
+
+/* Empty state */
+[data-theme="light"][data-vibe="noir"] .cv-empty-state {
+  border-color: rgba(0,0,0,0.1);
+  background: radial-gradient(400px 120px at 50% 0%, rgba(0,0,0,0.02), transparent 60%);
+  color: #71717a;
+}
+
+/* Pipeline */
+[data-theme="light"][data-vibe="noir"] .cv-pipeline {
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 20px -8px rgba(0,0,0,0.08);
+}
+[data-theme="light"][data-vibe="noir"] .cv-pipe-status {
+  color: #27272a;
+  background: rgba(39,39,42,0.07);
+  border-color: rgba(39,39,42,0.18);
+}
+[data-theme="light"][data-vibe="noir"] .cv-pipe-status::before {
+  background: #27272a; box-shadow: none; animation: cv-blink 1.2s infinite;
+}
+[data-theme="light"][data-vibe="noir"] .summarize-progress-fill {
+  background: linear-gradient(90deg, #71717a, #27272a); box-shadow: none;
+}
+[data-theme="light"][data-vibe="noir"] .cv-pipe-step .bar i {
+  background: linear-gradient(90deg, #a1a1aa 0%, #27272a 60%, #a1a1aa 100%);
+  box-shadow: 0 0 8px rgba(0,0,0,0.15);
+}
+
+/* Capture orb */
+[data-theme="light"][data-vibe="noir"] .cv-capture-orb {
+  border-color: rgba(39,39,42,0.2);
+  box-shadow: 0 0 32px rgba(39,39,42,0.1);
+  color: #27272a;
+}
+
+/* ================================================================
+   Light mode global fixes — applies to all 3 vibes (volt/space/noir)
+   Fixes: (1) cv-text-* tokens that default to near-white become
+   invisible on light surfaces, especially on hover. (2) green LLM
+   badges (#34d399 on rgba(52,211,153,0.12)) are light-on-light.
+   ================================================================ */
+
+/* Re-map the cv-text scale for light mode so any rule using
+   --cv-text-0/1/2/3 stays readable (hover states especially). */
+[data-theme="light"] {
+  --cv-text-0: #111113;
+  --cv-text-1: #2e2e33;
+  --cv-text-2: #52525b;
+  --cv-text-3: #71717a;
+}
+
+/* Hover states that bumped icons toward white now bump toward dark */
+[data-theme="light"] .nav-item.cv-nav:hover .cv-nav-ic { color: #111113; }
+[data-theme="light"] .cv-util:hover .cv-util-ic { color: #111113; }
+[data-theme="light"] .input-hero:hover .hero-icon {
+  border-color: rgba(0,0,0,0.22);
+  background: rgba(0,0,0,0.04);
+}
+[data-theme="light"] .input-hero:hover .hero-icon svg {
+  opacity: 1;
+  color: #111113;
+}
+[data-theme="light"] .stat-card:hover .stat-icon {
+  background: rgba(99,102,241,0.12);
+  color: #4f46e5;
+}
+[data-theme="light"] .settings-model-card:hover .settings-dl-icon {
+  color: #2e2e33;
+}
+[data-theme="light"] .nav-item:hover .nav-icon { opacity: 1; color: #111113; }
+[data-theme="light"] .btn-deep-search:hover { color: #111113; }
+[data-theme="light"] .system-tab:hover { color: #2e2e33; }
+[data-theme="light"] .cv-vibe button:hover { color: #111113; }
+[data-theme="light"] .cv-view-seg button:hover:not(.on) { color: #2e2e33; }
+[data-theme="light"] .cv-select-mode-btn:hover { color: #111113; border-color: rgba(0,0,0,0.22); }
+[data-theme="light"] .cv-sort-btn:hover { color: #111113; border-color: rgba(0,0,0,0.22); }
+[data-theme="light"] .cv-active-clear:hover { color: #111113; border-color: rgba(0,0,0,0.35); }
+[data-theme="light"] .cv-lib-tags .tag-chip:hover { color: #111113; border-color: rgba(0,0,0,0.22); }
+[data-theme="light"] .cv-back:hover { color: #111113; }
+[data-theme="light"] .cv-cmdk:hover { color: #111113; }
+
+/* LLM / model badges — green text on translucent green is invisible
+   on a white card. Deepen the green and strengthen the surface. */
+[data-theme="light"] .settings-model-badge {
+  background: rgba(5,150,105,0.12);
+  color: #047857;
+  border-color: rgba(5,150,105,0.32);
+}
+[data-theme="light"] .settings-installed-badge {
+  background: rgba(5,150,105,0.1);
+  color: #047857;
+  border-color: rgba(5,150,105,0.3);
+}
+[data-theme="light"] .settings-not-installed-badge {
+  color: #52525b;
+  border-color: rgba(0,0,0,0.18);
+}
+
+/* Vibe-specific badge tinting so the accent stays consistent */
+[data-theme="light"][data-vibe="space"] .settings-model-badge,
+[data-theme="light"][data-vibe="space"] .settings-installed-badge {
+  background: rgba(14,116,144,0.1);
+  color: #0e7490;
+  border-color: rgba(14,116,144,0.3);
+}
+[data-theme="light"][data-vibe="noir"] .settings-model-badge,
+[data-theme="light"][data-vibe="noir"] .settings-installed-badge {
+  background: rgba(39,39,42,0.08);
+  color: #27272a;
+  border-color: rgba(39,39,42,0.25);
+}
+
+/* ================================================================
+   Library card flaws in light mode
+   ================================================================ */
+
+/* Star + delete buttons on cv-card — were near-black pills which are
+   conspicuous on white; flip to white pills with a dark border.
+   The icon glyph still inherits --cv-text-3 (now zinc-500). */
+[data-theme="light"] .cv-card-star,
+[data-theme="light"] .cv-card-del {
+  background: rgba(255,255,255,0.95);
+  border-color: rgba(0,0,0,0.12);
+  color: #52525b;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+[data-theme="light"] .cv-card-star:hover {
+  color: var(--cv-volt);
+  background: #ffffff;
+  border-color: color-mix(in oklab, var(--cv-volt) 50%, transparent);
+}
+[data-theme="light"] .cv-card-star.on {
+  color: var(--cv-volt);
+  background: #ffffff;
+  border-color: color-mix(in oklab, var(--cv-volt) 50%, transparent);
+}
+[data-theme="light"] .cv-card-del:hover {
+  color: #dc2626 !important;
+  background: rgba(220,38,38,0.08) !important;
+  border-color: rgba(220,38,38,0.45) !important;
+}
+
+/* AI brand pill — Grok ships near-white inline, invisible on white card.
+   Override via the data-ai hook we added in JS. Use !important so the
+   inline custom-property style (set by the renderer) is overridden. */
+[data-theme="light"] .cv-card-ai[data-ai="Grok"] {
+  --ai-color: #3f3f46 !important;
+  --ai-bg: rgba(63,63,70,0.08) !important;
+  --ai-border: rgba(63,63,70,0.32) !important;
+  color: #3f3f46 !important;
+  background: rgba(63,63,70,0.08) !important;
+  border-color: rgba(63,63,70,0.32) !important;
+}
+[data-theme="light"] .cv-card-ai[data-ai="Grok"] .cv-card-ai-dot {
+  background: #3f3f46 !important;
+  box-shadow: 0 0 6px rgba(63,63,70,0.35) !important;
+}
+
+/* Generic "Context" pill on light cards: was rgba white-on-white */
+[data-theme="light"] .cv-card-ai-generic {
+  color: #52525b;
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.1);
+}
+[data-theme="light"] .cv-card-ai-generic .cv-card-ai-dot {
+  background: #52525b;
+}
+
+/* Capture chip ("Extension"/"Paste"/"Import") — too faint at #71717a */
+[data-theme="light"] .cv-card-capture {
+  color: #3f3f46;
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.12);
+}
+
+/* Library card body text — preview, tags, footer meta — keep readable */
+[data-theme="light"] .cv-card-preview {
+  background: #fafafb;
+  border-color: rgba(0,0,0,0.08);
+  color: #27272a;
+}
+[data-theme="light"] .cv-card .cv-card-meta,
+[data-theme="light"] .cv-card .cv-card-foot,
+[data-theme="light"] .cv-card .cv-card-time,
+[data-theme="light"] .cv-card .cv-card-stat {
+  color: #52525b;
+}
+[data-theme="light"] .cv-card .cv-card-title {
+  color: #111113;
+}
+[data-theme="light"] .cv-card .cv-card-tags .tag-chip,
+[data-theme="light"] .cv-card .tag-chip {
+  color: #3f3f46;
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.1);
+}
+
+/* Live "summarizing"/"failed" pill — make sure noir/space variants are
+   not stuck on volt-orange when those vibes don't use it */
+[data-theme="light"][data-vibe="space"] .cv-card-live {
+  color: #0e7490;
+  border-color: rgba(14,116,144,0.4);
+  background: rgba(255,255,255,0.92);
+}
+[data-theme="light"][data-vibe="noir"] .cv-card-live {
+  color: #27272a;
+  border-color: rgba(39,39,42,0.35);
+  background: rgba(255,255,255,0.92);
+}
+

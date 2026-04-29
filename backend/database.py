@@ -834,8 +834,17 @@ def get_db_stats() -> dict:
         size_mb = round(os.path.getsize(DB_PATH) / 1_048_576, 2)
     except Exception:
         size_mb = 0.0
+    try:
+        from datetime import timedelta
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        contexts_this_week = conn.execute(
+            "SELECT COUNT(*) FROM contexts WHERE created_at >= ?", (week_ago,)
+        ).fetchone()[0]
+    except Exception:
+        contexts_this_week = 0
     return {"contexts": contexts, "chunks": chunks, "collections": collections,
-            "size_mb": size_mb, "questions_asked": questions_asked}
+            "size_mb": size_mb, "questions_asked": questions_asked,
+            "contexts_this_week": contexts_this_week}
 
 
 def increment_stat(key: str) -> None:

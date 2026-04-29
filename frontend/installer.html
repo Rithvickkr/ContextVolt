@@ -347,8 +347,8 @@
         let cloudApiKey = '';
         let cloudKeyValid = false;
         let selectedCloudModel = '';
-        let selectedModel = 'qwen2.5:3b';
-        let selectedEmbedModel = 'nomic-embed-text';
+        let selectedModel = 'llama3.2:3b';
+        let selectedEmbedModel = 'qwen3-embedding:0.6b';
 
         const CLOUD_DOCS = {
             google:    'https://aistudio.google.com/app/apikey',
@@ -749,14 +749,17 @@
         // ── Default data ───────────────────────────────────────────────────
 
         const DEFAULT_MODELS = [
-            { id: 'qwen2.5:3b',   name: 'Qwen 2.5 3B',   size: '~2 GB',  description: 'Recommended — fast, great summaries, runs on most hardware', recommended: true },
-            { id: 'qwen2.5:7b',   name: 'Qwen 2.5 7B',   size: '~5 GB',  description: 'Best quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
-            { id: 'qwen2.5:1.5b', name: 'Qwen 2.5 1.5B', size: '~1 GB',  description: 'Lightweight — minimal hardware, basic summary quality', recommended: false },
+            { id: 'llama3.2:3b',  name: 'Llama 3.2 3B',  size: '~2 GB',   description: 'Recommended — strong JSON adherence, faithful summaries, 128k context', recommended: true },
+            { id: 'qwen3:4b',     name: 'Qwen 3 4B',     size: '~2.6 GB', description: 'Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size', recommended: false },
+            { id: 'qwen2.5:3b',   name: 'Qwen 2.5 3B',   size: '~2 GB',   description: 'Stable fallback — proven, multilingual, runs on most hardware', recommended: false },
+            { id: 'qwen2.5:7b',   name: 'Qwen 2.5 7B',   size: '~5 GB',   description: 'High quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
+            { id: 'qwen2.5:1.5b', name: 'Qwen 2.5 1.5B', size: '~1 GB',   description: 'Lightweight — minimal hardware, basic summary quality', recommended: false },
         ];
 
         const DEFAULT_EMBED_MODELS = [
-            { id: 'nomic-embed-text',      name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — great balance for most use cases', recommended: false },
-            { id: 'mxbai-embed-large',     name: 'MixedBread Large',  size: '~670 MB', description: 'Highest quality embeddings — best semantic search accuracy', recommended: true },
+            { id: 'qwen3-embedding:0.6b',  name: 'Qwen 3 Embedding 0.6B', size: '~640 MB', description: 'Recommended — current SOTA local retrieval, top of MTEB at this size', recommended: true },
+            { id: 'mxbai-embed-large',     name: 'MixedBread Large',  size: '~670 MB', description: 'High-quality English embeddings — strong semantic search accuracy', recommended: false },
+            { id: 'nomic-embed-text',      name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — small footprint, good baseline', recommended: false },
             { id: 'nomic-embed-text:v1.5', name: 'Nomic Embed v1.5',  size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
             { id: 'bge-m3',                name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual — best for non-English content', recommended: false },
         ];

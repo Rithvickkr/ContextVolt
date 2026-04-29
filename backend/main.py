@@ -55,7 +55,7 @@ from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
     PromptRequest, EmbedModelSelect, ModelSelect,
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
-    CloudKeySet, ProviderSelect, CloudKeyValidate,
+    CloudKeySet, ProviderSelect, CloudKeyValidate, UserProfileUpdate,
 )
 from backend.ollama_client import (
     summarize_conversation as _ollama_summarize,
@@ -242,10 +242,12 @@ def pull_model():
 _CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
 
 _EMBED_MODEL_OPTIONS = [
-    {"id": "nomic-embed-text", "label": "nomic-embed-text", "size": "274 MB",
-     "desc": "Fast, good baseline. Works out of the box.", "recommended": False},
+    {"id": "qwen3-embedding:0.6b", "label": "qwen3-embedding 0.6B", "size": "640 MB",
+     "desc": "Current SOTA local retrieval — top of MTEB at this size. Recommended.", "recommended": True},
     {"id": "mxbai-embed-large", "label": "mxbai-embed-large", "size": "670 MB",
-     "desc": "Best quality for English technical text. Recommended.", "recommended": True},
+     "desc": "High-quality English technical text — strong semantic search.", "recommended": False},
+    {"id": "nomic-embed-text", "label": "nomic-embed-text", "size": "274 MB",
+     "desc": "Fast, small footprint. Good baseline.", "recommended": False},
     {"id": "nomic-embed-text:v1.5", "label": "nomic-embed-text v1.5", "size": "274 MB",
      "desc": "Drop-in upgrade — same size, better accuracy.", "recommended": False},
     {"id": "bge-m3", "label": "bge-m3", "size": "1.2 GB",
@@ -349,12 +351,16 @@ def get_config():
         return False
 
     llm_models = [
-        {"id": "qwen2.5:1.5b", "label": "Qwen 2.5 1.5B", "size": "~1 GB",
+        {"id": "llama3.2:3b", "label": "Llama 3.2 3B", "size": "~2 GB",
+         "desc": "Recommended — strong JSON adherence, faithful summaries, 128k context", "recommended": True},
+        {"id": "qwen3:4b",    "label": "Qwen 3 4B",    "size": "~2.6 GB",
+         "desc": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size", "recommended": False},
+        {"id": "qwen2.5:1.5b","label": "Qwen 2.5 1.5B","size": "~1 GB",
          "desc": "Lightweight — minimal hardware, basic quality", "recommended": False},
         {"id": "qwen2.5:3b",  "label": "Qwen 2.5 3B",  "size": "~2 GB",
-         "desc": "Recommended — fast, great summaries, runs on most hardware", "recommended": True},
+         "desc": "Stable fallback — proven, multilingual, runs on most hardware", "recommended": False},
         {"id": "qwen2.5:7b",  "label": "Qwen 2.5 7B",  "size": "~5 GB",
-         "desc": "Best quality — needs 6 GB+ VRAM or 8 GB+ RAM", "recommended": False},
+         "desc": "High quality — needs 6 GB+ VRAM or 8 GB+ RAM", "recommended": False},
     ]
     for m in llm_models:
         m["installed"] = _is_installed(m["id"])
@@ -393,7 +399,19 @@ def get_config():
         "active_provider": active["provider"],
         "active_model": active["model"],
         "is_cloud_active": active["is_cloud"],
+        "user_name": cfg.get("user_name", ""),
+        "user_about": cfg.get("user_about", ""),
     }
+
+
+@app.post("/api/setup/save-profile")
+def save_profile(req: UserProfileUpdate):
+    """Save user name and about to config.json."""
+    cfg = _read_config()
+    cfg["user_name"] = req.name.strip()
+    cfg["user_about"] = req.about.strip()
+    _write_config(cfg)
+    return {"status": "saved"}
 
 
 @app.post("/api/setup/pull-embed-model")

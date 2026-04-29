@@ -283,19 +283,19 @@
                         <div class="meta"><span>Total saved</span></div>
                     </article>
                     <article class="cv-stat">
-                        <div class="k"><span class="dot"></span>Chunks indexed</div>
-                        <div class="v"><span id="stat-chunks-val">0</span></div>
-                        <div class="meta"><span>Semantic units</span></div>
+                        <div class="k"><span class="dot"></span>Collections</div>
+                        <div class="v"><span id="stat-collections-val">0</span></div>
+                        <div class="meta"><span>Organised topics</span></div>
                     </article>
                     <article class="cv-stat">
                         <div class="k"><span class="dot"></span>Questions asked</div>
                         <div class="v"><span id="stat-asks-val">0</span></div>
-                        <div class="meta"><span>RAG queries</span></div>
+                        <div class="meta"><span>AI queries</span></div>
                     </article>
                     <article class="cv-stat">
-                        <div class="k"><span class="dot"></span>Storage</div>
-                        <div class="v"><span id="stat-storage-val">0</span><span class="unit">MB</span></div>
-                        <div class="meta"><span>On disk</span></div>
+                        <div class="k"><span class="dot"></span>This week</div>
+                        <div class="v"><span id="stat-week-val">0</span></div>
+                        <div class="meta"><span>Contexts added</span></div>
                     </article>
                 </section>
 
@@ -803,6 +803,27 @@
                 </button>
             </div>
             <div class="settings-modal-body">
+
+                <!-- User Profile -->
+                <div class="settings-profile-section">
+                    <div class="settings-section-label">Your Profile</div>
+                    <p class="settings-section-hint">Used to personalise greetings and give the AI context about who you are.</p>
+                    <div class="settings-profile-fields">
+                        <div class="settings-profile-field">
+                            <label class="settings-profile-label" for="profile-name-input">Display name</label>
+                            <input type="text" id="profile-name-input" class="settings-profile-input"
+                                   placeholder="e.g. Alex" maxlength="80" autocomplete="off" spellcheck="false" />
+                        </div>
+                        <div class="settings-profile-field">
+                            <label class="settings-profile-label" for="profile-about-input">About me</label>
+                            <textarea id="profile-about-input" class="settings-profile-textarea"
+                                      placeholder="A few words about yourself — role, interests, or anything you'd like the AI to remember…"
+                                      rows="3" maxlength="500" spellcheck="false"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-divider"></div>
 
                 <!-- AI Provider Selection -->
                 <div>

@@ -1,5 +1,5 @@
 /**
- * ContextVolt â€” Frontend SPA
+ * ContextVolt — Frontend SPA
  *
  * Vanilla JS single-page application.
  * Handles: Setup Wizard, Chat Input, Context Library, Detail View, Prompt Builder.
@@ -7,7 +7,7 @@
 
 const API = 'http://localhost:8000';
 
-// â”€â”€â”€ Global error handler â€” prevents silent freezes in pywebview â”€â”€
+// â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {
     console.error('Uncaught error:', e.message, e.filename, e.lineno, e.error && e.error.stack);
     try { showToast(`JS Error: ${e.message}`, 'error'); } catch (_) {}
@@ -134,7 +134,7 @@ async function _pollSummarizingContexts() {
 
     const idsToCheck = [...new Set([...summarizingIds, ...(detailId ? [detailId] : [])])];
     if (idsToCheck.length === 0) {
-        // Nothing pending â€” stop polling
+        // Nothing pending — stop polling
         stopWorkerPolling();
         return;
     }
@@ -159,7 +159,7 @@ async function _pollSummarizingContexts() {
                     const newBanner = _buildDetailStatusBanner(fresh.status);
                     banner.outerHTML = newBanner;
                 } else if (fresh.status !== 'summarizing') {
-                    // Banner was removed (status changed) â€” re-render full detail
+                    // Banner was removed (status changed) — re-render full detail
                     renderDetail(fresh);
                 }
             }
@@ -177,7 +177,7 @@ function _buildDetailStatusBanner(status) {
         return `<div class="detail-status-banner status-summarizing" id="detail-status-banner">
             <div class="detail-status-icon"><span class="detail-spinner"></span></div>
             <div class="detail-status-text">
-                <strong>Summarizing in backgroundâ€¦</strong>
+                <strong>Summarizing in background…</strong>
                 <span>The AI is building a full summary. This page will update automatically when it's ready.</span>
             </div>
         </div>`;
@@ -469,7 +469,12 @@ async function loadDashboard() {
     const eyebrow = document.getElementById('cv-hero-eyebrow');
     if (eyebrow) eyebrow.textContent = `${_getGreeting()} · ${_getDayString()}`;
     const nameEl = document.getElementById('cv-greeting-name');
-    if (nameEl) nameEl.textContent = 'User.';
+    if (nameEl) {
+        const displayName = (_settingsConfig && _settingsConfig.user_name)
+            ? _settingsConfig.user_name
+            : (await fetch(`${API}/api/setup/config`).then(r => r.json()).then(d => { _settingsConfig = _settingsConfig || d; return d.user_name; }).catch(() => ''));
+        nameEl.textContent = (displayName || 'User') + '.';
+    }
 
     try {
         const res = await fetch(`${API}/api/dashboard`);
@@ -479,24 +484,15 @@ async function loadDashboard() {
         const recent = data.recent || [];
 
         // Animate stat values
-        const ctxVal = document.getElementById('stat-contexts-val');
-        const chunkVal = document.getElementById('stat-chunks-val');
-        const asksVal = document.getElementById('stat-asks-val');
-        const storageValEl = document.getElementById('stat-storage-val');
+        const ctxVal         = document.getElementById('stat-contexts-val');
+        const collectionsVal = document.getElementById('stat-collections-val');
+        const asksVal        = document.getElementById('stat-asks-val');
+        const weekVal        = document.getElementById('stat-week-val');
 
-        if (ctxVal) _animateCountUp(ctxVal, stats.contexts || 0);
-        if (chunkVal) _animateCountUp(chunkVal, stats.chunks || 0);
-        if (asksVal) _animateCountUp(asksVal, stats.questions_asked || 0);
-        if (storageValEl) {
-            const mb = stats.size_mb || 0;
-            // Clear the unit span first, then set just the number
-            storageValEl.textContent = mb >= 1024
-                ? (mb / 1024).toFixed(1)
-                : mb.toFixed(1);
-            // Update unit label
-            const unitSpan = storageValEl.parentElement && storageValEl.parentElement.querySelector('.unit');
-            if (unitSpan) unitSpan.textContent = mb >= 1024 ? 'GB' : 'MB';
-        }
+        if (ctxVal)         _animateCountUp(ctxVal,         stats.contexts            || 0);
+        if (collectionsVal) _animateCountUp(collectionsVal, stats.collections         || 0);
+        if (asksVal)        _animateCountUp(asksVal,        stats.questions_asked     || 0);
+        if (weekVal)        _animateCountUp(weekVal,        stats.contexts_this_week  || 0);
 
         // Update idx badge
         const idxEl = document.getElementById('cv-recent-idx');
@@ -573,7 +569,7 @@ function initChatInput() {
         const len = textarea.value.length;
         const tokens = Math.round(len / 4);
         const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
-        charCount.textContent = `${len.toLocaleString()} chars Â· ${tokenStr} tokens`;
+        charCount.textContent = `${len.toLocaleString()} chars · ${tokenStr} tokens`;
         summarizeBtn.disabled = len < 20;
     });
 
@@ -650,7 +646,7 @@ async function summarizeAndSave() {
             if (textEl) textEl.textContent = ' ' + msg;
             if (fillEl && pct !== null) fillEl.style.width = pct + '%';
         };
-        _setProgress('Summarizingâ€¦', 5);
+        _setProgress('Summarizing…', 5);
 
         const summaryRes = await fetch(`${API}/api/summarize/stream`, {
             method: 'POST',
@@ -699,7 +695,7 @@ async function summarizeAndSave() {
 
         // Save to database
         _pipelineSetStep(2, 'active', 'Storing to vault…');
-        _setProgress('Savingâ€¦', 90);
+        _setProgress('Saving…', 90);
         const createRes = await fetch(`${API}/api/contexts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -720,7 +716,7 @@ async function summarizeAndSave() {
         _pipelineSetStep(3, 'active', 'Splitting chunks…');
 
         // Chunk and embed
-        _setProgress('Embeddingâ€¦', 97);
+        _setProgress('Embedding…', 97);
         try {
             const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
             if (chunkRes.ok) {
@@ -735,7 +731,7 @@ async function summarizeAndSave() {
                 }
             }
         } catch {
-            showToast('Context saved, but chunking failed â€” use Rebuild Embeddings later', 'error');
+            showToast('Context saved, but chunking failed — use Rebuild Embeddings later', 'error');
         }
 
         _pipelineSetStep(3, 'done', 'Chunks ready');
@@ -776,7 +772,7 @@ function generateTags(summary) {
         ...(summary.vitals || []),
     ].join(' ').toLowerCase();
 
-    // Known tech keywords â€” still useful for canonical naming
+    // Known tech keywords — still useful for canonical naming
     const knownTags = {
         'python': 'Python', 'javascript': 'JavaScript', 'typescript': 'TypeScript',
         'react': 'React', 'vue': 'Vue', 'angular': 'Angular', 'svelte': 'Svelte',
@@ -962,7 +958,7 @@ async function submitRenameCollection(id, newName) {
 function confirmDeleteCollection(id, name) {
     openConfirmDeleteModal({
         title: 'Delete collection?',
-        message: `Delete collection <b>"${escapeHtml(name)}"</b>?<br><span style="color:var(--text-muted);font-size:13px;">Contexts inside won't be deleted â€” they'll just become uncollected.</span>`,
+        message: `Delete collection <b>"${escapeHtml(name)}"</b>?<br><span style="color:var(--text-muted);font-size:13px;">Contexts inside won't be deleted — they'll just become uncollected.</span>`,
         confirmLabel: 'Delete collection',
         onConfirm: () => _performDeleteCollection(id, name),
     });
@@ -1053,7 +1049,7 @@ function _renderContextCard(ctx) {
 
     // Top-left AI brand pill (replaces the old generic mark/topic combo).
     const aiPill = brand
-        ? `<span class="cv-card-ai" style="--ai-color:${brand.color};--ai-bg:${brand.bg};--ai-border:${brand.border};">
+        ? `<span class="cv-card-ai" data-ai="${escapeHtml(brand.key)}" style="--ai-color:${brand.color};--ai-bg:${brand.bg};--ai-border:${brand.border};">
               <span class="cv-card-ai-dot" aria-hidden="true"></span>${escapeHtml(brand.label)}
            </span>`
         : `<span class="cv-card-ai cv-card-ai-generic"><span class="cv-card-ai-dot" aria-hidden="true"></span>Context</span>`;
@@ -1178,7 +1174,7 @@ async function loadContexts(query = '', append = false) {
 
         // Notify user when semantic search fell back to keyword
         if (query && data.search_mode === 'keyword') {
-            showToast('Semantic search unavailable â€” showing keyword results', 'error');
+            showToast('Semantic search unavailable — showing keyword results', 'error');
         }
 
         if (append) {
@@ -1370,7 +1366,7 @@ function _applyTagFilter() {
     const tag = state.activeTagFilter;
     const cards = grid.querySelectorAll('.context-card');
     if (cards.length > 0 && cards.length === state.contexts.length) {
-        // Cards match state â€” toggle visibility in-place
+        // Cards match state — toggle visibility in-place
         const ctxById = new Map(state.contexts.map(c => [c.id, c]));
         cards.forEach(card => {
             const id = parseInt(card.dataset.id, 10);
@@ -1382,7 +1378,7 @@ function _applyTagFilter() {
             }
         });
     } else {
-        // Cards out of sync â€” fall back to full re-render
+        // Cards out of sync — fall back to full re-render
         const filtered = tag
             ? state.contexts.filter(c => (c.tags || []).includes(tag))
             : state.contexts;
@@ -1431,7 +1427,7 @@ function toggleDeepSearch() {
 
     const input = $('#search-input');
     if (_deepSearchMode) {
-        input.placeholder = 'Deep search across all chunksâ€¦';
+        input.placeholder = 'Deep search across all chunks…';
         const q = input.value.trim();
         if (q.length >= 3) _runDeepSearch(q);
     } else {
@@ -1461,7 +1457,7 @@ async function _runDeepSearch(query) {
     loadMore.style.display = 'none';
     emptyState.style.display = 'none';
     container.style.display = 'block';
-    container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Searching all chunksâ€¦</div>';
+    container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Searching all chunks…</div>';
 
     try {
         const res = await fetch(`${API}/api/retrieve/search`, {
@@ -1494,7 +1490,7 @@ function _renderDeepResults(data, query) {
     }
 
     const modeNote = data.search_mode === 'keyword'
-        ? ' <span style="font-size:0.75rem;opacity:0.6;font-weight:normal">(keyword match â€” run Rebuild Embeddings for semantic search)</span>'
+        ? ' <span style="font-size:0.75rem;opacity:0.6;font-weight:normal">(keyword match — run Rebuild Embeddings for semantic search)</span>'
         : '';
     let html = `<div class="deep-search-header">${data.total_chunks} chunks matched across ${data.results.length} conversation${data.results.length > 1 ? 's' : ''}${modeNote}</div>`;
 
@@ -1515,7 +1511,7 @@ function _renderDeepResults(data, query) {
             <div class="deep-result-chunks">`;
 
         for (const chunk of group.chunks) {
-            const excerpt = escapeHtml(chunk.text.length > 300 ? chunk.text.slice(0, 300) + 'â€¦' : chunk.text);
+            const excerpt = escapeHtml(chunk.text.length > 300 ? chunk.text.slice(0, 300) + '…' : chunk.text);
             const badges = [];
             if (chunk.has_code) badges.push('<span class="deep-badge">code</span>');
             if (chunk.is_starred) badges.push('<span class="deep-badge starred">starred</span>');
@@ -1538,7 +1534,7 @@ function deleteFromLibrary(id) {
 }
 
 function _performLibraryDelete(id) {
-    // P2-10: Undo delete â€” hide card immediately, commit after 5s
+    // P2-10: Undo delete — hide card immediately, commit after 5s
     const ctx = state.contexts.find(c => c.id === id);
     if (!ctx) return;
 
@@ -1593,7 +1589,7 @@ async function toggleStar(id) {
     const ctx = state.contexts.find(c => c.id === id);
     if (!ctx) return;
 
-    // Optimistic DOM update â€” no full re-render
+    // Optimistic DOM update — no full re-render
     const wasStarred = ctx.starred;
     ctx.starred = !wasStarred;
 
@@ -1692,7 +1688,7 @@ function selectAllCards() {
 async function bulkDelete() {
     const count = state.selectedIds.size;
     if (!count) return;
-    if (!confirm(`Delete ${count} context${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!await showConfirm({ title: `Delete ${count} context${count > 1 ? 's' : ''}?`, message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
 
     try {
         const res = await fetch(`${API}/api/contexts/bulk-delete`, {
@@ -2200,7 +2196,7 @@ async function loadChunks(contextId) {
     const queryInput = $('#chunks-query');
     const query = queryInput ? queryInput.value.trim() : '';
 
-    container.innerHTML = '<div class="chunks-empty"><span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Loadingâ€¦</div>';
+    container.innerHTML = '<div class="chunks-empty"><span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span> Loading…</div>';
 
     try {
         const url = query
@@ -2216,7 +2212,7 @@ async function loadChunks(contextId) {
         }
 
         _chunksLoaded = true;
-        let html = `<div class="chunks-summary">${data.total} chunks${query ? ' â€” scored against: "' + escapeHtml(query) + '"' : ''}</div><div class="chunks-list">`;
+        let html = `<div class="chunks-summary">${data.total} chunks${query ? ' — scored against: "' + escapeHtml(query) + '"' : ''}</div><div class="chunks-list">`;
 
         for (const ch of data.chunks) {
             const badges = [];
@@ -2234,7 +2230,7 @@ async function loadChunks(contextId) {
                 })()
                 : '';
 
-            const text = ch.text.length > 300 ? ch.text.slice(0, 300) + 'â€¦' : ch.text;
+            const text = ch.text.length > 300 ? ch.text.slice(0, 300) + '…' : ch.text;
             const role = ch.role_hint ? `<div class="chunk-role">${escapeHtml(ch.role_hint)}</div>` : '';
 
             html += `<div class="chunk-card">
@@ -2373,7 +2369,7 @@ function openConfirmDeleteModal(ctxOrOpts, onConfirm) {
     const overlay = $('#confirm-delete-modal');
 
     // Support two call shapes:
-    //   openConfirmDeleteModal(ctx, onConfirm?)            â€” context delete
+    //   openConfirmDeleteModal(ctx, onConfirm?)            — context delete
     //   openConfirmDeleteModal({title, message, confirmLabel, onConfirm})
     let title, messageHtml, confirmLabel, action;
     if (ctxOrOpts && typeof ctxOrOpts === 'object' && ('message' in ctxOrOpts || 'title' in ctxOrOpts) && !('id' in ctxOrOpts)) {
@@ -2660,6 +2656,35 @@ function _showUndoToast(message, onUndo) {
     }
 }
 
+// --- Action Toast (long-lived, with a single action button) ---
+function _showActionToast(message, actionLabel, onAction) {
+    const stack = $('#toast-stack');
+    const toast = document.createElement('div');
+    toast.className = 'toast undo';   // reuse the undo-toast styling (icon + button)
+    toast.innerHTML = `
+        <span class="toast-icon" aria-hidden="true">i</span>
+        <span class="toast-message">${escapeHtml(message)}</span>
+        <button class="toast-undo-btn">${escapeHtml(actionLabel)}</button>
+    `;
+    stack.appendChild(toast);
+
+    const actionBtn = toast.querySelector('.toast-undo-btn');
+    if (actionBtn) actionBtn.addEventListener('click', () => {
+        try { if (onAction) onAction(); } finally { toast.remove(); }
+    });
+
+    // Stays for 12s â€” long enough to read and act, but auto-dismisses.
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(40px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 12000);
+
+    while (stack.children.length > 5) {
+        stack.firstChild.remove();
+    }
+}
+
 // â”€â”€â”€ Status Indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateStatusIndicator(online, label) {
     const dot = $('.status-dot');
@@ -2680,11 +2705,11 @@ async function rebuildEmbeddings() {
     const btn = $('#btn-rebuild-embeddings');
     if (!btn) return;
 
-    if (!confirm('This will re-chunk and re-embed all saved contexts using the current embedding model.\n\nExisting embeddings will be replaced. Continue?')) return;
+    if (!await showConfirm({ title: 'Rebuild All Embeddings?', message: 'This will re-chunk and re-embed all saved contexts using the current embedding model. Existing embeddings will be replaced.', confirmLabel: 'Rebuild', danger: true })) return;
 
     const original = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Startingâ€¦';
+    btn.textContent = 'Starting…';
 
     try {
         const res = await fetch(`${API}/api/contexts/chunk-all?force=true`, { method: 'POST' });
@@ -2709,7 +2734,7 @@ async function rebuildEmbeddings() {
                     const data = JSON.parse(line);
                     lastData = data;
                     if (data.total > 0) {
-                        btn.textContent = `Re-embeddingâ€¦ ${data.done} / ${data.total}`;
+                        btn.textContent = `Re-embedding… ${data.done} / ${data.total}`;
                     }
                 } catch { /* ignore */ }
             }
@@ -2722,7 +2747,7 @@ async function rebuildEmbeddings() {
             showToast(msg, 'success');
         }
     } catch {
-        showToast('Re-embed failed â€” check that your embed model is installed', 'error');
+        showToast('Re-embed failed — check that your embed model is installed', 'error');
     } finally {
         btn.textContent = original;
         btn.disabled = false;
@@ -2756,10 +2781,10 @@ async function openSettingsModal() {
     // Reset warning
     $('#settings-embed-warning').classList.remove('visible');
 
-    // Keyboard trap â€” keep focus inside while open
+    // Keyboard trap — keep focus inside while open
     trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
 
-    // If already cached, render instantly â€” no loading state needed
+    // If already cached, render instantly — no loading state needed
     if (_settingsConfig) {
         _renderSettingsCards();
         // Refresh in background to pick up any install changes
@@ -3290,6 +3315,12 @@ let _cloudKeyValid = {};  // { openai: true/false, ... }
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
 
+    // ── Profile fields ──
+    const nameInput  = $('#profile-name-input');
+    const aboutInput = $('#profile-about-input');
+    if (nameInput)  nameInput.value  = _settingsConfig.user_name  || '';
+    if (aboutInput) aboutInput.value = _settingsConfig.user_about || '';
+
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');
     llmGrid.innerHTML = '';
@@ -3478,7 +3509,7 @@ async function _validateCloudKey() {
 async function _deleteCloudKey() {
     if (!_selectedProvider || _selectedProvider === 'ollama') return;
     const provLabel = (_PROVIDER_META[_selectedProvider] || {}).label || _selectedProvider;
-    if (!confirm(`Remove saved API key for ${provLabel}?`)) return;
+    if (!await showConfirm({ title: `Remove API key for ${provLabel}?`, message: 'The saved key will be permanently deleted.', confirmLabel: 'Remove', danger: true })) return;
     try {
         await fetch(`${API}/api/setup/cloud-key/${_selectedProvider}`, { method: 'DELETE' });
         _cloudKeyValid[_selectedProvider] = false;
@@ -3502,15 +3533,22 @@ async function saveSettings() {
     const newEmbed  = embedGrid.dataset.selected;
     const newCloudModel = cloudGrid ? cloudGrid.dataset.selected : '';
 
+    // Capture the previous embed model BEFORE the config cache is invalidated below,
+    // so we can detect a switch and prompt the user to re-index.
+    const oldEmbed = (_settingsConfig || {}).embed_model;
+
     const saveBtn = $('#settings-save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
 
     try {
-        // 1. Save Ollama models
+        // 1. Save Ollama models + user profile in parallel
+        const profileName  = ($('#profile-name-input')  || {}).value || '';
+        const profileAbout = ($('#profile-about-input') || {}).value || '';
         await Promise.all([
             fetch(`${API}/api/setup/select-model`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newModel }) }),
             fetch(`${API}/api/setup/select-embed-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newEmbed }) }),
+            fetch(`${API}/api/setup/save-profile`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: profileName, about: profileAbout }) }),
         ]);
 
         // 2. Save cloud API key if entered
@@ -3553,11 +3591,15 @@ async function saveSettings() {
             statusText.textContent = (_PROVIDER_META[_selectedProvider] || {}).label || 'Cloud AI';
         }
 
-        const embedChanged = newEmbed !== ((_settingsConfig || {}).embed_model);
+        const embedChanged = oldEmbed && newEmbed && newEmbed !== oldEmbed;
         closeSettingsModal();
 
         if (embedChanged) {
-            showToast('Settings saved. Click "Rebuild Embeddings" to apply the new embedding model.', 'success');
+            _showActionToast(
+                'Embedding model changed. Existing contexts need re-indexing for semantic search to work with the new model.',
+                'Rebuild now',
+                () => rebuildEmbeddings(),
+            );
         } else {
             showToast('Settings saved', 'success');
         }
@@ -3645,7 +3687,7 @@ function releaseFocus(container) {
     _focusTrapPrev = null;
 }
 
-// Global Escape key â€” closes whichever modal is open
+// Global Escape key — closes whichever modal is open
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const editModal      = $('#edit-modal');
@@ -3730,7 +3772,7 @@ function _initSidebarTooltips() {
     sidebar.addEventListener('click', () => hideTooltip());
 }
 
-// â”€â”€â”€ Ask Your Vault â€” RAG Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Ask Your Vault — RAG Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 state.askHistory = [];     // [{role: 'user'|'assistant', content: ''}]
 state.askStreaming = false; // true while streaming response
 state.askSessionId = null;  // current persisted session id (null = new chat)
@@ -4270,11 +4312,79 @@ function _askRenderUserMsg(text) {
         <div class="ask-msg-avatar">U</div>
         <div class="ask-msg-body">
             <div class="ask-msg-content">${escapeHtml(text)}</div>
+            <div class="ask-msg-actions">
+                <button class="ask-msg-action-btn" title="Edit this message" onclick="window._askEditMsg(this)">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-9 9H2v-3L11 2z"/></svg>
+                    Edit
+                </button>
+                <button class="ask-msg-action-btn" title="Retry this message" onclick="window._askRetryMsg(this)">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v5h5"/><path d="M1.5 9A7 7 0 1 0 4 3.5"/></svg>
+                    Retry
+                </button>
+            </div>
         </div>
     `;
     container.appendChild(div);
     _askScrollToBottom();
 }
+
+// Shared helper: truncate history + remove DOM messages from a user bubble onward.
+// Returns the question text, or null if already streaming.
+function _askTruncateFromMsg(btn) {
+    if (state.askStreaming) return null;
+    const msgEl = btn.closest('.ask-msg-user');
+    if (!msgEl) return null;
+
+    const text = msgEl.querySelector('.ask-msg-content')?.textContent?.trim() || '';
+
+    // Count how many user messages precede this one to find history position.
+    const container = $('#ask-messages');
+    const userMsgs = Array.from(container.querySelectorAll('.ask-msg-user'));
+    const userIdx = userMsgs.indexOf(msgEl);
+    if (userIdx === -1) return null;
+
+    // Truncate client-side history to before this user turn.
+    state.askHistory = state.askHistory.slice(0, userIdx * 2);
+
+    // Remove this message and everything after it from the DOM.
+    const allMsgs = Array.from(container.children);
+    const startIdx = allMsgs.indexOf(msgEl);
+    if (startIdx !== -1) {
+        allMsgs.slice(startIdx).forEach(el => el.remove());
+    }
+
+    // Start a fresh session so the server doesn't append to the old one.
+    state.askSessionId = null;
+    _askUpdateRailSession();
+
+    // Show empty state if no messages remain.
+    const remaining = container.querySelectorAll('.ask-msg');
+    const empty = $('#ask-empty');
+    if (remaining.length === 0 && empty) empty.style.display = '';
+
+    return text;
+}
+
+window._askEditMsg = function(btn) {
+    const text = _askTruncateFromMsg(btn);
+    if (text === null) return;
+
+    const input = $('#ask-input');
+    const sendBtn = $('#ask-send-btn');
+    if (input) {
+        input.value = text;
+        input.classList.add('editing');
+        input.focus();
+        input.addEventListener('input', () => input.classList.remove('editing'), { once: true });
+        if (sendBtn) sendBtn.disabled = !text.trim();
+    }
+};
+
+window._askRetryMsg = function(btn) {
+    const text = _askTruncateFromMsg(btn);
+    if (text === null || !text) return;
+    askVault(text);
+};
 
 function _askRenderThinking() {
     const container = $('#ask-messages');
@@ -4914,7 +5024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const active = document.activeElement;
         const inInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
 
-        // Esc â€” close modals
+        // Esc — close modals
         if (e.key === 'Escape') {
             if ($('#confirm-delete-modal') && $('#confirm-delete-modal').style.display !== 'none') { closeConfirmDeleteModal(); return; }
             if ($('#shortcuts-modal').style.display !== 'none') { closeShortcutsModal(); return; }
@@ -4928,7 +5038,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Shortcuts below only fire when not typing in an input
         if (inInput) return;
 
-        // ? â€” open keyboard shortcuts cheat sheet
+        // ? — open keyboard shortcuts cheat sheet
         if (e.key === '?' || (e.shiftKey && e.key === '/')) {
             e.preventDefault();
             const modal = $('#shortcuts-modal');
@@ -4940,29 +5050,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // / â€” focus search (when in library view)
+        // / — focus search (when in library view)
         if (e.key === '/' && state.view === 'library') {
             e.preventDefault();
             $('#search-input').focus();
         }
 
-        // Backspace â€” go back from detail to library
+        // Backspace — go back from detail to library
         if (e.key === 'Backspace' && state.view === 'detail') {
             navigateTo('library');
         }
 
-        // N â€” go to New Chat
+        // N — go to New Chat
         if (e.key === 'n' || e.key === 'N') {
             navigateTo('input');
         }
 
-        // L â€” go to Library
+        // L — go to Library
         if (e.key === 'l' || e.key === 'L') {
             navigateTo('library');
         }
     });
 
-    // Ctrl+Enter â€” summarize when in chat input
+    // Ctrl+Enter — summarize when in chat input
     $('#chat-textarea').addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
@@ -4989,7 +5099,7 @@ async function restartBackend() {
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     btn.classList.add('restarting');
-    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restartingâ€¦`;
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Restarting…`;
 
     // Snapshot the current server token before restarting
     let startedAt = null;
@@ -5000,12 +5110,12 @@ async function restartBackend() {
 
     try {
         await fetch(`${API}/api/restart`, { method: 'POST' });
-    } catch { /* server may drop before sending a response â€” fine */ }
+    } catch { /* server may drop before sending a response — fine */ }
 
     // Hard fallback: reload after 10 s no matter what (prevents infinite spin)
     const hardTimeout = setTimeout(() => window.location.reload(), 10000);
 
-    // Poll every 500 ms â€” reload as soon as started_at changes (new server instance)
+    // Poll every 500 ms — reload as soon as started_at changes (new server instance)
     const poll = async () => {
         try {
             const r = await fetch(`${API}/api/health`);
@@ -5121,7 +5231,7 @@ async function loadSystemHealth() {
                     <span class="sys-dot ok"></span>
                 </div>
                 <div class="sys-card-value">${d.database.contexts}</div>
-                <div class="sys-card-sub">${d.database.chunks} chunks Â· ${d.database.collections} collections Â· ${d.database.size_mb} MB</div>
+                <div class="sys-card-sub">${d.database.chunks} chunks · ${d.database.collections} collections · ${d.database.size_mb} MB</div>
             </div>
             <div class="sys-card" style="grid-column: span 2;">
                 <div class="sys-card-header" style="margin-bottom:6px;">
@@ -5169,7 +5279,7 @@ async function downloadBackup() {
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     const original = btn.innerHTML;
-    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backing upâ€¦`;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Backing up…`;
     try {
         const res = await fetch(`${API}/api/backup/download`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

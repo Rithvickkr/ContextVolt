@@ -41,42 +41,63 @@ EMBED_MODEL = "nomic-embed-text"  # Default; user selects during setup
 
 AVAILABLE_MODELS = [
     {
+        "id": "llama3.2:3b",
+        "name": "Llama 3.2 3B",
+        "size": "~2 GB",
+        "description": "Recommended — strong JSON adherence, faithful summaries, 128k context",
+        "recommended": True,
+    },
+    {
+        "id": "qwen3:4b",
+        "name": "Qwen 3 4B",
+        "size": "~2.6 GB",
+        "description": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size",
+        "recommended": False,
+    },
+    {
         "id": "qwen2.5:3b",
         "name": "Qwen 2.5 3B",
         "size": "~2 GB",
-        "description": "Recommended — fast, great summaries, runs on most hardware",
-        "recommended": True,
+        "description": "Stable fallback — proven, multilingual, runs on most hardware",
+        "recommended": False,
     },
     {
         "id": "qwen2.5:7b",
         "name": "Qwen 2.5 7B",
         "size": "~5 GB",
-        "description": "Best quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM",
+        "description": "High quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM",
         "recommended": False,
     },
     {
         "id": "qwen2.5:1.5b",
         "name": "Qwen 2.5 1.5B",
         "size": "~1 GB",
-        "description": "Lightweight — minimal hardware needed, basic summary quality",
+        "description": "Lightweight — minimal hardware, basic summary quality",
         "recommended": False,
     },
 ]
 
 AVAILABLE_EMBED_MODELS = [
     {
-        "id": "nomic-embed-text",
-        "name": "Nomic Embed Text",
-        "size": "~274 MB",
-        "description": "Fast and accurate — great balance for most use cases",
-        "recommended": False,
+        "id": "qwen3-embedding:0.6b",
+        "name": "Qwen 3 Embedding 0.6B",
+        "size": "~640 MB",
+        "description": "Recommended — current SOTA local retrieval, top of MTEB at this size",
+        "recommended": True,
     },
     {
         "id": "mxbai-embed-large",
         "name": "MixedBread Large",
         "size": "~670 MB",
-        "description": "Highest quality embeddings — best semantic search accuracy",
-        "recommended": True,
+        "description": "High-quality English embeddings — strong semantic search accuracy",
+        "recommended": False,
+    },
+    {
+        "id": "nomic-embed-text",
+        "name": "Nomic Embed Text",
+        "size": "~274 MB",
+        "description": "Fast and accurate — small footprint, good baseline",
+        "recommended": False,
     },
     {
         "id": "nomic-embed-text:v1.5",
@@ -589,63 +610,140 @@ def run_installation():
         return True
 
     def step_install_extension():
-        state.log("Installing browser extension...")
+        state.log("Setting up browser extension...")
         ext_dir = PROJECT_ROOT / "extension"
         if not ext_dir.exists():
             state.log("  Extension folder not found, skipping")
             return True
 
-        ext_path = str(ext_dir.resolve()).replace("\\", "/")
-        installed = False
+        ext_path = str(ext_dir.resolve())
+        # Escape backslashes for embedding in JS strings
+        ext_path_js = ext_path.replace("\\", "\\\\")
 
-        # Windows: try to register via Registry for Chrome/Edge
-        if IS_WINDOWS:
-            try:
-                import winreg
-                import hashlib
+        # Write a local HTML guide that opens in the browser
+        guide_path = PROJECT_ROOT / "extension_install_guide.html"
+        guide_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Install ContextVolt Extension</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: system-ui, sans-serif;
+    background: #09090b;
+    color: #e4e4e7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }}
+  .card {{
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    padding: 36px 40px;
+    max-width: 560px;
+    width: 100%;
+  }}
+  h1 {{ font-size: 1.3rem; margin-bottom: 6px; }}
+  .sub {{ color: #71717a; font-size: 0.875rem; margin-bottom: 28px; }}
+  ol {{ padding-left: 20px; }}
+  li {{ margin-bottom: 14px; line-height: 1.5; }}
+  .url {{
+    display: inline-block;
+    background: #27272a;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #a1a1aa;
+  }}
+  .path-box {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #27272a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 8px;
+  }}
+  .path-text {{
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #d4d4d8;
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+  }}
+  .copy-btn {{
+    background: #3f3f46;
+    border: none;
+    border-radius: 6px;
+    color: #e4e4e7;
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 5px 12px;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }}
+  .copy-btn:hover {{ background: #52525b; }}
+  .copy-btn.copied {{ background: #16a34a; }}
+  .note {{ margin-top: 24px; color: #71717a; font-size: 0.82rem; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Install ContextVolt Extension</h1>
+  <p class="sub">Follow these steps to load the extension into your browser.</p>
+  <ol>
+    <li>
+      Open the extensions page in your browser:<br>
+      <span class="url">chrome://extensions</span> &nbsp;or&nbsp; <span class="url">edge://extensions</span>
+    </li>
+    <li>Enable <strong>Developer mode</strong> using the toggle in the top-right corner.</li>
+    <li>Click <strong>Load unpacked</strong>.</li>
+    <li>
+      Select this folder (click Copy, then paste in the dialog):
+      <div class="path-box">
+        <span class="path-text" id="pathText">{ext_path}</span>
+        <button class="copy-btn" id="copyBtn" onclick="copyPath()">Copy</button>
+      </div>
+    </li>
+    <li>Click <strong>Select Folder</strong> — the extension is installed.</li>
+  </ol>
+  <p class="note">You can close this tab once the extension appears in your browser.</p>
+</div>
+<script>
+  function copyPath() {{
+    navigator.clipboard.writeText("{ext_path_js}").then(() => {{
+      const btn = document.getElementById("copyBtn");
+      btn.textContent = "Copied!";
+      btn.classList.add("copied");
+      setTimeout(() => {{ btn.textContent = "Copy"; btn.classList.remove("copied"); }}, 2000);
+    }});
+  }}
+</script>
+</body>
+</html>"""
 
-                manifest_path = ext_dir / "manifest.json"
-                with open(manifest_path, "r") as f:
-                    manifest = json.load(f)
+        try:
+            guide_path.write_text(guide_html, encoding="utf-8")
+        except Exception as e:
+            state.log(f"  Could not write guide page: {str(e)[:50]}")
 
-                ext_id = hashlib.sha256(ext_path.lower().encode()).hexdigest()[:32]
-                ext_id = ''.join(chr(ord('a') + int(c, 16)) for c in ext_id)
+        # Open the guide in the default browser
+        import webbrowser
+        try:
+            webbrowser.open(guide_path.as_uri())
+            state.log("  Opened install guide in your browser")
+        except Exception:
+            state.log("  Could not open browser automatically")
+            state.log(f"  Open manually: {guide_path}")
 
-                # Register for Chrome
-                chrome_key_path = "Software\\Google\\Chrome\\Extensions\\" + ext_id
-                try:
-                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, chrome_key_path)
-                    winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
-                    winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
-                    winreg.CloseKey(key)
-                    state.log("  Registered for Chrome")
-                    installed = True
-                except Exception as e:
-                    state.log(f"  Chrome registry: {str(e)[:50]}")
-
-                # Register for Edge
-                edge_key_path = "Software\\Microsoft\\Edge\\Extensions\\" + ext_id
-                try:
-                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, edge_key_path)
-                    winreg.SetValueEx(key, "path", 0, winreg.REG_SZ, str(ext_dir.resolve()))
-                    winreg.SetValueEx(key, "version", 0, winreg.REG_SZ, manifest.get("version", "1.0"))
-                    winreg.CloseKey(key)
-                    state.log("  Registered for Edge")
-                    installed = True
-                except Exception:
-                    pass
-            except Exception as e:
-                state.log(f"  Registry method failed: {str(e)[:50]}")
-
-        if installed:
-            state.log("  Extension will appear on next browser restart")
-            state.log("  You may need to enable it in chrome://extensions")
-        else:
-            state.log(f"  To install manually:")
-            state.log(f"  1. Open chrome://extensions")
-            state.log(f"  2. Enable Developer Mode")
-            state.log(f"  3. Click 'Load unpacked' → select:")
-            state.log(f"     {ext_dir.resolve()}")
+        state.log(f"  Extension folder: {ext_path}")
+        state.log("  Follow the steps in the browser tab to finish.")
 
         return True
 

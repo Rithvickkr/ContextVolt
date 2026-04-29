@@ -103,3 +103,9 @@ class CloudKeyValidate(BaseModel):
     provider: str
     api_key: str
 
+
+class UserProfileUpdate(BaseModel):
+    """Request body for saving user profile info."""
+    name: str = ""
+    about: str = ""
+

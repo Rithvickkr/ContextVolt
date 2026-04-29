@@ -887,7 +887,7 @@ def _extract_chunk(text: str, model: str | None = None, label: str = "") -> str:
         )
         _log.debug("Extract status=%s label=%r", r.status_code, label)
         r.raise_for_status()
-        result = r.json().get("response", "").strip()
+        result = _strip_think_blocks(r.json().get("response", ""))
         _log.debug("Extract result (first 300): %r", result[:300])  # type: ignore[index]
         return result
     except Exception as e:
@@ -930,7 +930,7 @@ def _synthesize(
         if "error" in body:
             _log.warning("Ollama error in synthesize: %s", body["error"])
             raise RuntimeError(body["error"])
-        response_text = body.get("response", "")
+        response_text = _strip_think_blocks(body.get("response", ""))
         _log.debug("Synthesize response (first 400): %r", response_text[:400])  # type: ignore[index]
         if not response_text.strip():
             _log.warning("Empty synthesize response (label=%r)", label)
@@ -1467,13 +1467,33 @@ def embed_text(text: str, model: str | None = None) -> list[float] | None:
         return None
 
 
+_THINK_BLOCK_RE = re.compile(r'<think>[\s\S]*?</think>\s*', re.IGNORECASE)
+
+
+def _strip_think_blocks(response_text: str) -> str:
+    """Remove <think>...</think> reasoning blocks emitted by hybrid-thinking models (Qwen 3, R1)."""
+    return _THINK_BLOCK_RE.sub('', response_text).strip()
+
+
+def _is_thinking_model(model: str) -> bool:
+    """Models that emit <think> blocks unless explicitly told not to (Qwen 3 family)."""
+    base = model.split(":")[0].lower()
+    return base.startswith("qwen3") and "embedding" not in base
+
+
 def _call_generate(model: str, prompt: str, options: dict, timeout: int = 180) -> requests.Response:
     """Call Ollama /api/generate with GPU → CPU fallback strategy.
 
     Phase 1 — GPU, staged num_ctx: configured → half → 8192 → Ollama default.
     Phase 2 — CPU (num_gpu=0) with 4096 ctx: handles CUDA_Host buffer / VRAM errors.
     Each tier is only tried if the previous one returned 500.
+
+    For Qwen 3 (hybrid-thinking) models, appends `/no_think` so the model skips
+    the <think>...</think> reasoning block that would otherwise break our text parser.
     """
+    if _is_thinking_model(model) and "/no_think" not in prompt:
+        prompt = prompt + "\n/no_think"
+
     requested_ctx: int = options.get("num_ctx", _NUM_CTX)
 
     # Phase 1: GPU ladder
@@ -1533,7 +1553,7 @@ def _summarize_single(text: str, model: str | None = None, label: str = "") -> d
         if "error" in body:
             _log.warning("Ollama error field: %s", body["error"])
             raise RuntimeError(body["error"])
-        response_text = body.get("response", "")
+        response_text = _strip_think_blocks(body.get("response", ""))
         _log.debug("Raw response (first 400 chars): %r", response_text[:400])  # type: ignore[index]
         if not response_text.strip():
             _log.warning("Empty response from Ollama (label=%r)", label)

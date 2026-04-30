@@ -622,111 +622,23 @@ def run_installation():
 
         # Write a local HTML guide that opens in the browser
         guide_path = PROJECT_ROOT / "extension_install_guide.html"
-        guide_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Install ContextVolt Extension</title>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{
-    font-family: system-ui, sans-serif;
-    background: #09090b;
-    color: #e4e4e7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    padding: 24px;
-  }}
-  .card {{
-    background: #18181b;
-    border: 1px solid #27272a;
-    border-radius: 12px;
-    padding: 36px 40px;
-    max-width: 560px;
-    width: 100%;
-  }}
-  h1 {{ font-size: 1.3rem; margin-bottom: 6px; }}
-  .sub {{ color: #71717a; font-size: 0.875rem; margin-bottom: 28px; }}
-  ol {{ padding-left: 20px; }}
-  li {{ margin-bottom: 14px; line-height: 1.5; }}
-  .url {{
-    display: inline-block;
-    background: #27272a;
-    border-radius: 6px;
-    padding: 3px 8px;
-    font-family: monospace;
-    font-size: 0.9rem;
-    color: #a1a1aa;
-  }}
-  .path-box {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #27272a;
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin-top: 8px;
-  }}
-  .path-text {{
-    font-family: monospace;
-    font-size: 0.82rem;
-    color: #d4d4d8;
-    flex: 1;
-    overflow-x: auto;
-    white-space: nowrap;
-  }}
-  .copy-btn {{
-    background: #3f3f46;
-    border: none;
-    border-radius: 6px;
-    color: #e4e4e7;
-    cursor: pointer;
-    font-size: 0.8rem;
-    padding: 5px 12px;
-    flex-shrink: 0;
-    transition: background 0.15s;
-  }}
-  .copy-btn:hover {{ background: #52525b; }}
-  .copy-btn.copied {{ background: #16a34a; }}
-  .note {{ margin-top: 24px; color: #71717a; font-size: 0.82rem; }}
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>Install ContextVolt Extension</h1>
-  <p class="sub">Follow these steps to load the extension into your browser.</p>
-  <ol>
-    <li>
-      Open the extensions page in your browser:<br>
-      <span class="url">chrome://extensions</span> &nbsp;or&nbsp; <span class="url">edge://extensions</span>
-    </li>
-    <li>Enable <strong>Developer mode</strong> using the toggle in the top-right corner.</li>
-    <li>Click <strong>Load unpacked</strong>.</li>
-    <li>
-      Select this folder (click Copy, then paste in the dialog):
-      <div class="path-box">
-        <span class="path-text" id="pathText">{ext_path}</span>
-        <button class="copy-btn" id="copyBtn" onclick="copyPath()">Copy</button>
-      </div>
-    </li>
-    <li>Click <strong>Select Folder</strong> — the extension is installed.</li>
-  </ol>
-  <p class="note">You can close this tab once the extension appears in your browser.</p>
-</div>
-<script>
-  function copyPath() {{
-    navigator.clipboard.writeText("{ext_path_js}").then(() => {{
-      const btn = document.getElementById("copyBtn");
-      btn.textContent = "Copied!";
-      btn.classList.add("copied");
-      setTimeout(() => {{ btn.textContent = "Copy"; btn.classList.remove("copied"); }}, 2000);
-    }});
-  }}
-</script>
-</body>
-</html>"""
+        # Load the standalone guide template and substitute the actual extension path.
+        guide_template_path = PROJECT_ROOT / "extension_install_guide.html"
+        try:
+            template = guide_template_path.read_text(encoding="utf-8")
+        except Exception:
+            template = ""
+        import re
+        guide_html = re.sub(
+            r'(<span class="path-text" id="pathText">)[^<]*(</span>)',
+            lambda m: m.group(1) + ext_path + m.group(2),
+            template, count=1,
+        )
+        guide_html = re.sub(
+            r'(const path = ")[^"]*(";)',
+            lambda m: m.group(1) + ext_path_js + m.group(2),
+            guide_html, count=1,
+        )
 
         try:
             guide_path.write_text(guide_html, encoding="utf-8")
@@ -945,7 +857,7 @@ def main():
     html_path = str(PROJECT_ROOT / "frontend" / "installer.html")
     
     window = webview.create_window(
-        title="ContextVolt — Setup",
+        title="ContextVolt",
         url=html_path,
         width=880,
         height=600,

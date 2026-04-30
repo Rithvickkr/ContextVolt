@@ -2,103 +2,354 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Install ContextVolt Extension</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContextVolt — Install Extension</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:wght@400;500&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary:   #06060a;
+    --bg-secondary: #0f0f12;
+    --bg-tertiary:  #17171c;
+    --bg-surface:   rgba(255,255,255,0.025);
+    --text-primary:   #f0f0f0;
+    --text-secondary: #a1a1aa;
+    --text-muted:     #71717a;
+    --text-faint:     #3f3f46;
+    --border:        rgba(255,255,255,0.07);
+    --border-subtle: rgba(255,255,255,0.04);
+    --border-accent: rgba(255,255,255,0.15);
+    --success: #34d399;
+    --sans: 'Space Grotesk', -apple-system, system-ui, sans-serif;
+    --body: 'DM Sans', -apple-system, system-ui, sans-serif;
+    --mono: 'Geist Mono', 'JetBrains Mono', monospace;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
   body {
-    font-family: system-ui, sans-serif;
-    background: #09090b;
-    color: #e4e4e7;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 600px at 50% 30%, rgba(80,100,160,0.10), transparent 60%),
+      radial-gradient(700px 500px at 50% 75%, rgba(180,140,255,0.05), transparent 65%),
+      var(--bg-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 100vh;
-    padding: 24px;
+    padding: 56px 24px;
+    position: relative;
+    overflow-x: hidden;
   }
-  .card {
-    background: #18181b;
-    border: 1px solid #27272a;
-    border-radius: 12px;
-    padding: 36px 40px;
-    max-width: 560px;
+  .bg-grid {
+    position: fixed; inset: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 65%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 65%);
+    opacity: 0.7;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
     width: 100%;
+    max-width: 940px;
+    display: grid;
+    grid-template-columns: minmax(240px, 320px) 1fr;
+    gap: 56px;
+    align-items: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 44px 48px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+    animation: fadeUp 0.55s cubic-bezier(0.16,1,0.3,1) both;
   }
-  h1 { font-size: 1.3rem; margin-bottom: 6px; }
-  .sub { color: #71717a; font-size: 0.875rem; margin-bottom: 28px; }
-  ol { padding-left: 20px; }
-  li { margin-bottom: 14px; line-height: 1.5; }
-  .url {
-    display: inline-block;
-    background: #27272a;
-    border-radius: 6px;
-    padding: 3px 8px;
-    font-family: monospace;
-    font-size: 0.9rem;
-    color: #a1a1aa;
+  .brand-col { display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .brand-col .brand-blurb { margin-left: auto; margin-right: auto; }
+  .steps-col { min-width: 0; }
+  @media (max-width: 780px) {
+    .shell { grid-template-columns: 1fr; gap: 28px; padding: 32px; }
+    .brand-col { align-items: center; text-align: center; }
   }
-  .path-box {
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Logo — matches installer's iw-logo */
+  .logo {
+    position: relative;
+    width: 104px; height: 104px;
+    border-radius: 26px;
+    margin-bottom: 28px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.10),
+      0 16px 48px rgba(0,0,0,0.7),
+      0 0 70px rgba(255,255,255,0.06);
+    animation: logoIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both;
+  }
+  .logo svg, .logo img { width: 104px; height: 104px; display: block; border-radius: 26px; object-fit: cover; }
+  .logo::before {
+    content: ""; position: absolute; inset: 0;
+    border-radius: 26px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  @keyframes logoIn {
+    from { opacity: 0; transform: scale(0.6) translateY(12px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  /* Wordmark — matches installer's iw-name */
+  .wordmark {
+    font-family: var(--sans);
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    line-height: 1;
+    margin-bottom: 10px;
+    background: linear-gradient(110deg, #f0f0f0 0%, #f0f0f0 35%, #ffffff 50%, #f0f0f0 65%, #b8b8c0 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: shine 4s linear 1s infinite;
+  }
+  @keyframes shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  .tag {
+    font-family: var(--body);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .brand-blurb {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 24px;
+    max-width: 280px;
+  }
+  .brand-divider {
+    width: 100%;
+    height: 1px;
+    background: var(--border-subtle);
+    margin-bottom: 18px;
+  }
+  .brand-meta {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.22);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     display: flex;
     align-items: center;
-    gap: 10px;
-    background: #27272a;
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin-top: 8px;
+    gap: 8px;
+  }
+  .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(52,211,153,0.5);
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .sep { opacity: 0.4; }
+
+  .card-title {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .card-lede {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+
+  ol { list-style: none; counter-reset: step; }
+  li {
+    counter-increment: step;
+    display: flex; gap: 14px;
+    padding: 11px 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text-primary);
+  }
+  li + li { border-top: 1px solid var(--border-subtle); }
+  li::before {
+    content: counter(step, decimal-leading-zero);
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-faint);
+    width: 26px;
+    padding-top: 3px;
+    letter-spacing: 0.04em;
+  }
+  .step-body { flex: 1; }
+  .step-title { color: var(--text-primary); font-weight: 500; }
+  .step-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  strong { color: var(--text-primary); font-weight: 600; }
+
+  .chip {
+    display: inline-block;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .path-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 8px 8px 8px 12px;
+    margin-top: 10px;
   }
   .path-text {
-    font-family: monospace;
-    font-size: 0.82rem;
-    color: #d4d4d8;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
     flex: 1;
-    overflow-x: auto;
-    white-space: nowrap;
+    overflow-x: auto; white-space: nowrap; scrollbar-width: none;
   }
+  .path-text::-webkit-scrollbar { display: none; }
   .copy-btn {
-    background: #3f3f46;
-    border: none;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border-accent);
     border-radius: 6px;
-    color: #e4e4e7;
+    color: var(--text-primary);
     cursor: pointer;
-    font-size: 0.8rem;
+    font: 500 12px var(--sans);
     padding: 5px 12px;
     flex-shrink: 0;
-    transition: background 0.15s;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
   }
-  .copy-btn:hover { background: #52525b; }
-  .copy-btn.copied { background: #16a34a; }
-  .note { margin-top: 24px; color: #71717a; font-size: 0.82rem; }
+  .copy-btn:hover { background: rgba(255,255,255,0.14); }
+  .copy-btn.copied {
+    background: rgba(52,211,153,0.12);
+    border-color: rgba(52,211,153,0.4);
+    color: var(--success);
+  }
+
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Install ContextVolt Extension</h1>
-  <p class="sub">Follow these steps to load the extension into your browser.</p>
-  <ol>
-    <li>
-      Open the extensions page in your browser:<br>
-      <span class="url">chrome://extensions</span> &nbsp;or&nbsp; <span class="url">edge://extensions</span>
-    </li>
-    <li>Enable <strong>Developer mode</strong> using the toggle in the top-right corner.</li>
-    <li>Click <strong>Load unpacked</strong>.</li>
-    <li>
-      Select this folder (click Copy, then paste in the dialog):
-      <div class="path-box">
-        <span class="path-text" id="pathText">E:\ConVX\extension</span>
-        <button class="copy-btn" id="copyBtn" onclick="copyPath()">Copy</button>
-      </div>
-    </li>
-    <li>Click <strong>Select Folder</strong> — the extension is installed.</li>
-  </ol>
-  <p class="note">You can close this tab once the extension appears in your browser.</p>
+<div class="bg-grid" aria-hidden="true"></div>
+
+<div class="shell">
+  <div class="brand-col">
+    <div class="logo" aria-hidden="true">
+      <img src="frontend/CVsvg.svg" width="76" height="76" alt="ContextVolt">
+    </div>
+    <div class="wordmark">ContextVolt</div>
+    <div class="tag">Local-first AI memory</div>
+    <p class="brand-blurb">
+      Load the ContextVolt extension into Chrome or Edge using Developer mode.
+      Takes about 30 seconds.
+    </p>
+    <div class="brand-divider"></div>
+    <div class="brand-meta">
+      <span class="dot" aria-hidden="true"></span>
+      <span>Setup Wizard</span>
+      <span class="sep">·</span>
+      <span>v1.0</span>
+    </div>
+  </div>
+
+  <div class="steps-col">
+    <div class="card-title">Install the browser extension</div>
+    <div class="card-lede">Follow the four steps below — copy the folder path when you reach step 4.</div>
+
+    <ol>
+      <li>
+        <div class="step-body">
+          <span class="step-title">Open the Extensions page</span>
+          <span class="step-hint">
+            Copy <span class="chip">chrome://extensions</span> (or <span class="chip">edge://extensions</span> in Edge)
+            into your browser's address bar and press Enter.
+          </span>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <span class="step-title">Enable Developer mode</span>
+          <span class="step-hint">
+            Find the <strong>Developer mode</strong> toggle in the top-right corner of the page and switch it on.
+            A new row of buttons will appear below.
+          </span>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <span class="step-title">Click "Load unpacked"</span>
+          <span class="step-hint">
+            It's the leftmost button in the row that just appeared. A folder picker will open.
+          </span>
+        </div>
+      </li>
+      <li>
+        <div class="step-body">
+          <span class="step-title">Select the extension folder</span>
+          <span class="step-hint">
+            Click <strong>Copy</strong> below, then paste the path into the picker's address bar
+            (or browse to it manually) and click <strong>Select Folder</strong>.
+          </span>
+          <div class="path-row">
+            <span class="path-text" id="pathText">E:\ConVX\extension</span>
+            <button class="copy-btn" id="copyBtn" onclick="copyPath()" type="button">Copy</button>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
 </div>
+
 <script>
   function copyPath() {
-    navigator.clipboard.writeText("E:\\ConVX\\extension").then(() => {
-      const btn = document.getElementById("copyBtn");
-      btn.textContent = "Copied!";
+    const path = "E:\\ConVX\\extension";
+    const btn = document.getElementById("copyBtn");
+    const done = () => {
+      btn.textContent = "Copied";
       btn.classList.add("copied");
-      setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);
-    });
+      setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1800);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(path).then(done).catch(() => {
+        const el = document.createElement('textarea');
+        el.value = path; el.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(el); el.select();
+        document.execCommand('copy'); document.body.removeChild(el);
+        done();
+      });
+    } else { done(); }
   }
 </script>
 </body>

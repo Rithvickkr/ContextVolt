@@ -191,9 +191,13 @@
 }
 
 .cv-panel-logo-mark {
-    font-size: 13px;
-    color: #a1a1aa;
-    line-height: 1;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: block;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
 }
 
 .cv-panel-title {

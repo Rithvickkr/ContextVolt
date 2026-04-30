@@ -104,37 +104,45 @@
     width: 76px;
     height: 76px;
     border-radius: 20px;
-    background: linear-gradient(180deg, #ffffff 0%, #d8d8e0 100%);
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #09090b;
     margin-bottom: 28px;
     box-shadow:
-        0 0 0 1px rgba(255,255,255,0.18),
-        0 12px 40px rgba(0,0,0,0.55),
-        0 0 80px rgba(180,200,255,0.18),
-        inset 0 1px 0 rgba(255,255,255,0.9);
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 12px 40px rgba(0,0,0,0.7),
+        0 0 60px rgba(255,255,255,0.06);
     animation: iwLogoIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both;
     position: relative;
 }
 
+.iw-logo img {
+    width: 76px;
+    height: 76px;
+    display: block;
+    object-fit: cover;
+    border-radius: 20px;
+}
+
+/* Subtle top-edge shimmer that works on a dark icon */
 .iw-logo::before {
     content: "";
     position: absolute;
-    inset: -1px;
-    border-radius: 21px;
-    background: linear-gradient(135deg, rgba(255,255,255,0.4), transparent 60%);
+    inset: 0;
+    border-radius: 20px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.07) 0%, transparent 50%);
     pointer-events: none;
-    opacity: 0.6;
+    z-index: 1;
 }
 
+/* Pulsing outer ring */
 .iw-logo::after {
     content: "";
     position: absolute;
-    inset: -14px;
-    border-radius: 26px;
-    border: 1px solid rgba(255,255,255,0.08);
+    inset: -12px;
+    border-radius: 28px;
+    border: 1px solid rgba(255,255,255,0.07);
     pointer-events: none;
     animation: iwLogoRing 2.4s ease-in-out infinite;
 }
@@ -375,14 +383,14 @@ a { color: inherit; }
 .inst-logo {
     width: 30px;
     height: 30px;
-    border-radius: 7px;
-    background: var(--text-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--bg-primary);
+    border-radius: 8px;
+    overflow: hidden;
     flex-shrink: 0;
+    box-shadow:
+        0 0 0 1px rgba(255,255,255,0.09),
+        0 2px 10px rgba(0,0,0,0.5);
 }
+.inst-logo img { width: 30px; height: 30px; display: block; object-fit: cover; }
 
 .inst-brand-name {
     font-family: var(--font-display);
@@ -1362,8 +1370,8 @@ body {
 
 .inst-logo {
     box-shadow:
-        0 0 0 1px rgba(255,255,255,0.08),
-        0 4px 14px rgba(0,0,0,0.5);
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 4px 16px rgba(0,0,0,0.55);
 }
 
 /* Section labels — small accent dot */

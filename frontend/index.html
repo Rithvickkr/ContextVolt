@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ContextVolt</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
     <meta name="description" content="Paste AI conversations, summarize with local LLM, build continuation prompts.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,13 +44,14 @@
             <!-- Header -->
             <div class="setup-header">
                 <div class="setup-logo-wrap" aria-hidden="true">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                        <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#09090b" stroke="#09090b" stroke-width="0.8" stroke-linejoin="round"/>
-                    </svg>
+                    <img src="/static/CVsvg.svg" width="36" height="36" alt="ContextVolt">
                 </div>
                 <h1 class="setup-title" id="setup-wizard-title">ContextVolt</h1>
                 <span class="setup-badge">Setup</span>
             </div>
+
+            <!-- Indeterminate loading bar (matches installer splash) -->
+            <div class="setup-ibar" aria-hidden="true"><span class="setup-ibar-fill"></span></div>
 
             <!-- Hero -->
             <div class="setup-hero">
@@ -127,9 +129,7 @@
             <!-- Brand -->
             <div class="cv-brand">
                 <div class="cv-logo" aria-hidden="true">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-                        <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#1a1200" stroke="#1a1200" stroke-width="0.8" stroke-linejoin="round"/>
-                    </svg>
+                    <img src="/static/CVsvg.svg" width="32" height="32" alt="ContextVolt">
                 </div>
                 <div class="cv-brand-text">
                     <span class="n">ContextVolt</span>
@@ -210,6 +210,10 @@
                 <button class="cv-util" id="btn-rebuild-embeddings" aria-label="Rebuild embeddings">
                     <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
                     <span>Rebuild Embeddings</span>
+                </button>
+                <button class="cv-util" id="btn-onboard-replay" aria-label="Replay onboarding tour">
+                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+                    <span>Take the Tour</span>
                 </button>
                 <button class="cv-util" id="btn-shortcuts" aria-label="Keyboard shortcuts">
                     <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
@@ -992,13 +996,43 @@
         </div>
     </div>
 
+    <!-- Onboarding Tour Overlay -->
+    <div id="cv-onboard" class="cv-onboard" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="cv-onboard-title">
+        <svg class="cv-onboard-mask" aria-hidden="true" preserveAspectRatio="none">
+            <defs>
+                <mask id="cv-onboard-cutout">
+                    <rect width="100%" height="100%" fill="white"/>
+                    <rect id="cv-onboard-hole" x="0" y="0" width="0" height="0" rx="14" ry="14" fill="black"/>
+                </mask>
+            </defs>
+            <rect width="100%" height="100%" fill="rgba(6,8,14,0.74)" mask="url(#cv-onboard-cutout)"/>
+            <rect id="cv-onboard-ring" x="0" y="0" width="0" height="0" rx="14" ry="14" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2" stroke-dasharray="6 4"/>
+        </svg>
+        <div class="cv-onboard-card" id="cv-onboard-card" role="document">
+            <div class="cv-onboard-card-head">
+                <span class="cv-onboard-eyebrow" id="cv-onboard-eyebrow">Tour</span>
+                <span class="cv-onboard-step" id="cv-onboard-step">1 / 8</span>
+            </div>
+            <h2 class="cv-onboard-title" id="cv-onboard-title">Welcome</h2>
+            <p class="cv-onboard-body" id="cv-onboard-body">Let's take a quick tour.</p>
+            <div class="cv-onboard-progress" aria-hidden="true"><i id="cv-onboard-progress-fill"></i></div>
+            <div class="cv-onboard-actions">
+                <button class="cv-onboard-btn cv-onboard-btn-ghost" id="cv-onboard-skip" type="button">Skip tour</button>
+                <div class="cv-onboard-nav">
+                    <button class="cv-onboard-btn cv-onboard-btn-ghost" id="cv-onboard-back" type="button">Back</button>
+                    <button class="cv-onboard-btn cv-onboard-btn-primary" id="cv-onboard-next" type="button">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sidebar Tooltip (appended to body to avoid overflow clipping) -->
     <div id="sidebar-tooltip" role="tooltip" aria-hidden="true">
         <div id="sidebar-tooltip-arrow"></div>
         <div id="sidebar-tooltip-content"></div>
     </div>
 
-    <script src="/static/js/app.js?v=ask-sessions-14"></script>
+    <script src="/static/js/app.js?v=onboarding-2"></script>
 </body>
 
 </html>

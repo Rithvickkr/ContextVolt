@@ -609,8 +609,8 @@ function toggleImportPanel() {
     panel.innerHTML = `
         <div class="cv-panel-header">
             <div class="cv-panel-logo">
-                <span class="cv-panel-logo-mark">✦</span>
-                <span class="cv-panel-title">Vault</span>
+                <img class="cv-panel-logo-mark" src="${chrome.runtime.getURL('icon.png')}" width="18" height="18" alt="ContextVolt">
+                <span class="cv-panel-title">ContextVolt</span>
             </div>
             <button class="cv-panel-close" id="cv-panel-close">✕</button>
         </div>

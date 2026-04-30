@@ -162,6 +162,60 @@ def main():
         text_select=True,
     )
 
+    def _set_large_taskbar_icon():
+        if sys.platform != "win32" or not _icon_arg:
+            return
+        try:
+            import ctypes
+            import ctypes.wintypes
+
+            user32 = ctypes.windll.user32
+            SM_CXICON, SM_CXSMICON = 11, 49
+            LR_LOADFROMFILE = 0x0010
+            IMAGE_ICON = 1
+            WM_SETICON = 0x0080
+            ICON_SMALL, ICON_BIG = 0, 1
+
+            # Use system metrics so sizes are correct at any DPI
+            big_sz = user32.GetSystemMetrics(SM_CXICON)    # typically 32 or 48
+            small_sz = user32.GetSystemMetrics(SM_CXSMICON) # typically 16 or 20
+
+            # Find our window by process ID — more reliable than window title
+            pid = os.getpid()
+            hwnd_found = ctypes.c_void_p(0)
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+            def _enum(hwnd, _):
+                lp_pid = ctypes.c_ulong(0)
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lp_pid))
+                if lp_pid.value == pid and user32.IsWindowVisible(hwnd):
+                    hwnd_found.value = hwnd
+                    return False  # stop enumeration
+                return True
+
+            # Retry up to 3 seconds for the window to appear
+            for _ in range(6):
+                time.sleep(0.5)
+                user32.EnumWindows(EnumWindowsProc(_enum), 0)
+                if hwnd_found.value:
+                    break
+
+            hwnd = hwnd_found.value
+            if not hwnd:
+                return
+
+            icon_path_w = ctypes.c_wchar_p(_icon_arg)
+            hicon_big = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, big_sz, big_sz, LR_LOADFROMFILE)
+            hicon_small = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, small_sz, small_sz, LR_LOADFROMFILE)
+            if hicon_big:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+            if hicon_small:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+        except Exception:
+            pass
+
+    threading.Thread(target=_set_large_taskbar_icon, daemon=True).start()
     webview.start(debug=False, icon=_icon_arg)
     sys.exit(0)
 

@@ -274,6 +274,7 @@ async function checkSetup() {
         try {
             const cfgRes = await fetch(`${API}/api/setup/config`);
             const cfg = await cfgRes.json();
+            _settingsConfig = _settingsConfig || cfg;  // prime cache early
             if (cfg.is_cloud_active) {
                 const provLabel = (_PROVIDER_META[cfg.active_provider] || {}).label || cfg.active_provider;
                 _setStepState(stepOllama, 'ok', `Using ${provLabel}`);
@@ -327,6 +328,7 @@ function transitionToApp() {
         loadCollections();
         _prefetchSettingsConfig();
         loadDashboard();
+        try { maybeStartOnboarding(); } catch (e) { console.warn('onboarding init failed', e); }
     }, 500);
 }
 
@@ -465,15 +467,32 @@ function _renderRecentCard(ctx) {
 }
 
 async function loadDashboard() {
-    // Update hero greeting
+    // Update hero greeting synchronously
     const eyebrow = document.getElementById('cv-hero-eyebrow');
     if (eyebrow) eyebrow.textContent = `${_getGreeting()} · ${_getDayString()}`;
+
+    // Show skeleton immediately — before any network call
+    document.querySelectorAll('.cv-stat').forEach(el => el.classList.add('skel'));
+    const gridEl  = document.getElementById('dashboard-recent-grid');
+    const emptyEl = document.getElementById('dashboard-recent-empty');
+    if (gridEl) {
+        if (emptyEl) emptyEl.style.display = 'none';
+        for (let i = 0; i < 3; i++) {
+            const d = document.createElement('div');
+            d.className = 'cv-skel-card';
+            gridEl.appendChild(d);
+        }
+    }
+
+    // Fetch user name in background — does not block stats fetch
     const nameEl = document.getElementById('cv-greeting-name');
     if (nameEl) {
-        const displayName = (_settingsConfig && _settingsConfig.user_name)
-            ? _settingsConfig.user_name
-            : (await fetch(`${API}/api/setup/config`).then(r => r.json()).then(d => { _settingsConfig = _settingsConfig || d; return d.user_name; }).catch(() => ''));
-        nameEl.textContent = (displayName || 'User') + '.';
+        const nameP = (_settingsConfig && _settingsConfig.user_name)
+            ? Promise.resolve(_settingsConfig.user_name)
+            : (_settingsConfigPromise
+                ? _settingsConfigPromise.then(() => (_settingsConfig && _settingsConfig.user_name) || '')
+                : fetch(`${API}/api/setup/config`).then(r => r.json()).then(d => { _settingsConfig = _settingsConfig || d; return d.user_name || ''; }).catch(() => ''));
+        nameP.then(name => { nameEl.textContent = (name || 'User') + '.'; });
     }
 
     try {
@@ -499,17 +518,12 @@ async function loadDashboard() {
         if (idxEl && stats.contexts) idxEl.textContent = `${Math.min(recent.length, 8)} / ${stats.contexts}`;
 
         // Render recent contexts
-        const gridEl = document.getElementById('dashboard-recent-grid');
-        const emptyEl = document.getElementById('dashboard-recent-empty');
         if (gridEl) {
             if (recent.length > 0) {
-                if (emptyEl) emptyEl.style.display = 'none';
                 const cardsHtml = recent.map(ctx => _renderRecentCard(ctx)).join('');
-                // Keep emptyEl in DOM but hidden, append new cards
                 gridEl.innerHTML = '';
                 if (emptyEl) { emptyEl.style.display = 'none'; gridEl.appendChild(emptyEl); }
                 gridEl.insertAdjacentHTML('beforeend', cardsHtml);
-                // Attach parallax + tilt to new cards
                 _attachCardEffects(gridEl);
             } else {
                 gridEl.innerHTML = '';
@@ -533,6 +547,11 @@ async function loadDashboard() {
         _dashboardLoaded = true;
     } catch (err) {
         console.error('Dashboard load error:', err);
+        // Restore empty state on error
+        if (gridEl && emptyEl) { gridEl.innerHTML = ''; gridEl.appendChild(emptyEl); emptyEl.style.display = ''; }
+    } finally {
+        document.querySelectorAll('.cv-stat').forEach(el => el.classList.remove('skel'));
+        document.querySelectorAll('.cv-skel-card').forEach(el => el.remove());
     }
 }
 
@@ -5365,3 +5384,274 @@ function _initStickyDetailHeader() {
         }
     });
 }
+
+// ─── Onboarding Tour ──────────────────────────────────────────────────
+const CV_ONBOARD_KEY = 'cv_onboarded_v1';
+
+const CV_ONBOARD_STEPS = [
+    {
+        target: null,
+        title: 'Welcome to ContextVolt ⚡',
+        body: 'Your local-first AI memory vault. Save AI conversations, summarize them with a local LLM, and query them later — all on your machine. This 90-second tour shows what each piece does.',
+        eyebrow: 'Tour'
+    },
+    {
+        target: '#sidebar',
+        title: 'The sidebar — your control deck',
+        body: 'Everything lives here: views (Dashboard, Library, Ask Vault), Collections, preferences, and system tools. Press the chevron at the top to collapse it.',
+        eyebrow: 'Layout'
+    },
+    {
+        target: '#nav-input',
+        title: 'Dashboard',
+        body: 'The home view. See vault stats, recent contexts, and start a new capture. Press <kbd>D</kbd> to jump here from anywhere.',
+        eyebrow: 'View'
+    },
+    {
+        target: '#quick-capture-toggle',
+        title: 'Quick Capture — your starting point',
+        body: 'Paste any AI conversation here. ContextVolt summarizes it with your local LLM, splits it semantically, and embeds it into the vault for later retrieval.',
+        eyebrow: 'Action'
+    },
+    {
+        target: '#nav-library',
+        title: 'Library',
+        body: 'Browse every saved context as a grid or compact rows. Click any card to open the detail view with the full transcript and summary. Press <kbd>L</kbd>.',
+        eyebrow: 'View'
+    },
+    {
+        target: '#nav-ask',
+        title: 'Ask Vault — RAG over your captures',
+        body: 'Ask natural-language questions across all your saved contexts. Retrieval-augmented generation finds the most relevant chunks and answers with citations. Press <kbd>A</kbd>.',
+        eyebrow: 'View'
+    },
+    {
+        target: '#collections-section',
+        title: 'Collections',
+        body: 'Group related contexts by topic, project, or client. Click <b>+</b> to create one — pick a color, give it a name, then assign contexts from the Library.',
+        eyebrow: 'Organize'
+    },
+    {
+        target: '#vibeToggle',
+        title: 'Visual vibes',
+        body: 'Three moods: <b>Volt</b> (default), <b>Space</b> (deep cosmic), <b>Noir</b> (minimal). Pick whatever helps you focus.',
+        eyebrow: 'Personalize'
+    },
+    {
+        target: '#btn-settings',
+        title: 'Settings & Models',
+        body: 'Pick which Ollama model handles summarization and which handles Q&A. Tweak chunk sizes, temperature, and retrieval depth here.',
+        eyebrow: 'Configure'
+    },
+    {
+        target: '#btn-system',
+        title: 'System & health',
+        body: 'Backend status, Ollama connection, live logs, and a one-click <b>Backup Vault</b>. The pulsing dot at the bottom always shows live status.',
+        eyebrow: 'Health'
+    },
+    {
+        target: null,
+        title: 'You are ready ⚡',
+        body: 'Hit <b>Quick Capture</b> to save your first conversation, or jump to <b>Ask Vault</b> if you already have data. You can replay this tour any time from the sidebar → <i>Take the Tour</i>.',
+        eyebrow: 'Done'
+    }
+];
+
+let _cvOnboardIdx = 0;
+let _cvOnboardActive = false;
+
+function _cvOnboardEls() {
+    return {
+        root: document.getElementById('cv-onboard'),
+        hole: document.getElementById('cv-onboard-hole'),
+        ring: document.getElementById('cv-onboard-ring'),
+        card: document.getElementById('cv-onboard-card'),
+        title: document.getElementById('cv-onboard-title'),
+        body: document.getElementById('cv-onboard-body'),
+        step: document.getElementById('cv-onboard-step'),
+        eyebrow: document.getElementById('cv-onboard-eyebrow'),
+        prog: document.getElementById('cv-onboard-progress-fill'),
+        back: document.getElementById('cv-onboard-back'),
+        next: document.getElementById('cv-onboard-next'),
+        skip: document.getElementById('cv-onboard-skip'),
+    };
+}
+
+function _cvOnboardPosition(step) {
+    const els = _cvOnboardEls();
+    const { hole, ring, card } = els;
+    const pad = 8;
+    const cardMargin = 16;
+    const cardW = card.offsetWidth || 380;
+    const cardH = card.offsetHeight || 220;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    if (!step.target) {
+        hole.setAttribute('width', 0);
+        hole.setAttribute('height', 0);
+        ring.setAttribute('width', 0);
+        ring.setAttribute('height', 0);
+        card.classList.add('is-centered');
+        card.style.top = '';
+        card.style.left = '';
+        card.style.transform = '';
+        return;
+    }
+    const targetEl = document.querySelector(step.target);
+    if (!targetEl) {
+        hole.setAttribute('width', 0);
+        hole.setAttribute('height', 0);
+        card.classList.add('is-centered');
+        return;
+    }
+    const r = targetEl.getBoundingClientRect();
+    const x = Math.max(4, r.left - pad);
+    const y = Math.max(4, r.top - pad);
+    const w = Math.min(vw - 8, r.width + pad * 2);
+    const h = Math.min(vh - 8, r.height + pad * 2);
+    hole.setAttribute('x', x);
+    hole.setAttribute('y', y);
+    hole.setAttribute('width', w);
+    hole.setAttribute('height', h);
+    ring.setAttribute('x', x);
+    ring.setAttribute('y', y);
+    ring.setAttribute('width', w);
+    ring.setAttribute('height', h);
+
+    card.classList.remove('is-centered');
+    let cardLeft, cardTop;
+    const spaceRight = vw - (x + w);
+    const spaceLeft = x;
+    const spaceBelow = vh - (y + h);
+    const spaceAbove = y;
+
+    if (spaceRight >= cardW + cardMargin) {
+        cardLeft = x + w + cardMargin;
+        cardTop = Math.max(cardMargin, Math.min(vh - cardH - cardMargin, y + h / 2 - cardH / 2));
+    } else if (spaceLeft >= cardW + cardMargin) {
+        cardLeft = x - cardW - cardMargin;
+        cardTop = Math.max(cardMargin, Math.min(vh - cardH - cardMargin, y + h / 2 - cardH / 2));
+    } else if (spaceBelow >= cardH + cardMargin) {
+        cardTop = y + h + cardMargin;
+        cardLeft = Math.max(cardMargin, Math.min(vw - cardW - cardMargin, x + w / 2 - cardW / 2));
+    } else if (spaceAbove >= cardH + cardMargin) {
+        cardTop = y - cardH - cardMargin;
+        cardLeft = Math.max(cardMargin, Math.min(vw - cardW - cardMargin, x + w / 2 - cardW / 2));
+    } else {
+        cardLeft = (vw - cardW) / 2;
+        cardTop = (vh - cardH) / 2;
+    }
+    card.style.left = cardLeft + 'px';
+    card.style.top = cardTop + 'px';
+    card.style.transform = 'none';
+}
+
+function _cvOnboardRender() {
+    const els = _cvOnboardEls();
+    const step = CV_ONBOARD_STEPS[_cvOnboardIdx];
+    const total = CV_ONBOARD_STEPS.length;
+    els.title.textContent = step.title;
+    els.body.innerHTML = step.body;
+    els.eyebrow.textContent = step.eyebrow || 'Tour';
+    els.step.textContent = (_cvOnboardIdx + 1) + ' / ' + total;
+    els.prog.style.width = (((_cvOnboardIdx + 1) / total) * 100) + '%';
+    els.back.disabled = _cvOnboardIdx === 0;
+    els.next.textContent = _cvOnboardIdx === total - 1 ? 'Finish' : 'Next';
+
+    if (step.target) {
+        const t = document.querySelector(step.target);
+        if (t && typeof t.scrollIntoView === 'function') {
+            try { t.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); } catch (e) {}
+        }
+    }
+    requestAnimationFrame(() => _cvOnboardPosition(step));
+}
+
+function startOnboarding() {
+    const els = _cvOnboardEls();
+    if (!els.root) return;
+    _cvOnboardIdx = 0;
+    _cvOnboardActive = true;
+    els.root.classList.add('is-open');
+    els.root.setAttribute('aria-hidden', 'false');
+    _cvOnboardRender();
+}
+
+function endOnboarding(markComplete) {
+    if (markComplete === undefined) markComplete = true;
+    const els = _cvOnboardEls();
+    if (!els.root) return;
+    els.root.classList.remove('is-open');
+    els.root.setAttribute('aria-hidden', 'true');
+    _cvOnboardActive = false;
+    if (markComplete) {
+        try { localStorage.setItem(CV_ONBOARD_KEY, '1'); } catch (e) {}
+    }
+}
+
+function _cvOnboardNext() {
+    if (_cvOnboardIdx >= CV_ONBOARD_STEPS.length - 1) {
+        endOnboarding(true);
+        return;
+    }
+    _cvOnboardIdx++;
+    _cvOnboardRender();
+}
+function _cvOnboardBack() {
+    if (_cvOnboardIdx === 0) return;
+    _cvOnboardIdx--;
+    _cvOnboardRender();
+}
+
+function _initOnboardingControls() {
+    const els = _cvOnboardEls();
+    if (!els.root || els.root.dataset.bound) return;
+    els.root.dataset.bound = '1';
+    els.next.addEventListener('click', _cvOnboardNext);
+    els.back.addEventListener('click', _cvOnboardBack);
+    els.skip.addEventListener('click', () => endOnboarding(true));
+    document.addEventListener('keydown', (e) => {
+        if (!_cvOnboardActive) return;
+        if (e.key === 'Escape') { endOnboarding(true); }
+        else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); _cvOnboardNext(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); _cvOnboardBack(); }
+    });
+    window.addEventListener('resize', () => {
+        if (_cvOnboardActive) _cvOnboardPosition(CV_ONBOARD_STEPS[_cvOnboardIdx]);
+    });
+    const replayBtn = document.getElementById('btn-onboard-replay');
+    if (replayBtn) replayBtn.addEventListener('click', () => startOnboarding());
+}
+
+async function maybeStartOnboarding() {
+    _initOnboardingControls();
+    let seen = '';
+    try { seen = localStorage.getItem(CV_ONBOARD_KEY) || ''; } catch (e) {}
+    if (seen) return;
+
+    // Only true new users (empty vault) get the auto-tour.
+    // Anyone with existing contexts is silently marked onboarded.
+    let isNewUser = false;
+    try {
+        const res = await fetch(`${API}/api/contexts?page=1&per_page=1`);
+        if (res.ok) {
+            const data = await res.json();
+            const items = Array.isArray(data) ? data : (data.items || data.contexts || []);
+            const total = (typeof data.total === 'number') ? data.total : items.length;
+            isNewUser = total === 0;
+        }
+    } catch (e) {
+        // Backend unreachable — don't auto-trigger; user can still replay manually.
+        return;
+    }
+
+    if (isNewUser) {
+        setTimeout(() => startOnboarding(), 650);
+    } else {
+        try { localStorage.setItem(CV_ONBOARD_KEY, '1'); } catch (e) {}
+    }
+}
+
+window.startOnboarding = startOnboarding;
+window.endOnboarding = endOnboarding;

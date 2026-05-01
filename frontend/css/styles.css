@@ -6521,10 +6521,10 @@ kbd {
   --cv-bg-2:     #0f0f12;
   --cv-bg-3:     #15151a;
   --cv-bg-4:     #1c1c22;
-  --cv-volt:     oklch(0.88 0.19 92);
-  --cv-volt-2:   oklch(0.78 0.19 78);
-  --cv-volt-dim: oklch(0.88 0.19 92 / 0.15);
-  --cv-volt-glow:oklch(0.88 0.19 92 / 0.28);
+  --cv-volt:     oklch(0.75 0.18 75);
+  --cv-volt-2:   oklch(0.65 0.18 60);
+  --cv-volt-dim: oklch(0.75 0.18 75 / 0.06);
+  --cv-volt-glow:oklch(0.75 0.18 75 / 0.11);
   --cv-plasma:   oklch(0.72 0.18 280);
   --cv-text-0:   #f4f4f5;
   --cv-text-1:   #d4d4d8;
@@ -6558,10 +6558,10 @@ kbd {
 .cv-ambient {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(1200px 600px at 70% -10%, color-mix(in oklab, var(--cv-volt) 9%, transparent) 0%, transparent 60%),
-    radial-gradient(900px 500px at 0% 100%, color-mix(in oklab, var(--cv-plasma) 8%, transparent) 0%, transparent 55%),
-    radial-gradient(1000px 700px at 100% 100%, rgba(255,255,255,0.02) 0%, transparent 60%);
-  filter: saturate(1.1);
+    radial-gradient(1200px 600px at 70% -10%, color-mix(in oklab, var(--cv-volt) 5%, transparent) 0%, transparent 60%),
+    radial-gradient(900px 500px at 0% 100%, color-mix(in oklab, var(--cv-plasma) 5%, transparent) 0%, transparent 55%),
+    radial-gradient(1000px 700px at 100% 100%, rgba(255,255,255,0.018) 0%, transparent 60%);
+  filter: saturate(0.95);
   transition: background 0.6s var(--cv-ease), opacity 0.6s var(--cv-ease);
 }
 [data-vibe="space"] .cv-ambient {
@@ -6594,7 +6594,7 @@ kbd {
 /* Grain overlay */
 .cv-grain {
   position: fixed; inset: 0; pointer-events: none; z-index: 1;
-  mix-blend-mode: overlay; opacity: .3;
+  mix-blend-mode: overlay; opacity: .16;
 }
 
 /* App shell: raise above ambient layers */
@@ -9748,20 +9748,6 @@ kbd {
   opacity: 0.55;
 }
 
-[data-vibe="noir"] #app.app-container::after {
-  content: "";
-  position: fixed;
-  width: 900px;
-  height: 900px;
-  top: -260px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.035);
-  pointer-events: none;
-  z-index: 0;
-  box-shadow: 0 0 120px rgba(190,150,255,0.04) inset;
-}
 
 /* Topbar — frosted floating bar with installer-style highlight ring */
 [data-vibe="noir"] .cv-topbar {
@@ -10106,6 +10092,106 @@ kbd {
 [data-vibe="noir"] .cv-pipe-step .bar i {
   background: linear-gradient(90deg, #d8d8e0 0%, #ffffff 60%, #d8d8e0 100%);
   box-shadow: 0 0 12px rgba(255,255,255,0.18);
+}
+
+/* ================================================================
+   Noir — Premium polish pass
+   Adds: violet accent token, type hierarchy tokens, grain layer,
+   slow ambient drift, accent applied to nav/focus/eyebrow,
+   stronger violet commitment on ambient washes.
+   ================================================================ */
+
+[data-vibe="noir"] {
+  --cv-accent:      #ffffff;
+  --cv-accent-soft: rgba(255,255,255,0.16);
+  --cv-accent-glow: rgba(255,255,255,0.35);
+
+  --cv-text-hi:  #ffffff;
+  --cv-text:     rgba(255,255,255,0.88);
+  --cv-text-mid: rgba(255,255,255,0.55);
+  --cv-text-low: rgba(255,255,255,0.38);
+
+  --cv-shadow-card:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 2px 4px rgba(0,0,0,0.4),
+    0 24px 48px -16px rgba(0,0,0,0.6);
+  --cv-shadow-card-hover:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 2px 6px rgba(0,0,0,0.5),
+    0 32px 64px -18px rgba(0,0,0,0.75),
+    0 0 0 1px rgba(255,255,255,0.04);
+}
+
+/* Match installer ambient — atmospheric whispers, not color */
+[data-vibe="noir"] .cv-ambient {
+  background:
+    radial-gradient(1200px 760px at 18% 6%, rgba(80,100,160,0.10) 0%, transparent 55%),
+    radial-gradient(1000px 680px at 84% 96%, rgba(180,140,255,0.06) 0%, transparent 60%),
+    radial-gradient(720px 520px at 50% 50%, rgba(255,255,255,0.03) 0%, transparent 70%),
+    linear-gradient(180deg, #0c0c12 0%, #08080d 60%, #06060a 100%);
+  background-size: 140% 140%, 140% 140%, 100% 100%, 100% 100%;
+  animation: cv-noir-drift 280s ease-in-out infinite;
+  filter: none;
+}
+
+@keyframes cv-noir-drift {
+  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 50%, 0 0; }
+  50%      { background-position: 6% 4%, 94% 96%, 50% 50%, 0 0; }
+}
+
+/* Activate grain — SVG noise, very subtle */
+[data-vibe="noir"] .cv-grain {
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+}
+
+/* Single accent flourish — eyebrow dot uses violet, not white */
+[data-vibe="noir"] .cv-hero-eyebrow::before {
+  background: var(--cv-accent);
+  box-shadow: 0 0 14px var(--cv-accent-glow);
+}
+
+/* Active nav: violet left bar instead of monochrome */
+[data-vibe="noir"] .nav-item.cv-nav.active::before,
+[data-vibe="noir"] .nav-item.cv-nav.on::before {
+  background: linear-gradient(180deg, transparent, var(--cv-accent), transparent);
+  box-shadow: 0 0 10px var(--cv-accent-glow);
+}
+[data-vibe="noir"] .nav-item.cv-nav.active .cv-nav-ic,
+[data-vibe="noir"] .nav-item.cv-nav.on .cv-nav-ic {
+  color: var(--cv-accent);
+}
+
+/* Focus ring — single accent for keyboard navigation */
+[data-vibe="noir"] :focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px #0a0a10,
+    0 0 0 4px var(--cv-accent-soft);
+  border-radius: 8px;
+}
+
+/* Type hierarchy — apply tokens where ad-hoc opacities were used */
+[data-vibe="noir"] .cv-stat .k     { color: var(--cv-text-mid); }
+[data-vibe="noir"] .cv-stat .meta  { color: var(--cv-text-low); }
+[data-vibe="noir"] .cv-hero-eyebrow { color: var(--cv-text-mid); }
+[data-vibe="noir"] .cv-empty-state  { color: var(--cv-text-low); }
+[data-vibe="noir"] .cv-chip         { color: var(--cv-text); }
+
+/* Layered shadow upgrade on the major surfaces */
+[data-vibe="noir"] .cv-stat,
+[data-vibe="noir"] .cv-recent-grid > article,
+[data-vibe="noir"] .cv-recent-grid > .ctx-card,
+[data-vibe="noir"] .cv-recent-grid > .cv-card {
+  box-shadow: var(--cv-shadow-card);
+}
+[data-vibe="noir"] .cv-stat:hover,
+[data-vibe="noir"] .cv-recent-grid > article:hover,
+[data-vibe="noir"] .cv-recent-grid > .ctx-card:hover,
+[data-vibe="noir"] .cv-recent-grid > .cv-card:hover {
+  box-shadow: var(--cv-shadow-card-hover);
 }
 
 /* ================================================================

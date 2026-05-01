@@ -270,8 +270,8 @@
 }
 
 :root {
-    --bg-primary:   #09090b;
-    --bg-secondary: #0f0f12;
+    --bg-primary:   #06060a;
+    --bg-secondary: #0a0a0f;
     --bg-tertiary:  #17171c;
     --bg-elevated:  #1e1e24;
     --bg-surface:   rgba(255,255,255,0.025);
@@ -342,6 +342,34 @@ a { color: inherit; }
     display: flex;
     overflow: hidden;
     background: var(--bg-primary);
+    position: relative;
+    isolation: isolate;
+}
+
+/* Atmospheric residue from the welcome splash — same violet/blue radials,
+   dimmer, plus the dotted grid. Provides visual continuity when the splash exits. */
+.inst-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+        radial-gradient(900px 600px at 50% -10%, rgba(80,100,160,0.08) 0%, transparent 60%),
+        radial-gradient(700px 500px at 92% 96%, rgba(180,140,255,0.05) 0%, transparent 65%);
+}
+
+.inst-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 60%);
+    mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 60%);
+    opacity: 0.6;
 }
 
 .inst-shell {
@@ -352,6 +380,21 @@ a { color: inherit; }
     background: var(--bg-secondary);
     overflow: hidden;
     animation: instIn 0.4s var(--ease-out);
+    position: relative;
+    z-index: 1;
+}
+
+/* Top-edge highlight — same trick as the welcome's logo ring & noir's topbar */
+.inst-shell::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 14%;
+    right: 14%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    pointer-events: none;
+    z-index: 2;
 }
 
 @keyframes instIn {
@@ -397,7 +440,11 @@ a { color: inherit; }
     font-size: 15px;
     font-weight: 800;
     letter-spacing: -0.04em;
-    color: var(--text-primary);
+    background: linear-gradient(180deg, #ffffff 0%, #d8d8e0 50%, #b8b8c0 120%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
 }
 
 /* Section label */

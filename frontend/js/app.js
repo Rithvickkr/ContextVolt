@@ -1673,9 +1673,9 @@ async function toggleStar(id) {
     ctx.starred = !wasStarred;
 
     const card = document.querySelector(`.context-card[data-id="${id}"]`);
-    const starBtn = card?.querySelector('.card-star');
+    const starBtn = card?.querySelector('.cv-card-star');
     if (starBtn) {
-        starBtn.classList.toggle('active', ctx.starred);
+        starBtn.classList.toggle('on', ctx.starred);
         const svg = starBtn.querySelector('svg');
         if (svg) svg.setAttribute('fill', ctx.starred ? 'currentColor' : 'none');
         // Pop animation
@@ -1695,7 +1695,7 @@ async function toggleStar(id) {
         // Revert optimistic update
         ctx.starred = wasStarred;
         if (starBtn) {
-            starBtn.classList.toggle('active', wasStarred);
+            starBtn.classList.toggle('on', wasStarred);
             const svg = starBtn.querySelector('svg');
             if (svg) svg.setAttribute('fill', wasStarred ? 'currentColor' : 'none');
         }

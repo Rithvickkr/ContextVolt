@@ -24,6 +24,7 @@ from backend.database import (
     get_all_contexts,
     get_contexts_paginated,
     get_context,
+    get_summarizing_contexts,
     get_contexts_by_ids,
     get_chunks_by_context,
     get_chunks_by_ids,
@@ -50,6 +51,7 @@ from backend.database import (
     append_ask_message,
     update_ask_session,
     delete_ask_session,
+    get_context_by_url,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -700,23 +702,72 @@ def api_summarize_stream(req: SummarizeRequest):
 
 @app.post("/api/capture")
 def api_capture(req: CaptureRequest):
-    """Receive raw text from the browser extension, chunk + embed, and save."""
+    """Receive raw text from the browser extension, chunk + embed, and save.
+
+    If conversation_url matches an existing context, updates it in place instead
+    of creating a duplicate entry.
+    """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # Extract first user message as title (no LLM needed)
-    user_parts = _USER_TURN.split(req.text)
-    first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else req.text.strip()[:100]
-    title = first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "..."
+    def _bg_summarize(cid: int, text: str, snippets: list) -> None:
+        try:
+            # Chunk + embed first so semantic search works as soon as possible
+            chunks = chunk_conversation(text, starred_snippets=snippets or [])
+            chunks = embed_chunks(chunks)
+            delete_chunks_by_context(cid)
+            if chunks:
+                create_chunks(cid, chunks)
 
-    # Stub summary — retrieval replaces the need for full LLM summarization
-    summary: dict = {
-        "main_topic": first_user_msg,
-        "key_ideas": [], "snapshot": "", "vitals": [],
-        "conclusions": [], "unresolved_questions": [],
-    }
+            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            new_title = real_summary.get("main_topic", "")
+            update_kwargs: dict = {"summary": real_summary}
+            if new_title and new_title not in ("No topic extracted", "N/A"):
+                update_kwargs["title"] = new_title
+            update_context(cid, **update_kwargs, status="completed")
+            _try_embed_context(cid, real_summary)
+        except Exception:
+            update_context(cid, status="failed")
 
     try:
+        # Check if we already saved this conversation URL before
+        existing = get_context_by_url(req.conversation_url) if req.conversation_url else None
+
+        if existing:
+            context_id = existing["id"]
+            stored_chat: str = existing.get("original_chat") or ""
+
+            # If the incoming text is shorter than what's already stored, the
+            # extension only captured new messages (e.g. after a page refresh or
+            # navigating back). Append only the new part so we never lose history.
+            if len(req.text) >= len(stored_chat):
+                full_chat = req.text
+            else:
+                full_chat = stored_chat + "\n\n" + req.text
+
+            update_context(
+                context_id,
+                original_chat=full_chat,
+                important_notes=req.important_snippets or [],
+                status="summarizing",
+            )
+            # All Ollama work (chunk, embed, summarize) happens in the background
+            threading.Thread(
+                target=_bg_summarize,
+                args=(context_id, full_chat, req.important_snippets or []),
+                daemon=True,
+            ).start()
+            return {"success": True, "id": context_id, "updated": True}
+
+        # No existing context — create a new one
+        user_parts = _USER_TURN.split(req.text)
+        first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else req.text.strip()[:100]
+        title = first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "..."
+        summary: dict = {
+            "main_topic": first_user_msg,
+            "key_ideas": [], "snapshot": "", "vitals": [],
+            "conclusions": [], "unresolved_questions": [],
+        }
         result = create_context(
             title=title,
             summary=summary,
@@ -724,39 +775,17 @@ def api_capture(req: CaptureRequest):
             original_chat=req.text,
             important_notes=req.important_snippets or [],
             status="summarizing",
+            conversation_url=req.conversation_url or None,
         )
         context_id = result.get("id")
-
-        # Chunk the conversation and embed each chunk
-        chunks = chunk_conversation(req.text, starred_snippets=req.important_snippets or [])
-        chunks = embed_chunks(chunks)
-        if context_id and chunks:
-            create_chunks(context_id, chunks)
-
-        # Best-effort context-level embedding for semantic search on the list
-        _try_embed_context(context_id, summary)
-
-        # Background summarization — runs after response is returned to the extension.
-        # Replaces the stub summary with a full map-reduce summary and re-embeds the context.
-        def _bg_summarize(cid: int, text: str, snippets: list) -> None:
-            try:
-                real_summary = summarize_conversation(text, important_snippets=snippets or None)
-                new_title = real_summary.get("main_topic", "")
-                update_kwargs: dict = {"summary": real_summary}
-                if new_title and new_title not in ("No topic extracted", "N/A"):
-                    update_kwargs["title"] = new_title  # store full title, no truncation
-                update_context(cid, **update_kwargs, status="completed")
-                _try_embed_context(cid, real_summary)  # re-embed with real topic + key_ideas
-            except Exception:
-                update_context(cid, status="failed")
-
+        # All Ollama work (chunk, embed, summarize) happens in the background
         threading.Thread(
             target=_bg_summarize,
             args=(context_id, req.text, req.important_snippets or []),
             daemon=True,
         ).start()
+        return {"success": True, "id": context_id, "updated": False}
 
-        return {"success": True, "id": context_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Capture save failed: {str(e)}")
 
@@ -862,6 +891,12 @@ def api_create_context(ctx: ContextCreate):
     )
     _try_embed_context(result.get("id"), summary_dict)
     return result
+
+
+@app.get("/api/contexts/summarizing")
+def api_get_summarizing_contexts():
+    """Return id+title for all contexts currently being summarized."""
+    return {"contexts": get_summarizing_contexts()}
 
 
 @app.get("/api/contexts")

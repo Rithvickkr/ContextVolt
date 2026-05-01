@@ -50,6 +50,7 @@ setInterval(() => {
     if (location.href !== _lastContentUrl) {
         _lastContentUrl = location.href;
         _interceptedMessages = [];
+        _markedSnippets.clear();
     }
 }, 1000);
 
@@ -548,6 +549,7 @@ function injectButton() {
                     text: chatText,
                     source: source,
                     important_snippets: Array.from(_markedSnippets.values()),
+                    conversation_url: window.location.href,
                 }
             }, (response) => {
                 clearTimeout(stateTimer);

@@ -8034,11 +8034,7 @@ kbd {
 }
 #contexts-grid.cv-lib-grid[data-view="rows"] .cv-card-capture { margin-left: 0; }
 #contexts-grid.cv-lib-grid[data-view="rows"] .cv-card-preview { display: none; }
-/* Live pill moves to avoid the row's single-line layout */
-#contexts-grid.cv-lib-grid[data-view="rows"] .cv-card-live {
-    position: static; margin-left: auto;
-    grid-column: 4;
-}
+/* Live pill inside the foot — no extra overrides needed in rows mode */
 
 /* Selection mode checkbox */
 .cv-card-check {
@@ -8116,8 +8112,8 @@ kbd {
 
 /* ── Live summarizing / failed indicator (bottom-left glass pill) ── */
 .cv-card-live {
-    position: absolute; bottom: 10px; left: 10px; z-index: 3;
     display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
     padding: 4px 9px 4px 8px;
     border-radius: 100px;
     background: color-mix(in oklab, var(--cv-volt) 14%, rgba(8,8,10,0.78));

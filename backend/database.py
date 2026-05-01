@@ -193,6 +193,7 @@ def init_db():
         "ALTER TABLE contexts ADD COLUMN status TEXT DEFAULT 'completed'",
         "ALTER TABLE contexts ADD COLUMN starred INTEGER DEFAULT 0",
         "ALTER TABLE contexts ADD COLUMN collection_id INTEGER DEFAULT NULL",
+        "ALTER TABLE contexts ADD COLUMN conversation_url TEXT DEFAULT NULL",
     ]
     for sql in _migrations:
         try:
@@ -386,6 +387,7 @@ def create_context(
     embedding: list[float] | None = None,
     important_notes: list[str] | None = None,
     status: str = "completed",
+    conversation_url: str | None = None,
 ) -> dict:
     """Insert a new context and return it."""
     now = datetime.now(timezone.utc).isoformat()
@@ -393,9 +395,9 @@ def create_context(
     notes_json = json.dumps(important_notes) if important_notes else None
     conn = _get_conn()
     cursor = conn.execute(
-        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at, embedding, important_notes, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json, status),
+        """INSERT INTO contexts (title, summary, tags, original_chat, created_at, updated_at, embedding, important_notes, status, conversation_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (title, json.dumps(summary), ",".join(tags), original_chat, now, now, embedding_json, notes_json, status, conversation_url or None),
     )
     context_id = cursor.lastrowid
     if embedding:
@@ -404,6 +406,18 @@ def create_context(
     row = conn.execute("SELECT * FROM contexts WHERE id = ?", (context_id,)).fetchone()
     # connection reused (thread-local pool)
     return _row_to_dict(row)
+
+
+def get_context_by_url(conversation_url: str) -> dict | None:
+    """Return the most recently created context matching this URL, or None."""
+    if not conversation_url:
+        return None
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM contexts WHERE conversation_url = ? ORDER BY created_at DESC LIMIT 1",
+        (conversation_url,),
+    ).fetchone()
+    return _row_to_dict(row) if row else None
 
 
 def set_context_embedding(context_id: int, embedding: list[float]) -> None:
@@ -469,6 +483,15 @@ def get_context(context_id: int) -> dict | None:
     return _row_to_dict(row)
 
 
+def get_summarizing_contexts() -> list[dict]:
+    """Return id and title for all contexts currently being summarized."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, title FROM contexts WHERE status = 'summarizing'"
+    ).fetchall()
+    return [{"id": r["id"], "title": r["title"]} for r in rows]
+
+
 def get_contexts_by_ids(context_ids: list[int]) -> dict[int, dict]:
     """Batch fetch contexts by IDs. Returns a dict mapping id -> context dict."""
     if not context_ids:
@@ -513,6 +536,9 @@ def update_context(context_id: int, **kwargs) -> dict | None:
         updates.append("important_notes = ?")
         notes = kwargs["important_notes"]
         params.append(json.dumps(notes) if isinstance(notes, list) else notes)
+    if "original_chat" in kwargs:
+        updates.append("original_chat = ?")
+        params.append(kwargs["original_chat"])
 
     if not updates:
         # connection reused (thread-local pool)

@@ -166,7 +166,8 @@ async function _pollSummarizingContexts() {
                 }
             }
 
-            // If status changed from summarizing, refresh the card in the library grid
+            // If status changed from summarizing, refresh the card
+            // (toast is handled by _globalSummarizingPoll to avoid duplicates)
             if (fresh.status !== 'summarizing' && state.view === 'library') {
                 _refreshCard(fresh);
             }
@@ -331,7 +332,65 @@ function transitionToApp() {
         _prefetchSettingsConfig();
         loadDashboard();
         try { maybeStartOnboarding(); } catch (e) { console.warn('onboarding init failed', e); }
+        _startGlobalSummarizingPoll();
     }, 500);
+}
+
+// ─── Global summarizing poll ─────────────────────────────────────────────────
+// Runs app-wide (any view) so toasts fire even when the library is never opened.
+let _globalPollTimer = null;
+let _globalPollPrevIds = new Set();
+
+async function _globalSummarizingPoll() {
+    try {
+        const res = await fetch(`${API}/api/contexts/summarizing`);
+        if (!res.ok) return;
+        const { contexts } = await res.json();
+        const currentIds = new Set(contexts.map(c => c.id));
+
+        // IDs that were summarizing last tick but aren't now → just finished
+        for (const id of _globalPollPrevIds) {
+            if (!currentIds.has(id)) {
+                // Fetch the finished context to get its real status + title
+                try {
+                    const r = await fetch(`${API}/api/contexts/${id}`);
+                    if (r.ok) {
+                        const ctx = await r.json();
+                        const label = ctx.title ? `"${ctx.title}"` : 'Context';
+                        if (ctx.status === 'failed') {
+                            showToast(`${label} summarization failed`, 'error');
+                        } else {
+                            showToast(`${label} has been summarized`, 'success');
+                        }
+                        // Refresh the card if library is visible
+                        if (state.view === 'library') _refreshCard(ctx);
+                    }
+                } catch (_) {}
+            }
+        }
+
+        _globalPollPrevIds = currentIds;
+
+        if (currentIds.size > 0) {
+            // Still work in progress — poll again in 4 s
+            _globalPollTimer = setTimeout(_globalSummarizingPoll, 4000);
+        } else {
+            _globalPollTimer = null;
+        }
+    } catch (_) {
+        // Network hiccup — retry in 8 s
+        _globalPollTimer = setTimeout(_globalSummarizingPoll, 8000);
+    }
+}
+
+function _startGlobalSummarizingPoll() {
+    if (_globalPollTimer) return; // already running
+    _globalSummarizingPoll();
+}
+
+// Call this whenever a new context enters 'summarizing' state (extension capture, retry, etc.)
+function _kickGlobalPoll() {
+    if (!_globalPollTimer) _startGlobalSummarizingPoll();
 }
 
 // â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -371,11 +430,10 @@ function navigateTo(view) {
         loadDashboard();
     }
 
-    // Start/stop background polling depending on view
+    // Start polling when entering library/detail; let it self-stop when done
+    // (don't stop on other views — in-flight summarizations still need to fire toasts)
     if (view === 'library' || view === 'detail') {
         startWorkerPolling();
-    } else {
-        stopWorkerPolling();
     }
 }
 
@@ -1133,7 +1191,6 @@ function _renderContextCard(ctx) {
                  data-id="${ctx.id}" data-anim
                  style="--accent:${accent};"
                  onclick="${onCardClick}">
-            ${statusLive}
             ${checkbox}
             ${starBtn}
             <div class="cv-card-top">
@@ -1144,6 +1201,7 @@ function _renderContextCard(ctx) {
             <h3 class="card-title">${title}</h3>
             ${desc ? `<p>${desc}</p>` : ''}
             <div class="cv-card-foot">
+                ${statusLive}
                 ${tagHtml}
                 ${captureChip}
             </div>
@@ -5334,6 +5392,7 @@ async function retrySummarize() {
         ctx.status = 'summarizing';
         renderDetail(ctx);
         startWorkerPolling();
+        _kickGlobalPoll();
     } catch (err) {
         showToast('Failed to retry summarization', 'error');
     }

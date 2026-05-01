@@ -15,6 +15,7 @@ class CaptureRequest(BaseModel):
     text: str
     source: str = "Extension"
     important_snippets: list[str] = []
+    conversation_url: str = ""
 
 
 class SummaryData(BaseModel):

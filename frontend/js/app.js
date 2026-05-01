@@ -20,20 +20,22 @@ window.addEventListener('unhandledrejection', e => {
 // â”€â”€â”€ Theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    const isDark = theme === 'dark';
-    const iconDark = document.getElementById('theme-icon-dark');
-    const iconLight = document.getElementById('theme-icon-light');
-    const label = document.getElementById('theme-label');
-    if (iconDark) iconDark.style.display = isDark ? 'inline' : 'none';
-    if (iconLight) iconLight.style.display = isDark ? 'none' : 'inline';
-    if (label) label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+    document.querySelectorAll('.settings-theme-opt').forEach(btn => {
+        const active = btn.dataset.theme === theme;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+}
+
+function setTheme(theme) {
+    if (theme !== 'light' && theme !== 'dark') return;
+    _applyTheme(theme);
+    localStorage.setItem('cv-theme', theme);
 }
 
 function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
-    _applyTheme(next);
-    localStorage.setItem('cv-theme', next);
+    setTheme(current === 'dark' ? 'light' : 'dark');
 }
 
 // Restore saved theme on load
@@ -2119,7 +2121,7 @@ function _renderChatBubbles(text, aiModel) {
         const avatar = isUser ? 'U' : 'AI';
         const name = isUser ? 'You' : aiModel;
         html += `<div class="cv-msg ${isUser ? 'cv-msg-user' : 'cv-msg-ai'}">
-            <div class="cv-msg-av ${isUser ? '' : 'cv-msg-av-ai'}">${avatar}</div>
+            <div class="cv-msg-av ${isUser ? 'cv-msg-av-user' : 'cv-msg-av-ai'}">${avatar}</div>
             <div class="cv-msg-body">
                 <div class="cv-msg-name">${name}</div>
                 <div class="cv-msg-text">${content}</div>
@@ -4982,8 +4984,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === $('#confirm-delete-modal')) closeConfirmDeleteModal();
     });
 
-    // Theme toggle
-    if ($('#btn-theme-toggle')) $('#btn-theme-toggle').addEventListener('click', toggleTheme);
+    // Theme: segmented control (Light / Dark)
+    document.querySelectorAll('.settings-theme-opt').forEach(btn => {
+        btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+    });
 
     // Vibe toggle (Volt / Space)
     const _vibeBtns = document.querySelectorAll('#vibeToggle button');

@@ -190,16 +190,8 @@
                 <div class="collections-list" id="collections-list"><!-- rendered by JS --></div>
             </div>
 
-            <!-- Footer: Preferences / Tools / System -->
+            <!-- Footer: Tools / System -->
             <div class="cv-side-foot">
-                <div class="cv-side-label">Preferences</div>
-                <button class="cv-util" id="btn-theme-toggle" aria-label="Toggle light/dark theme">
-                    <span class="cv-util-ic">
-                        <svg id="theme-icon-dark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                        <svg id="theme-icon-light" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                    </span>
-                    <span id="theme-label">Light Mode</span>
-                </button>
                 <button class="cv-util" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
                     <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
                     <span>Settings &amp; Models</span>
@@ -824,6 +816,24 @@
                                       placeholder="A few words about yourself — role, interests, or anything you'd like the AI to remember…"
                                       rows="3" maxlength="500" spellcheck="false"></textarea>
                         </div>
+                    </div>
+                </div>
+
+                <div class="settings-divider"></div>
+
+                <!-- Appearance -->
+                <div class="settings-appearance-section">
+                    <div class="settings-section-label">Appearance</div>
+                    <p class="settings-section-hint">Choose how ContextVolt looks. Applies across the entire app.</p>
+                    <div class="settings-theme-segmented" role="radiogroup" aria-label="Color theme">
+                        <button type="button" class="settings-theme-opt" data-theme="light" id="theme-opt-light" role="radio" aria-checked="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                            <span>Light</span>
+                        </button>
+                        <button type="button" class="settings-theme-opt" data-theme="dark" id="theme-opt-dark" role="radio" aria-checked="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            <span>Dark</span>
+                        </button>
                     </div>
                 </div>
 

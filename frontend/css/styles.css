@@ -7497,10 +7497,16 @@ kbd {
     position: relative; padding: 10px 12px 10px 30px;
     font-size: 13.5px; line-height: 1.55; color: var(--cv-text-1);
     background: rgba(255,255,255,0.02); border: 1px solid var(--cv-line);
-    border-radius: 10px;
+    border-radius: 10px; transition: background 0.12s, border-color 0.12s;
+}
+.cv-list li:hover, .cv-notes li:hover {
+    background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1);
 }
 [data-theme="light"] .cv-list li, [data-theme="light"] .cv-notes li {
     background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.06); color: #27272a;
+}
+[data-theme="light"] .cv-list li:hover, [data-theme="light"] .cv-notes li:hover {
+    background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.1);
 }
 .cv-list li::before {
     content: ""; position: absolute; left: 12px; top: 16px;
@@ -7519,8 +7525,60 @@ kbd {
 [data-theme="light"] .cv-block-pinned { background: linear-gradient(180deg, rgba(217,119,6,0.05), rgba(255,255,255,0.9)); border-color: rgba(217,119,6,0.2); }
 
 /* ── Insights (3-col at wide, 1-col narrow) ──────────────── */
-.cv-insights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.cv-insights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 1400px) { .cv-insights { grid-template-columns: 1fr; } }
+
+/* Cap insight cards so long lists don't blow out the layout */
+.cv-insights .cv-block {
+    display: flex; flex-direction: column;
+    max-height: 340px; transition: max-height 0.3s ease;
+}
+.cv-insights .cv-block.cv-expanded { max-height: 2000px; }
+.cv-insights .cv-block-head { flex-shrink: 0; }
+.cv-insights .cv-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
+    /* fade only shown when overflow; JS adds cv-list--full to remove it */
+    mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
+    padding-bottom: 8px;
+}
+/* No fade when list fits entirely (set by _initInsightExpand) */
+.cv-insights .cv-list.cv-list--full,
+.cv-insights .cv-block.cv-expanded .cv-list {
+    mask-image: none; -webkit-mask-image: none; overflow-y: visible;
+}
+.cv-insights .cv-list::-webkit-scrollbar { width: 3px; }
+.cv-insights .cv-list::-webkit-scrollbar-track { background: transparent; }
+.cv-insights .cv-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12); border-radius: 99px;
+}
+[data-theme="light"] .cv-insights .cv-list {
+    scrollbar-color: rgba(0,0,0,0.12) transparent;
+}
+[data-theme="light"] .cv-insights .cv-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); }
+
+/* Expand / collapse button (injected by _initInsightExpand) */
+.cv-expand-btn {
+    flex-shrink: 0; margin-top: 10px; padding: 6px 12px; width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--cv-line);
+    border-radius: 8px; font: 500 11.5px/1 var(--cv-sans);
+    color: var(--cv-text-3); cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.cv-expand-btn:hover {
+    background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.1);
+    color: var(--cv-text-1);
+}
+[data-theme="light"] .cv-expand-btn {
+    background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.08); color: #a1a1aa;
+}
+[data-theme="light"] .cv-expand-btn:hover {
+    background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.12); color: #52525b;
+}
 
 /* ── Code snippets ────────────────────────────────────────── */
 .cv-snips { display: flex; flex-direction: column; gap: 12px; }

@@ -1997,6 +1997,7 @@ function renderDetail(ctx) {
                         <div class="cv-block-head">
                             <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
                             <h3>Key ideas</h3>
+                            <span class="cv-count">${keyIdeas.length}</span>
                         </div>
                         <ul class="cv-list">${keyIdeas.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
                     </div>` : ''}
@@ -2005,6 +2006,7 @@ function renderDetail(ctx) {
                         <div class="cv-block-head">
                             <span class="cv-block-ic cv-ic-done">${icon.done}</span>
                             <h3>Conclusions</h3>
+                            <span class="cv-count">${conclusions.length}</span>
                         </div>
                         <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
                     </div>` : ''}
@@ -2013,6 +2015,7 @@ function renderDetail(ctx) {
                         <div class="cv-block-head">
                             <span class="cv-block-ic cv-ic-open">${icon.open}</span>
                             <h3>Open questions</h3>
+                            <span class="cv-count">${unresolved.length}</span>
                         </div>
                         <ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
                     </div>` : ''}
@@ -2126,7 +2129,31 @@ function renderDetail(ctx) {
         });
     });
 
+    _initInsightExpand();
     $('#prompt-section').style.display = 'none';
+}
+
+function _initInsightExpand() {
+    requestAnimationFrame(() => {
+        document.querySelectorAll('.cv-insights .cv-block').forEach(block => {
+            const list = block.querySelector('.cv-list');
+            if (!list) return;
+            const overflows = list.scrollHeight > list.clientHeight + 4;
+            if (!overflows) {
+                list.classList.add('cv-list--full');
+                return;
+            }
+            const total = list.querySelectorAll('li').length;
+            const btn = document.createElement('button');
+            btn.className = 'cv-expand-btn';
+            btn.textContent = `Show all ${total}`;
+            btn.onclick = () => {
+                const expanded = block.classList.toggle('cv-expanded');
+                btn.textContent = expanded ? 'Show less' : `Show all ${total}`;
+            };
+            block.appendChild(btn);
+        });
+    });
 }
 
 // ─── Export menu toggle (used by new cv-detail rail) ─────────────

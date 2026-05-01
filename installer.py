@@ -852,8 +852,21 @@ class Api:
 # ─────────────────────────────────────────────────────────────────
 
 def main():
+    # If already installed, skip the installer and launch the app directly
+    if (PROJECT_ROOT / ".installed").exists():
+        if EMBEDDED_MODE:
+            python_exe = sys.executable
+        else:
+            pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
+            python_exe = str(pythonw) if pythonw.exists() else str(VENV_PYTHON)
+        popen_kwargs = {"cwd": str(PROJECT_ROOT)}
+        if IS_WINDOWS:
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
+        return
+
     api = Api()
-    
+
     html_path = str(PROJECT_ROOT / "frontend" / "installer.html")
     
     window = webview.create_window(

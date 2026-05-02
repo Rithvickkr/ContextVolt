@@ -13,7 +13,7 @@
 #define MyAppVersion "1.1"
 #define MyAppPublisher "ContextVolt"
 #define MyAppURL "https://github.com/Rithvickkr/ContextVolt"
-#define MyAppExeName "ContextVolt.vbs"
+#define MyAppExeName "pythonw.exe"
 
 [Setup]
 AppId={{A3B8D1B6-0B3B-4B1A-9C1A-CONTEXTVOLT-2026}}
@@ -59,21 +59,20 @@ Source: "build\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recurses
 ; Project files
 Source: "build\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Launchers
-Source: "build\ContextVolt.vbs"; DestDir: "{app}"; Flags: ignoreversion
+; Debug launcher (kept for troubleshooting)
 Source: "build\ContextVolt-debug.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; Start Menu
-Name: "{group}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
+; Start Menu — points directly to pythonw.exe, no VBS middleman
+Name: "{group}\ContextVolt"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installer.py"""; WorkingDir: "{app}\python"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 Name: "{group}\Uninstall ContextVolt"; Filename: "{uninstallexe}"
 
-; Desktop — always created
-Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
+; Desktop — always created, points directly to pythonw.exe
+Name: "{userdesktop}\ContextVolt"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installer.py"""; WorkingDir: "{app}\python"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 
 [Run]
-; "Launch ContextVolt now" checkbox on finish screen — use wscript.exe explicitly for VBS
-Filename: "wscript.exe"; Parameters: """{app}\ContextVolt.vbs"""; Description: "Launch ContextVolt now"; Flags: postinstall skipifsilent unchecked
+; "Launch ContextVolt now" on finish screen — direct pythonw.exe call, no VBS
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\installer.py"""; WorkingDir: "{app}\python"; Description: "Launch ContextVolt now"; Flags: postinstall skipifsilent unchecked
 
 ; "Open GitHub page" link on finish screen
 Filename: "{#MyAppURL}"; Description: "Open the GitHub page"; Flags: postinstall shellexec skipifsilent unchecked
@@ -83,6 +82,8 @@ Type: filesandordirs; Name: "{app}\app\venv"
 Type: filesandordirs; Name: "{app}\app\__pycache__"
 Type: filesandordirs; Name: "{app}\app\context_volt.db"
 Type: filesandordirs; Name: "{app}\app\.ollama"
+Type: filesandordirs; Name: "{app}\app\.installed"
+Type: filesandordirs; Name: "{app}\app\.cv_lock"
 
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);

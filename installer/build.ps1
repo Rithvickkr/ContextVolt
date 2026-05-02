@@ -90,7 +90,7 @@ New-Item -ItemType Directory -Path $AppDir | Out-Null
 # Copy only the essential files/folders (no venv, .git, .ollama, __pycache__, test files)
 $include = @("backend", "frontend", "extension", "vscode-extension",
              "installer.py", "run.py", "start.bat", "requirements.txt", "README.md",
-             "icon.ico", "icon.png")
+             "icon.ico", "icon.png", "extension_install_guide.html")
 
 foreach ($item in $include) {
     $src = Join-Path $ProjectRoot $item

@@ -886,6 +886,42 @@ def main():
 
     state.window = window
 
+    def _set_installer_icon():
+        _icon = str(PROJECT_ROOT / "icon.ico")
+        if not os.path.exists(_icon):
+            return
+        try:
+            import ctypes, ctypes.wintypes, time
+            user32 = ctypes.windll.user32
+            LR_LOADFROMFILE, IMAGE_ICON, WM_SETICON = 0x0010, 1, 0x0080
+            ICON_SMALL, ICON_BIG = 0, 1
+            pid = os.getpid()
+            hwnd_found = ctypes.c_void_p(0)
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+            def _enum(hwnd, _):
+                lp = ctypes.c_ulong(0)
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lp))
+                if lp.value == pid and user32.IsWindowVisible(hwnd):
+                    hwnd_found.value = hwnd
+                    return False
+                return True
+            for _ in range(6):
+                time.sleep(0.5)
+                user32.EnumWindows(EnumWindowsProc(_enum), 0)
+                if hwnd_found.value:
+                    break
+            hwnd = hwnd_found.value
+            if not hwnd:
+                return
+            icon_path_w = ctypes.c_wchar_p(_icon)
+            big  = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, user32.GetSystemMetrics(11), user32.GetSystemMetrics(11), LR_LOADFROMFILE)
+            small = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, user32.GetSystemMetrics(49), user32.GetSystemMetrics(49), LR_LOADFROMFILE)
+            if big:   user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG,   big)
+            if small: user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small)
+        except Exception:
+            pass
+
+    threading.Thread(target=_set_installer_icon, daemon=True).start()
     webview.start()
 
 

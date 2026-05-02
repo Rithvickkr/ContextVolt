@@ -54,6 +54,12 @@ Invoke-WebRequest -Uri $GetPipUrl -OutFile $GetPipFile -UseBasicParsing
 Remove-Item $GetPipFile
 Write-Host "         pip installed" -ForegroundColor DarkGray
 
+# setuptools + wheel are needed to build any source-only packages (no wheel on PyPI)
+& "$PythonDir\python.exe" -m pip install setuptools wheel `
+    --no-warn-script-location --disable-pip-version-check --quiet
+if ($LASTEXITCODE -ne 0) { Write-Host "  ERROR: setuptools install failed" -ForegroundColor Red; exit 1 }
+Write-Host "         setuptools + wheel installed" -ForegroundColor DarkGray
+
 # ─── Step 4: Pre-install ALL dependencies into embedded Python ───
 Write-Host "  [4/6] Installing dependencies (this may take a minute)..." -ForegroundColor Yellow
 $ReqFile = Join-Path $ProjectRoot "requirements.txt"

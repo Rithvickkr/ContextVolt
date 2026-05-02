@@ -2,6 +2,6 @@ fastapi
 uvicorn[standard]
 requests
 pydantic
-pywebview
+pywebview==6.2.1
 numpy
 sqlite-vec

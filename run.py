@@ -216,7 +216,7 @@ def main():
             pass
 
     threading.Thread(target=_set_large_taskbar_icon, daemon=True).start()
-    webview.start(debug=False, icon=_icon_arg)
+    webview.start(debug=False)
     sys.exit(0)
 
 

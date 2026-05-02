@@ -1,6 +1,6 @@
 ; ═══════════════════════════════════════════════════════════════════
 ; ContextVolt — Inno Setup Installer Script
-; 
+;
 ; Prerequisites:
 ;   1. Run build.ps1 first (downloads Python, prepares build folder)
 ;   2. Install Inno Setup from https://jrsoftware.org/isinfo.php
@@ -25,29 +25,32 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={userappdata}\{#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile=
+LicenseFile=LICENSE.txt
 OutputDir=output
 OutputBaseFilename=ContextVolt-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 SetupIconFile=..\icon.ico
 WizardStyle=modern
-WizardSizePercent=110,110
+WizardSizePercent=120,120
 DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\app\icon.ico
 DisableWelcomePage=no
-WizardImageFile=
-WizardSmallImageFile=
+WizardImageFile=..\main icon\banner.bmp
+WizardSmallImageFile=..\main icon\small_logo.bmp
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
 english.WelcomeLabel1=Welcome to ContextVolt Setup
-english.WelcomeLabel2=This will install ContextVolt — your local AI-powered context vault for AI conversations.%n%nContextVolt includes:%n  • Backend & dashboard%n  • Embedded Python runtime%n  • Browser extension files%n  • VS Code extension files%n%nAfter installation, ContextVolt will set up Ollama and download the AI model automatically.
-english.FinishedLabel=ContextVolt has been installed! Launch it from the Desktop shortcut or Start Menu.
+english.WelcomeLabel2=ContextVolt is your local AI-powered assistant that keeps all your context private — no cloud, no subscriptions.%n%nWhat gets installed:%n%n    Runtime     Embedded Python (no system Python needed)%n    Backend     FastAPI server & local database%n    Dashboard   Browser-based UI%n    Extensions  Browser & VS Code extensions%n%nOllama and the AI model are downloaded automatically on first launch.%n%nClick Next to review the license agreement.
+english.FinishedLabel=ContextVolt {#MyAppVersion} has been successfully installed.%n%nYou can launch it any time from the Desktop shortcut or the Start Menu.
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a &Desktop shortcut"; GroupDescription: "Additional options:"; Flags: checkedonce
 
 [Files]
 ; Embedded Python
@@ -65,17 +68,17 @@ Source: "build\ContextVolt.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 Name: "{group}\Uninstall ContextVolt"; Filename: "{uninstallexe}"
 
-; Desktop (always created)
-Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
-
-[Tasks]
-Name: "desktopicon"; Description: "Create a Desktop shortcut"; GroupDescription: "Additional shortcuts:"
+; Desktop — controlled by the task above, checked by default
+Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"; Tasks: desktopicon
 
 [Run]
-; No auto-launch — user launches from Desktop shortcut after install
+; "Launch ContextVolt now" checkbox on finish screen
+Filename: "{app}\ContextVolt.vbs"; Description: "Launch ContextVolt now"; Flags: postinstall shellexec skipifsilent unchecked
+
+; "Open GitHub page" link on finish screen
+Filename: "{#MyAppURL}"; Description: "Open the GitHub page"; Flags: postinstall shellexec skipifsilent unchecked
 
 [UninstallDelete]
-; Clean up generated files on uninstall
 Type: filesandordirs; Name: "{app}\app\venv"
 Type: filesandordirs; Name: "{app}\app\__pycache__"
 Type: filesandordirs; Name: "{app}\app\context_volt.db"
@@ -85,5 +88,5 @@ Type: filesandordirs; Name: "{app}\app\.ollama"
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssInstall then
-    WizardForm.StatusLabel.Caption := 'Extracting ContextVolt files...';
+    WizardForm.StatusLabel.Caption := 'Installing ContextVolt — this may take a moment...';
 end;

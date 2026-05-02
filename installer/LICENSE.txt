@@ -1,0 +1,20 @@
+ContextVolt — License Agreement
+================================
+
+Copyright (c) 2026 ContextVolt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software to use it for personal and commercial purposes, subject to
+the following conditions:
+
+1. You may not redistribute, resell, or repackage this software as your own
+   product without written permission from the author.
+
+2. You may not use this software for any unlawful purpose.
+
+3. This software is provided "as is", without warranty of any kind, express
+   or implied. The author is not liable for any damages arising from its use.
+
+By clicking "I accept the agreement" you agree to the terms above.
+
+GitHub: https://github.com/Rithvickkr/ContextVolt

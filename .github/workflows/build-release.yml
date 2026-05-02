@@ -15,37 +15,66 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Inno Setup
-        run: choco install innosetup --yes --no-progress
+      - name: Resolve version
+        id: version
         shell: powershell
+        run: |
+          if ($env:GITHUB_REF -match 'refs/tags/v(.+)') {
+            $ver = $matches[1]
+          } else {
+            $short = git rev-parse --short HEAD
+            $ver = "dev-$short"
+          }
+          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $ver"
+
+      - name: Patch version into setup.iss
+        shell: powershell
+        run: |
+          $ver = "${{ steps.version.outputs.VERSION }}"
+          (Get-Content installer\setup.iss) `
+            -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$ver`"" |
+            Set-Content installer\setup.iss
+          Write-Host "Patched setup.iss to version $ver"
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup --yes --no-progress
 
       - name: Build installer bundle
-        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1
         shell: cmd
+        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1
 
       - name: Compile Inno Setup installer
+        shell: powershell
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\setup.iss
-        shell: powershell
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # ── Versioned release on v* tags ────────────────────────────
+      # ── Versioned release on v* tags ──────────────────────────────
       - name: Create versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: ContextVolt ${{ github.ref_name }}
+          name: ContextVolt ${{ steps.version.outputs.VERSION }}
           body: |
-            ## ContextVolt ${{ github.ref_name }}
+            ## ContextVolt ${{ steps.version.outputs.VERSION }}
 
-            ### Install
-            Download and run **ContextVolt-Setup.exe**.
+            ### How to install
+            1. Download **ContextVolt-Setup.exe** below
+            2. Run it and follow the wizard (takes ~30 seconds)
+            3. On first launch, ContextVolt downloads Ollama and the AI model automatically
 
-            On first launch ContextVolt will download Ollama and the AI model automatically.
+            ### What's included
+            - Embedded Python runtime (no system Python needed)
+            - FastAPI backend & local database
+            - Browser-based dashboard
+            - Browser & VS Code extensions
           files: installer/output/ContextVolt-Setup.exe
           draft: false
           prerelease: false
 
-      # ── Rolling "latest" pre-release on every master push ───────
+      # ── Rolling "latest" pre-release on every master push ────────
       - name: Update latest pre-release
         if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
@@ -55,10 +84,11 @@ jobs:
           body: |
             Automated build from the latest commit on `master`.
 
+            **Version:** `${{ steps.version.outputs.VERSION }}`
             **Commit:** ${{ github.sha }}
             **Built:** ${{ github.event.head_commit.timestamp }}
 
-            This is a pre-release. For stable releases use a versioned tag.
+            > This is a pre-release dev build. For stable installs use a versioned release.
           files: installer/output/ContextVolt-Setup.exe
           draft: false
           prerelease: true

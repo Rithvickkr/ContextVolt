@@ -111,28 +111,32 @@ foreach ($item in $include) {
 # ─── Step 6: Create the launcher batch file ──────────────────────
 Write-Host "  [6/6] Creating launcher..." -ForegroundColor Yellow
 
-# The launcher just calls the existing start.bat which already handles everything
+# Batch launcher (with console, useful for debugging)
 $launcherContent = @'
 @echo off
 title ContextVolt
 cd /d "%~dp0app"
-call start.bat
+"%~dp0python\pythonw.exe" run.py
 '@
 
 Set-Content -Path "$BuildDir\ContextVolt.bat" -Value $launcherContent -Encoding ASCII
 
-# Also create the silent VBS launcher (no console window for end users)
+# Silent VBS launcher — no console window shown to end users
 $vbsContent = @'
 '' ContextVolt — Silent Launcher
-'' Runs start.bat with no visible console window.
-Dim shell, appDir
+'' Uses the bundled embedded Python to run the app with no console window.
+Dim shell, fso, appDir, pythonExe, runScript
 Set shell = CreateObject("WScript.Shell")
-appDir = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
-shell.Run "cmd /c """ & appDir & "\app\start.bat""", 0, False
+Set fso   = CreateObject("Scripting.FileSystemObject")
+appDir    = fso.GetParentFolderName(WScript.ScriptFullName)
+pythonExe = appDir & "\python\pythonw.exe"
+runScript = appDir & "\app\run.py"
+shell.CurrentDirectory = appDir & "\app"
+shell.Run """" & pythonExe & """ """ & runScript & """", 0, False
 '@
 
 Set-Content -Path "$BuildDir\ContextVolt.vbs" -Value $vbsContent -Encoding ASCII
-Write-Host "         Created: ContextVolt.vbs (silent launcher)" -ForegroundColor DarkGray
+Write-Host "         Created: ContextVolt.vbs (silent launcher via embedded Python)" -ForegroundColor DarkGray
 
 Write-Host ""
 Write-Host "  ═══════════════════════════════════════════" -ForegroundColor Green

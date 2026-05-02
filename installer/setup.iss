@@ -37,6 +37,7 @@ DefaultGroupName={#MyAppName}
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\app\icon.ico
+DisableDirPage=no
 DisableWelcomePage=no
 WizardImageFile=..\main icon\banner.bmp
 WizardSmallImageFile=..\main icon\small_logo.bmp
@@ -50,7 +51,6 @@ english.WelcomeLabel2=ContextVolt is your local AI-powered assistant that keeps 
 english.FinishedLabel=ContextVolt {#MyAppVersion} has been successfully installed.%n%nYou can launch it any time from the Desktop shortcut or the Start Menu.
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a &Desktop shortcut"; GroupDescription: "Additional options:"; Flags: checkedonce
 
 [Files]
 ; Embedded Python
@@ -68,8 +68,8 @@ Source: "build\ContextVolt.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 Name: "{group}\Uninstall ContextVolt"; Filename: "{uninstallexe}"
 
-; Desktop — controlled by the task above, checked by default
-Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"; Tasks: desktopicon
+; Desktop — always created
+Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 
 [Run]
 ; "Launch ContextVolt now" checkbox on finish screen

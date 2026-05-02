@@ -427,7 +427,7 @@ function navigateTo(view) {
     if (view === 'library') {
         loadContexts();
     } else if (view === 'input') {
-        loadDashboard();
+        if (!_dashboardLoaded) loadDashboard();
     }
 
     // Start polling when entering library/detail; let it self-stop when done

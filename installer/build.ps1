@@ -58,31 +58,22 @@ Write-Host "         pip installed" -ForegroundColor DarkGray
 Write-Host "  [4/6] Installing dependencies (this may take a minute)..." -ForegroundColor Yellow
 $ReqFile = Join-Path $ProjectRoot "requirements.txt"
 
-# Use python -m pip (more reliable than pip.exe with embedded Python)
-# --only-binary=:all: avoids C extension compilation issues
-$pipOutput = & "$PythonDir\python.exe" -m pip install -r $ReqFile --no-warn-script-location --disable-pip-version-check --only-binary=:all: 2>&1
-$pipExitCode = $LASTEXITCODE
+# --prefer-binary uses wheels when available, falls back to source if not.
+# No 2>&1 redirect — PowerShell 5.1 wraps native stderr as NativeCommandError
+# which can falsely mark a successful pip run as failed.
+& "$PythonDir\python.exe" -m pip install -r $ReqFile `
+    --prefer-binary `
+    --no-warn-script-location `
+    --disable-pip-version-check
 
-if ($pipExitCode -ne 0) {
-    Write-Host "         Note: binary-only install had issues, trying with compilation..." -ForegroundColor DarkYellow
-    $pipOutput = & "$PythonDir\python.exe" -m pip install -r $ReqFile --no-warn-script-location --disable-pip-version-check 2>&1
-    $pipExitCode = $LASTEXITCODE
-}
-
-if ($pipExitCode -ne 0) {
-    Write-Host "         ERROR: pip install failed:" -ForegroundColor Red
-    $pipOutput | ForEach-Object { Write-Host "         $_" -ForegroundColor Red }
+if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "  Try running manually:" -ForegroundColor Yellow
-    Write-Host "  $PythonDir\python.exe -m pip install -r $ReqFile" -ForegroundColor Yellow
+    Write-Host "  ERROR: pip install failed (exit $LASTEXITCODE)." -ForegroundColor Red
+    Write-Host "  To debug, run manually:" -ForegroundColor Yellow
+    Write-Host "  $PythonDir\python.exe -m pip install -r $ReqFile --prefer-binary" -ForegroundColor Yellow
     exit 1
 }
 
-$pipOutput | ForEach-Object {
-    if ($_ -match "Successfully installed") {
-        Write-Host "         $_" -ForegroundColor DarkGray
-    }
-}
 Write-Host "         All dependencies installed into embedded Python" -ForegroundColor DarkGray
 
 # ─── Step 5: Copy project files ─────────────────────────────────

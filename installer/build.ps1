@@ -108,35 +108,44 @@ foreach ($item in $include) {
     }
 }
 
-# ─── Step 6: Create the launcher batch file ──────────────────────
+# ─── Step 6: Create launchers ────────────────────────────────────
 Write-Host "  [6/6] Creating launcher..." -ForegroundColor Yellow
 
-# Batch launcher (with console, useful for debugging)
-$launcherContent = @'
+# Debug batch launcher — shows a console window with any errors (for troubleshooting)
+$debugBatContent = @'
 @echo off
 title ContextVolt
-cd /d "%~dp0app"
-"%~dp0python\pythonw.exe" run.py
+set "BASE=%~dp0"
+set "PYTHON=%BASE%python\python.exe"
+set "APP=%BASE%app\run.py"
+set "PYTHONPATH=%BASE%app"
+cd /d "%BASE%python"
+echo Starting ContextVolt...
+"%PYTHON%" "%APP%"
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo ContextVolt exited with an error. See cv_error.log in the app folder.
+    pause
+)
 '@
+Set-Content -Path "$BuildDir\ContextVolt-debug.bat" -Value $debugBatContent -Encoding ASCII
 
-Set-Content -Path "$BuildDir\ContextVolt.bat" -Value $launcherContent -Encoding ASCII
-
-# Silent VBS launcher — no console window shown to end users
+# Silent production launcher — no console window, runs via embedded Python
+# Working directory is set to python\ so embedded DLLs are found correctly
 $vbsContent = @'
-'' ContextVolt — Silent Launcher
-'' Uses the bundled embedded Python to run the app with no console window.
-Dim shell, fso, appDir, pythonExe, runScript
+'' ContextVolt Launcher
+Dim shell, fso, base, python, app
 Set shell = CreateObject("WScript.Shell")
 Set fso   = CreateObject("Scripting.FileSystemObject")
-appDir    = fso.GetParentFolderName(WScript.ScriptFullName)
-pythonExe = appDir & "\python\pythonw.exe"
-runScript = appDir & "\app\run.py"
-shell.CurrentDirectory = appDir & "\app"
-shell.Run """" & pythonExe & """ """ & runScript & """", 0, False
+base   = fso.GetParentFolderName(WScript.ScriptFullName)
+python = base & "\python\pythonw.exe"
+app    = base & "\app\run.py"
+shell.Environment("Process")("PYTHONPATH") = base & "\app"
+shell.CurrentDirectory = base & "\python"
+shell.Run """" & python & """ """ & app & """", 0, False
 '@
-
 Set-Content -Path "$BuildDir\ContextVolt.vbs" -Value $vbsContent -Encoding ASCII
-Write-Host "         Created: ContextVolt.vbs (silent launcher via embedded Python)" -ForegroundColor DarkGray
+Write-Host "         Created: ContextVolt.vbs + ContextVolt-debug.bat" -ForegroundColor DarkGray
 
 Write-Host ""
 Write-Host "  ═══════════════════════════════════════════" -ForegroundColor Green

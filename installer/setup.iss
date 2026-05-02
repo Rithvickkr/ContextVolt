@@ -59,9 +59,9 @@ Source: "build\python\*"; DestDir: "{app}\python"; Flags: ignoreversion recurses
 ; Project files
 Source: "build\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Launcher
-Source: "build\ContextVolt.bat"; DestDir: "{app}"; Flags: ignoreversion
+; Launchers
 Source: "build\ContextVolt.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "build\ContextVolt-debug.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Start Menu
@@ -72,8 +72,8 @@ Name: "{group}\Uninstall ContextVolt"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\ContextVolt"; Filename: "{app}\ContextVolt.vbs"; WorkingDir: "{app}"; IconFilename: "{app}\app\icon.ico"; Comment: "Launch ContextVolt"
 
 [Run]
-; "Launch ContextVolt now" checkbox on finish screen
-Filename: "{app}\ContextVolt.vbs"; Description: "Launch ContextVolt now"; Flags: postinstall shellexec skipifsilent unchecked
+; "Launch ContextVolt now" checkbox on finish screen — use wscript.exe explicitly for VBS
+Filename: "wscript.exe"; Parameters: """{app}\ContextVolt.vbs"""; Description: "Launch ContextVolt now"; Flags: postinstall skipifsilent unchecked
 
 ; "Open GitHub page" link on finish screen
 Filename: "{#MyAppURL}"; Description: "Open the GitHub page"; Flags: postinstall shellexec skipifsilent unchecked

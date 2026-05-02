@@ -111,19 +111,53 @@ Write-Host "  [6/6] Creating launcher..." -ForegroundColor Yellow
 # Debug batch launcher — shows a console window with any errors (for troubleshooting)
 $debugBatContent = @'
 @echo off
-title ContextVolt
+title ContextVolt Debug
 set "BASE=%~dp0"
 set "PYTHON=%BASE%python\python.exe"
-set "APP=%BASE%app\run.py"
+set "APP=%BASE%app\installer.py"
+set "LOCKFILE=%BASE%app\.cv_lock"
 set "PYTHONPATH=%BASE%app"
-cd /d "%BASE%python"
-echo Starting ContextVolt...
-"%PYTHON%" "%APP%"
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo ContextVolt exited with an error. See cv_error.log in the app folder.
-    pause
+
+echo ============================================================
+echo  ContextVolt Debug Launcher
+echo ============================================================
+echo  Base dir : %BASE%
+echo  Python   : %PYTHON%
+echo  App      : %APP%
+echo ============================================================
+echo.
+
+if not exist "%PYTHON%" (
+    echo ERROR: Python not found at %PYTHON%
+    echo The installation may be incomplete.
+    goto end
 )
+
+if not exist "%APP%" (
+    echo ERROR: run.py not found at %APP%
+    echo The installation may be incomplete.
+    goto end
+)
+
+if exist "%LOCKFILE%" (
+    echo NOTE: Lock file found — deleting stale lock before launch.
+    del "%LOCKFILE%"
+)
+
+echo Starting ContextVolt...
+echo.
+cd /d "%BASE%python"
+"%PYTHON%" "%APP%"
+set "EXIT=%ERRORLEVEL%"
+echo.
+echo ============================================================
+echo  ContextVolt exited with code: %EXIT%
+if %EXIT% NEQ 0 (
+    echo  Check cv_error.log in: %BASE%app\
+)
+echo ============================================================
+:end
+pause
 '@
 Set-Content -Path "$BuildDir\ContextVolt-debug.bat" -Value $debugBatContent -Encoding ASCII
 
@@ -136,7 +170,7 @@ Set shell = CreateObject("WScript.Shell")
 Set fso   = CreateObject("Scripting.FileSystemObject")
 base   = fso.GetParentFolderName(WScript.ScriptFullName)
 python = base & "\python\pythonw.exe"
-app    = base & "\app\run.py"
+app    = base & "\app\installer.py"
 shell.Environment("Process")("PYTHONPATH") = base & "\app"
 shell.CurrentDirectory = base & "\python"
 shell.Run """" & python & """ """ & app & """", 0, False

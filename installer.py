@@ -881,8 +881,7 @@ def main():
 
     state.window = window
 
-    _icon = str(PROJECT_ROOT / "icon.ico")
-    webview.start(icon=_icon if os.path.exists(_icon) else None)
+    webview.start()
 
 
 if __name__ == "__main__":

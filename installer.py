@@ -833,11 +833,14 @@ class Api:
         """Launch the main application."""
         state.log("Launching ContextVolt...")
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
-        if EMBEDDED_MODE or not pythonw.exists():
+        using_embedded = EMBEDDED_MODE or not pythonw.exists()
+        if using_embedded:
             python_exe = sys.executable
+            cwd = str(Path(python_exe).parent)  # python\ dir so embedded DLLs are found
         else:
             python_exe = str(pythonw)
-        popen_kwargs = {"cwd": str(PROJECT_ROOT)}
+            cwd = str(PROJECT_ROOT)
+        popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
@@ -854,11 +857,14 @@ def main():
     # If already installed, skip the installer and launch the app directly
     if (PROJECT_ROOT / ".installed").exists():
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
-        if EMBEDDED_MODE or not pythonw.exists():
+        using_embedded = EMBEDDED_MODE or not pythonw.exists()
+        if using_embedded:
             python_exe = sys.executable
+            cwd = str(Path(python_exe).parent)  # python\ dir so embedded DLLs are found
         else:
             python_exe = str(pythonw)
-        popen_kwargs = {"cwd": str(PROJECT_ROOT)}
+            cwd = str(PROJECT_ROOT)
+        popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)

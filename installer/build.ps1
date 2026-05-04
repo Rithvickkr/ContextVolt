@@ -88,7 +88,7 @@ $AppDir = "$BuildDir\app"
 New-Item -ItemType Directory -Path $AppDir | Out-Null
 
 # Copy only the essential files/folders (no venv, .git, .ollama, __pycache__, test files)
-$include = @("backend", "frontend", "extension", "vscode-extension",
+$include = @("backend", "frontend", "extension",
              "installer.py", "run.py", "start.bat", "requirements.txt", "README.md",
              "icon.ico", "icon.png", "extension_install_guide.html")
 

@@ -33,20 +33,14 @@ Switch between different Ollama models without restarting. v2.0 now supports:
 - Better formatting preservation
 - One-click import for entire conversation threads
 
-#### 4. **VS Code Extension Improvements**
-- Browse saved contexts in the sidebar
-- Insert continuation prompts directly at cursor
-- Search contexts from within VS Code
-- Keyboard shortcuts for faster workflow
-
-#### 5. **Redesigned Dashboard**
+#### 4. **Redesigned Dashboard**
 - Modern glassmorphism UI with improved contrast
 - Dark theme optimizations
 - Better context cards with metadata display
 - Responsive design for smaller screens
 - Improved accessibility (WCAG 2.1 AA compliant)
 
-#### 6. **Export & Import**
+#### 5. **Export & Import**
 - Export entire context library as JSON
 - Import contexts from backup files
 - Bulk export conversations
@@ -56,7 +50,7 @@ Switch between different Ollama models without restarting. v2.0 now supports:
 - `GET /api/contexts/export/all` (JSON backup)
 - `POST /api/contexts/import` (restore from backup)
 
-#### 7. **Performance Optimizations**
+#### 6. **Performance Optimizations**
 - 40% faster summarization (improved Ollama integration)
 - 7x faster search (database indexing)
 - 41% reduced memory usage (optimized frontend)

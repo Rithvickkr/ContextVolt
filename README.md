@@ -20,7 +20,6 @@
   <a href="#-features">Features</a> ·
   <a href="#-install">Install</a> ·
   <a href="#-browser-extension">Browser Extension</a> ·
-  <a href="#-vs-code-extension">VS Code</a> ·
   <a href="#-api-reference">API</a> ·
   <a href="#-tech-stack">Tech Stack</a>
 </p>
@@ -47,7 +46,7 @@ No accounts. No API keys required. No data sent anywhere. Everything runs on you
 - **Export** — Download any context as Markdown
 - **Cross-context Q&A** — Ask questions across multiple saved conversations at once
 - **Dark glassmorphism UI** — Clean, native desktop app feel via PyWebView
-- **VS Code sidebar** — Browse and insert contexts directly in your editor
+
 
 ---
 
@@ -112,17 +111,6 @@ Capture full AI conversations from your browser with a single click.
 The extension adds a toolbar button. Click it while viewing a ChatGPT or Claude conversation to send it directly to your ContextVolt library.
 
 > Safari is not supported. macOS users should use Chrome or any Chromium browser.
-
----
-
-## VS Code Extension
-
-Browse and use your saved contexts without leaving your editor.
-
-1. Open the `vscode-extension/` folder in VS Code
-2. Press **F5** to launch the Extension Development Host
-3. Click the sidebar icon to browse your context library
-4. Click any context to insert the continuation prompt at your cursor position
 
 ---
 
@@ -234,7 +222,6 @@ ContextVolt/
 │   ├── css/               # Styles
 │   └── js/app.js          # SPA logic
 ├── extension/             # Chrome / Edge browser extension
-├── vscode-extension/      # VS Code sidebar extension
 └── installer/             # Windows .exe build artifacts (Inno Setup)
 ```
 

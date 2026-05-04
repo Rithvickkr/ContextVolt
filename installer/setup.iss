@@ -47,7 +47,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
 english.WelcomeLabel1=Welcome to ContextVolt Setup
-english.WelcomeLabel2=ContextVolt is your local AI-powered assistant that keeps all your context private — no cloud, no subscriptions.%n%nWhat gets installed:%n%n    Runtime     Embedded Python (no system Python needed)%n    Backend     FastAPI server & local database%n    Dashboard   Browser-based UI%n    Extensions  Browser & VS Code extensions%n%nOllama and the AI model are downloaded automatically on first launch.%n%nClick Next to review the license agreement.
+english.WelcomeLabel2=ContextVolt is your local AI-powered assistant that keeps all your context private — no cloud, no subscriptions.%n%nWhat gets installed:%n%n    Runtime     Embedded Python (no system Python needed)%n    Backend     FastAPI server & local database%n    Dashboard   Browser-based UI%n    Extension   Browser extension%n%nOllama and the AI model are downloaded automatically on first launch.%n%nClick Next to review the license agreement.
 english.FinishedLabel=ContextVolt {#MyAppVersion} has been successfully installed.%n%nYou can launch it any time from the Desktop shortcut or the Start Menu.
 
 [Tasks]

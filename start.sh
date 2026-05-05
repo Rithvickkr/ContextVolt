@@ -45,6 +45,17 @@ if [ ! -f "$VENV_PYTHON" ]; then
     fi
 fi
 
+# ─── CI / headless smoke check ───────────────────────────────────
+# When CONTEXTVOLT_CI=1, skip the pywebview GUI (no display in CI runners)
+# and just verify the backend imports + boots. Short-circuited *before* the
+# pywebview install so CI doesn't pull GUI deps it never uses.
+if [ "${CONTEXTVOLT_CI:-}" = "1" ]; then
+    echo "  CONTEXTVOLT_CI=1 — running headless smoke check, skipping GUI"
+    "$VENV_PIP" install -r requirements.txt --quiet --disable-pip-version-check
+    "$VENV_PYTHON" -c "from backend.main import app; print('  backend import OK')"
+    exit $?
+fi
+
 # ─── Install pywebview if needed ─────────────────────────────────
 # `import webview` returns non-zero on a fresh venv — guard with `if !` so
 # `set -e` doesn't abort the script before we reach the install branch.
@@ -69,16 +80,6 @@ if ! "$VENV_PYTHON" -c "import webview" 2>/dev/null; then
             exit 1
         fi
     fi
-fi
-
-# ─── CI / headless smoke check ───────────────────────────────────
-# When CONTEXTVOLT_CI=1, skip the pywebview GUI (no display in CI runners)
-# and just verify the backend imports + boots. Used by macos-smoke workflow.
-if [ "${CONTEXTVOLT_CI:-}" = "1" ]; then
-    echo "  CONTEXTVOLT_CI=1 — running headless smoke check, skipping GUI"
-    "$VENV_PIP" install -r requirements.txt --quiet --disable-pip-version-check
-    "$VENV_PYTHON" -c "from backend.main import app; print('  backend import OK')"
-    exit $?
 fi
 
 # ─── Launch the GUI installer ────────────────────────────────────

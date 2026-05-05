@@ -251,6 +251,13 @@ def run_installation():
             try:
                 profile = Path.home() / (".zshrc" if IS_MAC else ".bashrc")
                 export_line = f'export OLLAMA_MODELS="{OLLAMA_MODELS_DIR}"'
+                # On a fresh macOS user account .zshrc may not exist yet; create
+                # it so the export actually persists across new shells.
+                if IS_MAC and not profile.exists():
+                    try:
+                        profile.touch()
+                    except Exception:
+                        pass
                 if profile.exists():
                     content = profile.read_text()
                     if "OLLAMA_MODELS" not in content:
@@ -388,6 +395,8 @@ def run_installation():
                 }
                 if IS_WINDOWS:
                     popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+                else:
+                    popen_kwargs["start_new_session"] = True
                 subprocess.Popen([ollama_path, "serve"], **popen_kwargs)
                 time.sleep(3)
                 state.log("  Ollama API started")
@@ -432,9 +441,11 @@ def run_installation():
                     }
                     if IS_WINDOWS:
                         serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    else:
+                        serve_kwargs["start_new_session"] = True
                     subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
                 time.sleep(2)
-        
+
         if not service_running:
             state.log("  Could not start Ollama service")
             state.log(f"  You can pull the model later with: ollama pull {OLLAMA_MODEL}")
@@ -540,6 +551,8 @@ def run_installation():
                     serve_kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "env": ollama_env}
                     if IS_WINDOWS:
                         serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    else:
+                        serve_kwargs["start_new_session"] = True
                     subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
                 time.sleep(2)
 
@@ -843,6 +856,11 @@ class Api:
         popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_kwargs["start_new_session"] = True
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+            popen_kwargs["stdin"] = subprocess.DEVNULL
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
         if state.window:
             state.window.destroy()
@@ -867,6 +885,11 @@ def main():
         popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_kwargs["start_new_session"] = True
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+            popen_kwargs["stdin"] = subprocess.DEVNULL
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
         return
 
@@ -887,6 +910,10 @@ def main():
     state.window = window
 
     def _set_installer_icon():
+        # Windows-only: native taskbar icon via ctypes/user32. macOS/Linux
+        # pywebview backends don't accept .ico anyway; leave the window iconless.
+        if not IS_WINDOWS:
+            return
         _icon = str(PROJECT_ROOT / "icon.ico")
         if not os.path.exists(_icon):
             return

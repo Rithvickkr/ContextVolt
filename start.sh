@@ -73,6 +73,16 @@ if [ $? -ne 0 ]; then
     fi
 fi
 
+# ─── CI / headless smoke check ───────────────────────────────────
+# When CONTEXTVOLT_CI=1, skip the pywebview GUI (no display in CI runners)
+# and just verify the backend imports + boots. Used by macos-smoke workflow.
+if [ "${CONTEXTVOLT_CI:-}" = "1" ]; then
+    echo "  CONTEXTVOLT_CI=1 — running headless smoke check, skipping GUI"
+    "$VENV_PIP" install -r requirements.txt --quiet --disable-pip-version-check
+    "$VENV_PYTHON" -c "from backend.main import app; print('  backend import OK')"
+    exit $?
+fi
+
 # ─── Launch the GUI installer ────────────────────────────────────
 echo "  Launching ContextVolt..."
 "$VENV_PYTHON" installer.py

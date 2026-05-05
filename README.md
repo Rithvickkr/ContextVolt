@@ -72,7 +72,7 @@ start.bat
 curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
 ```
 
-This clones the project to `~/.contextvolt` and adds a `contextvolt` shell command.
+This clones the project to `~/.contextvolt`, creates a Python virtual environment, installs dependencies, and adds a `contextvolt` shell command.
 
 ```bash
 contextvolt        # launch
@@ -81,6 +81,25 @@ contextvolt        # launch
 ```bash
 cd ~/.contextvolt && git pull    # update
 ```
+
+**Manual install (no curl):**
+
+```bash
+git clone https://github.com/Rithvickkr/ContextVolt.git ~/.contextvolt
+cd ~/.contextvolt && bash start.sh
+```
+
+#### macOS notes
+
+- **Source install only.** There's no signed `.app` or `.dmg` — you're running Python directly from the cloned repo. Gatekeeper / notarization warnings don't apply because nothing is being launched from a `.app` bundle.
+- **Apple Silicon and Intel** are both supported via `pip` wheel resolution (`pyobjc`, `sqlite-vec`, `numpy` all ship universal/arm64/x86_64 wheels). CI smoke-tests run on Apple Silicon; Intel coverage relies on community testers — please [open an issue](https://github.com/Rithvickkr/ContextVolt/issues) if anything breaks.
+- **Prerequisites you may need to install first:**
+  ```bash
+  brew install python git           # if not already present
+  xcode-select --install            # required for pyobjc to build if a wheel is missing
+  brew install ollama               # optional — installer will fetch it otherwise
+  ```
+- **Status: beta on macOS.** The author develops on Windows. macOS bug reports are welcome and triaged quickly.
 
 ### Prerequisites
 

@@ -147,9 +147,15 @@ def main():
     # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)
 
-    # Resolve icon path (works both from source and installed builds)
-    _icon = os.path.join(PROJECT_ROOT, "icon.ico")
-    _icon_arg = _icon if os.path.exists(_icon) else None
+    # Resolve icon path (works both from source and installed builds).
+    # Windows prefers .ico (used by the native taskbar-icon code below); other
+    # platforms prefer .png since pywebview's Cocoa/GTK backends don't render .ico.
+    _ico = os.path.join(PROJECT_ROOT, "icon.ico")
+    _png = os.path.join(PROJECT_ROOT, "icon.png")
+    if sys.platform == "win32":
+        _icon_arg = _ico if os.path.exists(_ico) else (_png if os.path.exists(_png) else None)
+    else:
+        _icon_arg = _png if os.path.exists(_png) else (_ico if os.path.exists(_ico) else None)
 
     # Open native window — blocks until the window is closed
     webview.create_window(

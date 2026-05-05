@@ -1,0 +1,48 @@
+name: macOS smoke test
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+# macos-latest runners are arm64 (Apple Silicon) since 2024.
+# This workflow does NOT verify the pywebview GUI — there's no display in CI.
+# It verifies that install.sh / start.sh succeed up through backend import + boot,
+# which catches the most common breakage classes (missing wheels, pip resolver
+# failures, shell-profile bugs, import errors).
+jobs:
+  smoke:
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run start.sh in headless mode
+        env:
+          CONTEXTVOLT_CI: "1"
+        run: bash start.sh
+
+      - name: Boot uvicorn and hit /api/health
+        env:
+          CONTEXTVOLT_CI: "1"
+        run: |
+          ./venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
+          UVICORN_PID=$!
+          # wait for socket
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/health >/dev/null; then
+              echo "  /api/health responded on attempt $i"
+              break
+            fi
+            sleep 1
+          done
+          curl -sSf http://127.0.0.1:8000/api/health
+          kill $UVICORN_PID || true

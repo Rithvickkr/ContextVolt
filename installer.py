@@ -32,6 +32,8 @@ IS_WINDOWS = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 
 PROJECT_ROOT = Path(__file__).parent.absolute()
+sys.path.insert(0, str(PROJECT_ROOT))
+from backend import paths as _paths  # noqa: E402  — must follow sys.path setup
 VENV_PATH = PROJECT_ROOT / "venv"
 VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3")
 VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
@@ -115,12 +117,18 @@ AVAILABLE_EMBED_MODELS = [
     },
 ]
 
-# Store Ollama models within the project folder
-OLLAMA_DIR = PROJECT_ROOT / ".ollama"
-OLLAMA_MODELS_DIR = OLLAMA_DIR / "models"
+# Store Ollama models in the per-user data dir (same place run.py reads it from).
+# On Windows this is PROJECT_ROOT/.ollama (legacy); on Mac/Linux it's under the user data dir.
+OLLAMA_DIR = _paths.ollama_dir()
+OLLAMA_MODELS_DIR = _paths.ollama_models_dir()
 
-# Detect if running from embedded/bundled Python (no venv module)
+# True when running inside a py2app/PyInstaller bundle (read-only .app)
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+
+# Detect if running from embedded/bundled Python (no venv module, or frozen .app)
 def is_embedded_python():
+    if IS_FROZEN:
+        return True
     try:
         import venv  # noqa: F401
         return False
@@ -154,6 +162,7 @@ class InstallState:
         self.error_step = None
         self.installation_complete = False
         self.window = None
+        self.launch_after_close = False  # set by Api.launch_app in frozen bundles
 
     def log(self, message):
         timestamp = time.strftime("%H:%M:%S")
@@ -633,10 +642,11 @@ def run_installation():
         # Escape backslashes for embedding in JS strings
         ext_path_js = ext_path.replace("\\", "\\\\")
 
-        # Write a local HTML guide that opens in the browser
-        guide_path = PROJECT_ROOT / "extension_install_guide.html"
-        # Load the standalone guide template and substitute the actual extension path.
+        # Write a local HTML guide that opens in the browser.
+        # Template ships read-only in PROJECT_ROOT (Resources/ inside a Mac .app);
+        # output goes to the writable user data dir (same as PROJECT_ROOT on Windows).
         guide_template_path = PROJECT_ROOT / "extension_install_guide.html"
+        guide_path = _paths.extension_guide_path()
         try:
             template = guide_template_path.read_text(encoding="utf-8")
         except Exception:
@@ -701,7 +711,7 @@ def run_installation():
         state.log("Installation complete!")
         # Create marker file so launcher knows to run app directly next time
         try:
-            (PROJECT_ROOT / ".installed").write_text("ok")
+            _paths.installed_marker_path().write_text("ok")
         except Exception:
             pass
     except Exception as e:
@@ -765,7 +775,7 @@ class Api:
             return {"success": False, "error": "Unknown model"}
         EMBED_MODEL = model_id
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -780,7 +790,7 @@ class Api:
     def set_cloud_config(self, provider: str, api_key: str, cloud_model: str):
         """Save cloud provider, API key, and model to config.json."""
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -809,7 +819,7 @@ class Api:
         OLLAMA_MODEL = model_id
         # Persist to config.json so the backend picks it up at runtime
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -843,8 +853,19 @@ class Api:
         return {"success": False}
     
     def launch_app(self):
-        """Launch the main application."""
+        """Launch the main application.
+
+        In a frozen Mac .app bundle, sys.executable is the bundle launcher and
+        cannot run arbitrary scripts via subprocess. We instead set a flag and
+        let main() call run.main() in-process after the wizard window closes.
+        On Windows / source installs we keep the subprocess.Popen flow.
+        """
         state.log("Launching ContextVolt...")
+        if IS_FROZEN:
+            state.launch_after_close = True
+            if state.window:
+                state.window.destroy()
+            return {"success": True}
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
         using_embedded = EMBEDDED_MODE or not pythonw.exists()
         if using_embedded:
@@ -871,9 +892,20 @@ class Api:
 # Main Entry Point
 # ─────────────────────────────────────────────────────────────────
 
+def _launch_main_app_inprocess():
+    """Run the main ContextVolt app in this process. Used inside frozen bundles."""
+    import run as _run_module  # imported lazily — avoids loading uvicorn at wizard time
+    _run_module.main()
+
+
 def main():
     # If already installed, skip the installer and launch the app directly
-    if (PROJECT_ROOT / ".installed").exists():
+    if _paths.installed_marker_path().exists():
+        if IS_FROZEN:
+            # Frozen .app: subprocess.Popen against sys.executable doesn't work,
+            # so just run the app in this process.
+            _launch_main_app_inprocess()
+            return
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
         using_embedded = EMBEDDED_MODE or not pythonw.exists()
         if using_embedded:
@@ -950,6 +982,11 @@ def main():
 
     threading.Thread(target=_set_installer_icon, daemon=True).start()
     webview.start()
+
+    # In a frozen Mac .app, Api.launch_app sets this flag instead of spawning a
+    # subprocess. Once the wizard window has closed, hand off to run.main().
+    if state.launch_after_close:
+        _launch_main_app_inprocess()
 
 
 if __name__ == "__main__":

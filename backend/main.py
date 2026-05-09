@@ -241,7 +241,8 @@ def pull_model():
 # Embed model setup
 # ---------------------------------------------------------------------------
 
-_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+from backend.paths import config_path as _config_path  # noqa: E402
+_CFG_PATH = str(_config_path())
 
 _EMBED_MODEL_OPTIONS = [
     {"id": "qwen3-embedding:0.6b", "label": "qwen3-embedding 0.6B", "size": "640 MB",

@@ -16,8 +16,10 @@ import logging
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
+from backend import paths as _paths  # noqa: E402  — must follow sys.path setup
+
 # ─── Crash logging (pythonw.exe has no console) ──────────────────
-_LOG_FILE = os.path.join(PROJECT_ROOT, "cv_error.log")
+_LOG_FILE = str(_paths.log_path())
 logging.basicConfig(
     filename=_LOG_FILE,
     level=logging.ERROR,
@@ -33,7 +35,7 @@ sys.excepthook = _excepthook
 # ─── Single instance enforcement ─────────────────────────────────
 import atexit
 
-_LOCK_FILE = os.path.join(PROJECT_ROOT, ".cv_lock")
+_LOCK_FILE = str(_paths.lock_path())
 
 def _pid_alive(pid: int) -> bool:
     """Non-destructive PID existence check — Windows-safe via OpenProcess."""
@@ -73,7 +75,7 @@ def _release_lock():
         pass
 
 # Configure Ollama models path
-OLLAMA_MODELS_DIR = os.path.join(PROJECT_ROOT, ".ollama", "models")
+OLLAMA_MODELS_DIR = str(_paths.ollama_models_dir())
 os.environ["OLLAMA_MODELS"] = OLLAMA_MODELS_DIR
 
 import uvicorn
@@ -147,15 +149,9 @@ def main():
     # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)
 
-    # Resolve icon path (works both from source and installed builds).
-    # Windows prefers .ico (used by the native taskbar-icon code below); other
-    # platforms prefer .png since pywebview's Cocoa/GTK backends don't render .ico.
-    _ico = os.path.join(PROJECT_ROOT, "icon.ico")
-    _png = os.path.join(PROJECT_ROOT, "icon.png")
-    if sys.platform == "win32":
-        _icon_arg = _ico if os.path.exists(_ico) else (_png if os.path.exists(_png) else None)
-    else:
-        _icon_arg = _png if os.path.exists(_png) else (_ico if os.path.exists(_ico) else None)
+    # Resolve icon path (works both from source and installed builds)
+    _icon = os.path.join(PROJECT_ROOT, "icon.ico")
+    _icon_arg = _icon if os.path.exists(_icon) else None
 
     # Open native window — blocks until the window is closed
     webview.create_window(

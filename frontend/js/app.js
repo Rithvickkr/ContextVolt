@@ -2864,6 +2864,413 @@ async function rebuildEmbeddings() {
 let _settingsConfig = null; // last loaded config from backend
 let _settingsConfigPromise = null; // in-flight fetch (deduplicated)
 
+// ─── ConVX as MCP Server panel ──────────────────────────────────────────
+// Populated each time the settings modal opens. Loopback-only endpoint —
+// the backend rejects non-127.0.0.1 callers, so the token is safe to display.
+
+let _mcpServerInfoCached = null;
+
+function _setMcpStatus(state, text) {
+    const el = $('#settings-mcp-status');
+    if (!el) return;
+    el.dataset.state = state;
+    el.textContent = text;
+}
+
+async function _loadMcpServerPanel(force = false) {
+    if (_mcpServerInfoCached && !force) {
+        _renderMcpServerPanel(_mcpServerInfoCached);
+        // Refresh in background to pick up token regenerations from elsewhere
+        _fetchMcpServerInfo().then(info => {
+            if (info) { _mcpServerInfoCached = info; _renderMcpServerPanel(info); }
+        });
+        return;
+    }
+    _setMcpStatus('loading', 'checking…');
+    const info = await _fetchMcpServerInfo();
+    if (info) {
+        _mcpServerInfoCached = info;
+        _renderMcpServerPanel(info);
+    }
+}
+
+async function _fetchMcpServerInfo() {
+    try {
+        const r = await fetch(`${API}/api/mcp_server/info`);
+        if (!r.ok) {
+            _setMcpStatus('error', `unreachable (${r.status})`);
+            return null;
+        }
+        return await r.json();
+    } catch (e) {
+        _setMcpStatus('error', 'unreachable');
+        return null;
+    }
+}
+
+function _renderMcpServerPanel(info) {
+    if (!info) return;
+    const urlInput   = $('#settings-mcp-http-url');
+    const tokenInput = $('#settings-mcp-http-token');
+    const authChk    = $('#settings-mcp-auth-required');
+    const snippet    = $('#settings-mcp-stdio-snippet');
+
+    if (urlInput)   urlInput.value   = info.http?.url || '';
+    if (tokenInput) tokenInput.value = info.http?.token || '';
+    if (authChk)    authChk.checked  = !!info.http?.auth_required;
+    if (snippet)    snippet.textContent = info.stdio?.config_snippet || '';
+
+    _setMcpStatus('ok', 'running');
+}
+
+function _initMcpServerPanelHandlers() {
+    // Generic copy buttons (any element with data-copy-target)
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-copy-target]');
+        if (!btn) return;
+        const target = document.getElementById(btn.dataset.copyTarget);
+        if (!target) return;
+        const value = target.value !== undefined ? target.value : target.textContent;
+        try {
+            await navigator.clipboard.writeText(value || '');
+            const orig = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('settings-mcp-btn-success');
+            setTimeout(() => {
+                btn.textContent = orig;
+                btn.classList.remove('settings-mcp-btn-success');
+            }, 1200);
+        } catch {
+            showToast('Copy failed', 'error');
+        }
+    });
+
+    // Show/hide token
+    const toggle = $('#settings-mcp-token-toggle');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const input = $('#settings-mcp-http-token');
+            if (!input) return;
+            const showing = input.type === 'text';
+            input.type = showing ? 'password' : 'text';
+            toggle.textContent = showing ? 'Show' : 'Hide';
+            toggle.setAttribute('aria-pressed', String(!showing));
+        });
+    }
+
+    // Regenerate token
+    const regen = $('#settings-mcp-token-regen');
+    if (regen) {
+        regen.addEventListener('click', async () => {
+            if (!confirm('Regenerating revokes the old token immediately. Any client using it will need the new value. Continue?')) return;
+            regen.disabled = true;
+            try {
+                const r = await fetch(`${API}/api/mcp_server/regenerate_token`, { method: 'POST' });
+                if (!r.ok) throw new Error(`status ${r.status}`);
+                const data = await r.json();
+                const input = $('#settings-mcp-http-token');
+                if (input) input.value = data.token || '';
+                if (_mcpServerInfoCached?.http) _mcpServerInfoCached.http.token = data.token;
+                showToast('Token regenerated', 'success');
+            } catch (e) {
+                showToast(`Regenerate failed: ${e.message}`, 'error');
+            } finally {
+                regen.disabled = false;
+            }
+        });
+    }
+
+    // Auth-required toggle
+    const authChk = $('#settings-mcp-auth-required');
+    if (authChk) {
+        authChk.addEventListener('change', async () => {
+            const required = authChk.checked;
+            try {
+                const r = await fetch(`${API}/api/mcp_server/auth_required`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ required }),
+                });
+                if (!r.ok) throw new Error(`status ${r.status}`);
+                if (_mcpServerInfoCached?.http) _mcpServerInfoCached.http.auth_required = required;
+                showToast(required ? 'Bearer token now required' : 'Auth disabled — be careful', required ? 'success' : 'warning');
+            } catch (e) {
+                authChk.checked = !required; // revert
+                showToast(`Update failed: ${e.message}`, 'error');
+            }
+        });
+    }
+}
+
+// ─── Cloudflare Tunnel panel ──────────────────────────────────────────────────
+
+let _tunnelPollTimer = null;
+let _tunnelInfo = null;   // last known status
+
+const _TUNNEL_PLATFORM_CONFIGS = {
+    'claude-ai': (url, _token) => {
+        const base = url.replace(/\/mcp$/, '');
+        return {
+            steps: [
+                'Open <b>claude.ai</b> → avatar → <b>Settings</b> → <b>Integrations</b>',
+                'Click <b>Add integration</b> and paste the MCP URL below',
+                'Claude.ai will redirect you to a ConVX "Allow Access" page — click <b>Allow</b>',
+            ],
+            snippet: null,
+            snippetLabel: null,
+            fields: [
+                { label: 'MCP URL', value: url },
+                { label: 'OAuth authorize', value: `${base}/oauth/authorize` },
+                { label: 'OAuth token', value: `${base}/oauth/token` },
+            ],
+        };
+    },
+    'chatgpt': (url, token) => ({
+        steps: [
+            'Open <b>chatgpt.com</b> → Settings → <b>Connected apps</b>',
+            'Click <b>Add MCP server</b> and enter the URL below',
+            'Add <code>Authorization: Bearer &lt;token&gt;</code> as a custom header',
+        ],
+        snippet: null,
+        snippetLabel: null,
+        fields: [
+            { label: 'MCP URL', value: url },
+            { label: 'Bearer token', value: token },
+        ],
+    }),
+    'grok': (url, _token) => {
+        const base = url.replace(/\/mcp$/, '');
+        return {
+            steps: [
+                'Go to <b>grok.com/connectors</b> → <b>New Connector</b>',
+                'Paste the values below into the OAuth form — leave Client Secret empty',
+                'Click <b>Save &amp; Connect</b> → Grok opens a browser tab → click <b>Allow Access</b>',
+            ],
+            snippet: null,
+            snippetLabel: null,
+            fields: [
+                { label: 'Client ID', value: 'convx' },
+                { label: 'Client Secret', value: '(leave empty)' },
+                { label: 'Authorization Endpoint', value: `${base}/oauth/authorize` },
+                { label: 'Token Endpoint', value: `${base}/oauth/token` },
+                { label: 'Scopes', value: '(leave empty)' },
+                { label: 'Token Auth Method', value: 'none (PKCE only, recommended)' },
+            ],
+        };
+    },
+    'cursor': (url, token) => ({
+        steps: [
+            'Open <b>~/.cursor/mcp.json</b> (global) or <b>.cursor/mcp.json</b> in your project',
+            'Add the snippet below, then restart Cursor',
+        ],
+        snippet: JSON.stringify({
+            mcpServers: {
+                contextvolt: {
+                    url,
+                    headers: { Authorization: `Bearer ${token}` },
+                },
+            },
+        }, null, 2),
+        snippetLabel: 'Paste into ~/.cursor/mcp.json',
+        fields: null,
+    }),
+    'claude-desktop': (url, token) => ({
+        steps: [
+            'Open Claude Desktop → Settings → <b>Developer</b> → <b>Edit Config</b>',
+            'Add the snippet below to your <code>claude_desktop_config.json</code>',
+            'Restart Claude Desktop',
+        ],
+        snippet: JSON.stringify({
+            mcpServers: {
+                contextvolt: {
+                    url,
+                    headers: { Authorization: `Bearer ${token}` },
+                },
+            },
+        }, null, 2),
+        snippetLabel: 'Paste into claude_desktop_config.json',
+        fields: null,
+    }),
+};
+
+function _renderTunnelPlatformContent(platform, mcpUrl, token) {
+    const el = $('#tunnel-platform-content');
+    if (!el) return;
+    const cfg = (_TUNNEL_PLATFORM_CONFIGS[platform] || _TUNNEL_PLATFORM_CONFIGS['claude-ai'])(mcpUrl, token);
+    let html = '<div class="tunnel-platform-body">';
+
+    // Steps
+    if (cfg.steps?.length) {
+        html += '<ol class="tunnel-steps">';
+        cfg.steps.forEach(s => { html += `<li>${s}</li>`; });
+        html += '</ol>';
+    }
+
+    // Key-value fields (URL / token)
+    if (cfg.fields?.length) {
+        cfg.fields.forEach(f => {
+            const id = `tunnel-field-${f.label.replace(/\s+/g, '-').toLowerCase()}`;
+            html += `
+            <div class="settings-mcp-row" style="margin-top:8px;">
+                <label class="settings-mcp-label">${f.label}</label>
+                <div class="settings-mcp-input-row">
+                    <input type="text" class="settings-mcp-input" id="${id}" readonly value="${_esc(f.value)}">
+                    <button type="button" class="settings-mcp-btn" data-copy-target="${id}">Copy</button>
+                </div>
+            </div>`;
+        });
+    }
+
+    // JSON snippet
+    if (cfg.snippet) {
+        const snippetId = 'tunnel-snippet-' + platform;
+        html += `
+        <div class="settings-mcp-row" style="margin-top:8px;">
+            <label class="settings-mcp-label">${cfg.snippetLabel || 'Config snippet'}</label>
+            <div class="settings-mcp-input-row settings-mcp-input-row-stack">
+                <pre class="settings-mcp-code" id="${snippetId}">${_esc(cfg.snippet)}</pre>
+                <button type="button" class="settings-mcp-btn" data-copy-target="${snippetId}">Copy JSON</button>
+            </div>
+        </div>`;
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+function _esc(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function _renderTunnelPanel(data) {
+    _tunnelInfo = data;
+    const badge   = $('#tunnel-badge');
+    const urlInput = $('#tunnel-url-input');
+    const copyBtn  = $('#tunnel-copy-btn');
+    const toggleBtn = $('#tunnel-toggle-btn');
+    const helpText  = $('#tunnel-help-text');
+    const platformSection = $('#tunnel-platform-section');
+
+    if (!badge) return;
+
+    const { status, mcp_url, error } = data;
+
+    badge.dataset.state = status;
+    const labels = { stopped:'stopped', downloading:'downloading…', starting:'connecting…', running:'running', error:'error' };
+    badge.textContent = labels[status] || status;
+
+    const running = status === 'running';
+    const busy    = status === 'downloading' || status === 'starting';
+
+    if (urlInput) urlInput.value = running && mcp_url ? mcp_url : '';
+    if (copyBtn)  copyBtn.disabled = !running;
+
+    if (toggleBtn) {
+        toggleBtn.textContent = running ? 'Stop Tunnel' : (busy ? '…' : 'Start Tunnel');
+        toggleBtn.disabled = busy;
+        toggleBtn.classList.toggle('settings-mcp-btn-danger', running);
+        toggleBtn.classList.toggle('settings-mcp-btn-primary', !running);
+    }
+
+    if (helpText) {
+        if (error) {
+            helpText.innerHTML = `<span style="color:var(--danger,#f87171)">Error: ${_esc(error)}</span>`;
+        } else if (running) {
+            helpText.textContent = "Tunnel active — your vault's /mcp endpoint is reachable over HTTPS. Pick a platform below to get its connection config.";
+        } else if (busy) {
+            helpText.textContent = status === 'downloading'
+                ? 'Downloading cloudflared (~40 MB)…'
+                : 'Establishing tunnel — this usually takes 5–10 seconds…';
+        } else {
+            helpText.textContent = 'cloudflared is downloaded once and cached. Your vault stays on your machine — only /mcp is exposed, protected by your bearer token.';
+        }
+    }
+
+    if (platformSection) platformSection.style.display = running ? 'block' : 'none';
+
+    // If running, refresh the active platform tab
+    if (running && mcp_url) {
+        const active = $('.tunnel-tab.active');
+        const plat = active?.dataset?.platform || 'claude-ai';
+        const token = _mcpServerInfoCached?.http?.token || '';
+        _renderTunnelPlatformContent(plat, mcp_url, token);
+    }
+}
+
+async function _fetchTunnelStatus() {
+    try {
+        const r = await fetch(`${API}/api/mcp_server/tunnel`);
+        if (!r.ok) return null;
+        return await r.json();
+    } catch {
+        return null;
+    }
+}
+
+async function _loadTunnelPanel() {
+    const data = await _fetchTunnelStatus();
+    if (data) _renderTunnelPanel(data);
+}
+
+function _startTunnelPoll() {
+    _stopTunnelPoll();
+    _tunnelPollTimer = setInterval(async () => {
+        const data = await _fetchTunnelStatus();
+        if (!data) return;
+        _renderTunnelPanel(data);
+        // Stop polling once stable
+        if (data.status === 'running' || data.status === 'stopped' || data.status === 'error') {
+            _stopTunnelPoll();
+        }
+    }, 2000);
+}
+
+function _stopTunnelPoll() {
+    if (_tunnelPollTimer) { clearInterval(_tunnelPollTimer); _tunnelPollTimer = null; }
+}
+
+function _initTunnelPanelHandlers() {
+    const toggleBtn = $('#tunnel-toggle-btn');
+    if (!toggleBtn) return;
+
+    toggleBtn.addEventListener('click', async () => {
+        const status = _tunnelInfo?.status || 'stopped';
+        const running = status === 'running';
+        toggleBtn.disabled = true;
+
+        try {
+            const endpoint = running ? '/api/mcp_server/tunnel/stop' : '/api/mcp_server/tunnel/start';
+            const r = await fetch(`${API}${endpoint}`, { method: 'POST' });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+
+            // Immediately refresh and start polling for transient states
+            const data = await _fetchTunnelStatus();
+            if (data) _renderTunnelPanel(data);
+            if (!running) _startTunnelPoll();
+        } catch (e) {
+            showToast(`Tunnel error: ${e.message}`, 'error');
+        } finally {
+            toggleBtn.disabled = false;
+        }
+    });
+
+    // Platform tab switching
+    document.addEventListener('click', (e) => {
+        const tab = e.target.closest('.tunnel-tab');
+        if (!tab) return;
+        document.querySelectorAll('.tunnel-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const plat = tab.dataset.platform;
+        const mcp_url = _tunnelInfo?.mcp_url || '';
+        const token = _mcpServerInfoCached?.http?.token || '';
+        _renderTunnelPlatformContent(plat, mcp_url, token);
+    });
+}
+
 function _prefetchSettingsConfig() {
     if (_settingsConfig || _settingsConfigPromise) return;
     _settingsConfigPromise = fetch(`${API}/api/setup/config`)
@@ -2889,6 +3296,10 @@ async function openSettingsModal() {
 
     // Keyboard trap — keep focus inside while open
     trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
+
+    // Load the ConVX-as-MCP-server panel in parallel — independent of provider config
+    _loadMcpServerPanel();
+    _loadTunnelPanel();
 
     // If already cached, render instantly — no loading state needed
     if (_settingsConfig) {
@@ -3648,14 +4059,20 @@ async function saveSettings() {
     saveBtn.textContent = 'Saving…';
 
     try {
-        // 1. Save Ollama models + user profile in parallel
+        // 1. Save Ollama models + user profile sequentially.
+        // Each endpoint does a read-modify-write on config.json; running them in
+        // parallel races on Windows (os.replace contention → "Failed to fetch")
+        // and also causes lost updates between the three snapshots.
         const profileName  = ($('#profile-name-input')  || {}).value || '';
         const profileAbout = ($('#profile-about-input') || {}).value || '';
-        await Promise.all([
-            fetch(`${API}/api/setup/select-model`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newModel }) }),
-            fetch(`${API}/api/setup/select-embed-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newEmbed }) }),
-            fetch(`${API}/api/setup/save-profile`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: profileName, about: profileAbout }) }),
-        ]);
+        const _post = (url, body) => fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+        });
+        await _post(`${API}/api/setup/select-model`,       { model: newModel });
+        await _post(`${API}/api/setup/select-embed-model`, { model: newEmbed });
+        await _post(`${API}/api/setup/save-profile`,       { name: profileName, about: profileAbout });
 
         // 2. Save cloud API key if entered
         const keyInput = $('#cloud-key-input');
@@ -4610,6 +5027,46 @@ function _askFlushStream() {
     _askScrollToBottom();
 }
 
+// ─── MCP tool cards ──────────────────────────────────────────────────────
+// Tool events arrive between prose tokens. Each card is appended as a sibling
+// to the active streaming-content; we then rotate the streaming target so the
+// next `token` event starts a fresh prose block under the card.
+
+function _askMsgBody() {
+    const msg = $('#ask-streaming-msg');
+    return msg ? msg.querySelector('.ask-msg-body') : null;
+}
+
+function _askRotateStreamingContent() {
+    const body = _askMsgBody();
+    if (!body) return;
+    const old = body.querySelector('#ask-streaming-content');
+    if (old) {
+        // Finalize prior block: render markdown, drop streaming id + cursor.
+        const raw = old.getAttribute('data-raw') || old.textContent || '';
+        old.innerHTML = _askSimpleMarkdown(raw);
+        old.removeAttribute('id');
+        old.removeAttribute('data-raw');
+    }
+    const fresh = document.createElement('div');
+    fresh.className = 'ask-msg-content';
+    fresh.id = 'ask-streaming-content';
+    fresh.innerHTML = '<span class="ask-cursor"></span>';
+    body.appendChild(fresh);
+}
+
+function _askEnsureStreamingContent() {
+    if ($('#ask-streaming-content')) return;
+    _askRotateStreamingContent();
+}
+
+function _askEscapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
 function _askFinalizeMsg(sources) {
     const content = $('#ask-streaming-content');
     if (!content) return;
@@ -4759,6 +5216,7 @@ async function askVault(question) {
                     const data = JSON.parse(line);
                     if (data.token) {
                         _ensureAssistantBubble();
+                        _askEnsureStreamingContent();
                         fullResponse += data.token;
                         _askAppendToken(data.token);
                     }
@@ -4833,6 +5291,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _initSettingsHint(); // Show active models in sidebar hint
     _initSidebarTooltips(); // Sidebar hover tooltips
     _initAskVault(); // Ask Your Vault chat
+    _initMcpServerPanelHandlers(); // ConVX-as-MCP-server settings panel
+    _initTunnelPanelHandlers();    // Cloudflare tunnel card
 
 
     // Skip setup button (service phase)
@@ -5116,6 +5576,23 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#settings-save-btn').addEventListener('click', saveSettings);
     $('#settings-modal').addEventListener('click', (e) => {
         if (e.target === $('#settings-modal')) closeSettingsModal();
+    });
+
+    // Settings sidebar nav — switch active panel
+    document.querySelectorAll('.settings-nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.settingsTab;
+            document.querySelectorAll('.settings-nav-item').forEach(b => {
+                const on = b === btn;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.settings-panel').forEach(p => {
+                p.classList.toggle('active', p.dataset.settingsPanel === tab);
+            });
+            const body = document.querySelector('.settings-modal-body');
+            if (body) body.scrollTop = 0;
+        });
     });
 
     // Cloud key validate + show/hide toggle

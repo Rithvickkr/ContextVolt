@@ -110,3 +110,5 @@ class UserProfileUpdate(BaseModel):
     name: str = ""
     about: str = ""
 
+
+

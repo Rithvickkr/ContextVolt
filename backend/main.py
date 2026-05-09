@@ -11,10 +11,10 @@ import subprocess
 import sys
 import threading
 import time
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from backend.database import (
     init_db,
@@ -59,6 +59,7 @@ from backend.models import (
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
     CloudKeySet, ProviderSelect, CloudKeyValidate, UserProfileUpdate,
 )
+from backend.mcp_http import mount_mcp_http
 from backend.ollama_client import (
     summarize_conversation as _ollama_summarize,
     summarize_conversation_streaming as _ollama_summarize_streaming,
@@ -150,6 +151,11 @@ app.add_middleware(
 
 # Initialize database on startup
 init_db()
+
+
+# Mount ConVX-as-MCP-server over Streamable HTTP. Exposes the same tools and
+# resources as `python -m backend.mcp_server` (stdio) — see backend/mcp_http.py.
+mount_mcp_http(app, path="/mcp")
 
 
 def _try_embed_context(context_id: int | None, summary: dict) -> None:
@@ -1631,7 +1637,7 @@ RULES:
 
     full_prompt = f"{system_prompt}\n\nUSER: {question}\nASSISTANT:"
 
-    # 5. Stream the response via the LLM router (works for both Ollama and cloud)
+    # Stream the response via the LLM router (Ollama or cloud).
     def _stream():
         accumulated: list[str] = []
         persisted = False
@@ -2251,3 +2257,247 @@ def api_restart():
 
     threading.Thread(target=_trigger, daemon=True).start()
     return {"status": "restarting"}
+
+
+# ---------------------------------------------------------------------------
+# ConVX-as-MCP-server — info for the in-app settings panel.
+# Distinct namespace (`mcp_server`) from the host endpoints (`mcp`) above.
+# ---------------------------------------------------------------------------
+
+def _mcp_server_info_payload(request: Request) -> dict:
+    """Build the full payload shown in the settings UI.
+
+    Sensitive: includes the bearer token. Only return on requests bound to
+    loopback — anyone hitting this endpoint from elsewhere shouldn't see it.
+    """
+    from backend.mcp_http import get_http_token, get_auth_required
+
+    # Compose the URL the host should use. We keep the path consistent with
+    # mount_mcp_http() above.
+    host = (request.headers.get("host") or "127.0.0.1:8000").strip()
+    http_url = f"http://{host}/mcp"
+
+    # Detect the venv python actually running the app — that's exactly what
+    # the user should put in their Claude Desktop config.
+    python_path = sys.executable
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server.py"))
+
+    stdio_command = python_path
+    stdio_args = [script_path]
+    stdio_config_snippet = json.dumps({
+        "mcpServers": {
+            "contextvolt": {
+                "command": stdio_command,
+                "args": stdio_args,
+            }
+        }
+    }, indent=2)
+
+    return {
+        "http": {
+            "url": http_url,
+            "auth_required": get_auth_required(),
+            "token": get_http_token(),
+        },
+        "stdio": {
+            "command": stdio_command,
+            "args": stdio_args,
+            "config_snippet": stdio_config_snippet,
+        },
+        "tools": ["search_vault", "get_context", "list_recent_contexts",
+                  "get_chunks", "vault_stats"],
+    }
+
+
+def _is_loopback(request: Request) -> bool:
+    client = request.client
+    host = client.host if client else ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+@app.get("/api/mcp_server/info")
+def mcp_server_info(request: Request):
+    """Full info for the settings panel (URL + token + stdio snippet).
+
+    Loopback-only — refuses requests from anywhere else.
+    """
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    return _mcp_server_info_payload(request)
+
+
+@app.post("/api/mcp_server/regenerate_token")
+def mcp_server_regenerate_token(request: Request):
+    """Generate a fresh bearer token, persist to config.json, return it."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend.mcp_http import regenerate_http_token
+    new_token = regenerate_http_token()
+    return {"token": new_token}
+
+
+@app.post("/api/mcp_server/auth_required")
+def mcp_server_set_auth_required(request: Request, body: dict):
+    """Toggle whether the HTTP transport requires a bearer token."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    if "required" not in body or not isinstance(body["required"], bool):
+        raise HTTPException(status_code=400, detail="body must be {required: bool}")
+    from backend.mcp_http import set_auth_required
+    set_auth_required(body["required"])
+    return {"auth_required": body["required"]}
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Tunnel — gives the local MCP server a public HTTPS URL so that
+# remote LLMs (Grok, ChatGPT, Claude.ai) can reach it.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/mcp_server/tunnel")
+def mcp_tunnel_status(request: Request):
+    """Return current tunnel state + public HTTPS MCP URL (if running)."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    return cloudflare_tunnel.get_status()
+
+
+@app.post("/api/mcp_server/tunnel/start")
+def mcp_tunnel_start(request: Request):
+    """Download cloudflared if needed and start a Quick Tunnel."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    cloudflare_tunnel.start(port=8000)
+    return {"ok": True, "status": cloudflare_tunnel.get_status()["status"]}
+
+
+@app.post("/api/mcp_server/tunnel/stop")
+def mcp_tunnel_stop(request: Request):
+    """Terminate the tunnel process."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    cloudflare_tunnel.stop()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 + PKCE — required by Grok, ChatGPT, Claude.ai remote MCP connectors.
+#
+# Exposes /oauth/authorize and /oauth/token (public — reachable through the
+# Cloudflare tunnel) and /.well-known/oauth-authorization-server (discovery).
+# The issued access_token is the existing MCP bearer token; no new credential
+# is created.
+# ---------------------------------------------------------------------------
+
+from fastapi import Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+
+@app.get("/.well-known/oauth-authorization-server", include_in_schema=False)
+def oauth_discovery(request: Request):
+    """RFC 8414 discovery — some clients fetch this before starting OAuth."""
+    from backend.oauth_server import authorization_server_metadata
+    base = str(request.base_url).rstrip("/")
+    return authorization_server_metadata(base)
+
+
+@app.get("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
+def oauth_authorize_get(
+    response_type: str = "",
+    client_id: str = "",
+    redirect_uri: str = "",
+    code_challenge: str = "",
+    code_challenge_method: str = "S256",
+    state: str = "",
+    scope: str = "",   # accepted but not used — we grant full vault read access
+):
+    """Show the user a consent page."""
+    from backend.oauth_server import CLIENT_ID, _consent_html
+
+    if response_type != "code":
+        raise HTTPException(status_code=400, detail="only response_type=code is supported")
+    if not redirect_uri:
+        raise HTTPException(status_code=400, detail="redirect_uri required")
+    if not code_challenge:
+        raise HTTPException(status_code=400, detail="PKCE code_challenge required")
+    if code_challenge_method != "S256":
+        raise HTTPException(status_code=400, detail="only S256 code_challenge_method supported")
+
+    return _consent_html(
+        client_id=client_id or CLIENT_ID,
+        redirect_uri=redirect_uri,
+        challenge=code_challenge,
+        challenge_method=code_challenge_method,
+        state=state,
+    )
+
+
+@app.post("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
+async def oauth_authorize_post(
+    decision: str = Form(...),
+    redirect_uri: str = Form(...),
+    code_challenge: str = Form(...),
+    client_id: str = Form(default="convx"),
+    state: str = Form(default=""),
+):
+    """User clicked Allow or Deny — redirect back to the client."""
+    from backend.oauth_server import _new_code, _consent_html
+    from urllib.parse import urlencode
+
+    if decision != "allow":
+        params = urlencode({"error": "access_denied", "state": state})
+        return RedirectResponse(f"{redirect_uri}?{params}", status_code=302)
+
+    code = _new_code(
+        challenge=code_challenge,
+        redirect_uri=redirect_uri,
+        client_id=client_id,
+    )
+    params: dict = {"code": code}
+    if state:
+        params["state"] = state
+    return RedirectResponse(f"{redirect_uri}?{urlencode(params)}", status_code=302)
+
+
+@app.post("/oauth/token", include_in_schema=False)
+async def oauth_token(
+    grant_type: str = Form(default=""),
+    code: str = Form(default=""),
+    code_verifier: str = Form(default=""),
+    redirect_uri: str = Form(default=""),
+    client_id: str = Form(default=""),   # accepted for spec compliance, not validated
+):
+    """Exchange an auth code + PKCE verifier for the MCP bearer token."""
+    from backend.oauth_server import _pop_code, _verify_pkce
+    from backend.mcp_http import get_http_token
+
+    def _err(error: str, desc: str = ""):
+        body = {"error": error}
+        if desc:
+            body["error_description"] = desc
+        return JSONResponse(body, status_code=400)
+
+    if grant_type != "authorization_code":
+        return _err("unsupported_grant_type")
+    if not code:
+        return _err("invalid_request", "code required")
+    if not code_verifier:
+        return _err("invalid_request", "code_verifier required")
+
+    entry = _pop_code(code)
+    if not entry:
+        return _err("invalid_grant", "code not found or expired")
+    if not _verify_pkce(code_verifier, entry["challenge"]):
+        return _err("invalid_grant", "PKCE verification failed")
+    if redirect_uri and redirect_uri != entry["redirect_uri"]:
+        return _err("invalid_grant", "redirect_uri mismatch")
+
+    token = get_http_token()
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 315360000,   # 10 years — effectively non-expiring
+        "scope": "",
+    }

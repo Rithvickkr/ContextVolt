@@ -1,7 +1,8 @@
-fastapi
+fastapi>=0.116
 uvicorn[standard]
 requests
 pydantic
 pywebview==6.2.1
 numpy
 sqlite-vec
+mcp>=1.0.0

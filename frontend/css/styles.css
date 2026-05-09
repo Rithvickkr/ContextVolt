@@ -3758,7 +3758,7 @@ body {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-xl);
-    width: 620px;
+    width: 820px;
     max-width: 95vw;
     max-height: 90vh;
     display: flex;
@@ -3766,6 +3766,83 @@ body {
     box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,0.02) inset;
     animation: modalSpring 0.4s var(--ease-spring);
     overflow: hidden;
+}
+
+/* Sectioned settings: sidebar nav + panels */
+.settings-shell {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.settings-nav {
+    flex-shrink: 0;
+    width: 188px;
+    border-right: 1px solid var(--border);
+    padding: 16px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+[data-theme="light"] .settings-nav {
+    background: linear-gradient(180deg, rgba(0,0,0,0.012), transparent);
+}
+
+.settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition), color var(--transition);
+}
+
+.settings-nav-item svg { flex-shrink: 0; opacity: 0.85; }
+
+.settings-nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+}
+
+.settings-nav-item.active {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    box-shadow: inset 2px 0 0 var(--text-primary);
+}
+
+.settings-panel { display: none !important; }
+.settings-panel.active { display: block !important; animation: fadeIn 0.18s ease; }
+.settings-mcp-section.settings-panel.active { display: flex !important; }
+
+@media (max-width: 720px) {
+    .settings-shell { flex-direction: column; }
+    .settings-nav {
+        width: auto;
+        flex-direction: row;
+        overflow-x: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 8px 10px;
+    }
+    .settings-nav-item {
+        flex-shrink: 0;
+        padding: 7px 12px;
+    }
+    .settings-nav-item.active { box-shadow: inset 0 -2px 0 var(--text-primary); }
 }
 
 .settings-modal-header {
@@ -3817,6 +3894,7 @@ body {
     flex-direction: column;
     gap: 4px;
     scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
 }
 
 .settings-modal-body::-webkit-scrollbar { width: 8px; }
@@ -10958,3 +11036,148 @@ kbd {
 @media (max-width: 640px) {
     .cv-onboard-card { width: calc(100vw - 24px); }
 }
+
+/* ── ConVX as MCP Server (settings panel) ────────────────────────── */
+.settings-mcp-section { display: flex; flex-direction: column; gap: 12px; }
+.settings-mcp-status {
+    display: inline-block; margin-left: 10px; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 500; vertical-align: middle;
+}
+.settings-mcp-status[data-state="loading"] { background: rgba(120,120,160,0.18); color: #aab; }
+.settings-mcp-status[data-state="ok"]      { background: rgba(60,200,120,0.18);  color: #3cc878; }
+.settings-mcp-status[data-state="error"]   { background: rgba(220,80,80,0.18);   color: #ff7878; }
+
+.settings-mcp-card {
+    border: 1px solid var(--border, #2a2a3a);
+    border-radius: 12px;
+    padding: 14px 16px;
+    background: rgba(120,120,200,0.04);
+    display: flex; flex-direction: column; gap: 12px;
+}
+.settings-mcp-card-head { display: flex; flex-direction: column; gap: 4px; }
+.settings-mcp-card-title { font-weight: 600; font-size: 13.5px; }
+.settings-mcp-card-sub { font-size: 11.5px; opacity: 0.75; }
+
+.settings-mcp-row { display: flex; flex-direction: column; gap: 6px; }
+.settings-mcp-label {
+    font-size: 11.5px; font-weight: 500; opacity: 0.85; letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+.settings-mcp-input-row {
+    display: flex; gap: 6px; align-items: stretch;
+}
+.settings-mcp-input-row-stack { flex-direction: column; align-items: stretch; }
+.settings-mcp-input {
+    flex: 1; min-width: 0;
+    padding: 7px 10px; border-radius: 7px;
+    border: 1px solid var(--border, #2a2a3a);
+    background: rgba(0,0,0,0.25); color: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+}
+.settings-mcp-input:focus { outline: 1px solid #80a8ff; outline-offset: -1px; }
+.settings-mcp-btn {
+    padding: 6px 12px; border-radius: 7px;
+    border: 1px solid var(--border, #2a2a3a);
+    background: transparent; color: inherit;
+    font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.settings-mcp-btn:hover:not(:disabled) { background: rgba(255,255,255,0.05); }
+.settings-mcp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.settings-mcp-btn-success { border-color: #3cc878 !important; color: #3cc878 !important; }
+.settings-mcp-btn-danger:hover:not(:disabled) { border-color: #ff7878; color: #ff7878; }
+
+.settings-mcp-help { font-size: 11px; opacity: 0.7; margin: 0; }
+.settings-mcp-help code {
+    padding: 1px 5px; border-radius: 4px;
+    background: rgba(0,0,0,0.3);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+}
+
+.settings-mcp-checkbox {
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; font-size: 12.5px;
+}
+.settings-mcp-checkbox input { cursor: pointer; }
+
+.settings-mcp-code {
+    margin: 0; padding: 10px 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.35); border: 1px solid var(--border, #2a2a3a);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; line-height: 1.5;
+    overflow-x: auto; white-space: pre; max-height: 220px;
+}
+
+/* ── Primary action button variant for MCP panel ── */
+.settings-mcp-btn-primary {
+    background: rgba(120,160,255,0.12);
+    border-color: rgba(120,160,255,0.4);
+    color: #a0c0ff;
+}
+.settings-mcp-btn-primary:hover:not(:disabled) {
+    background: rgba(120,160,255,0.2);
+    border-color: #a0c0ff;
+}
+
+/* ── Tunnel status badge ── */
+.tunnel-badge {
+    display: inline-block;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+    padding: 2px 7px; border-radius: 20px;
+    border: 1px solid transparent;
+    text-transform: uppercase;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.tunnel-badge[data-state="stopped"]     { background: rgba(255,255,255,0.06); color: #71717a; border-color: #333; }
+.tunnel-badge[data-state="downloading"],
+.tunnel-badge[data-state="starting"]   { background: rgba(251,191,36,0.12); color: #fbbf24; border-color: rgba(251,191,36,0.35); }
+.tunnel-badge[data-state="running"]    { background: rgba(52,211,153,0.12); color: #34d399; border-color: rgba(52,211,153,0.35); }
+.tunnel-badge[data-state="error"]      { background: rgba(248,113,113,0.12); color: #f87171; border-color: rgba(248,113,113,0.35); }
+
+/* ── Platform tabs ── */
+.tunnel-tabs {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    margin-top: 12px; margin-bottom: 2px;
+    border-bottom: 1px solid var(--border, #2a2a3a);
+    padding-bottom: 0;
+}
+.tunnel-tab {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: rgba(255,255,255,0.45); font-size: 12px; font-weight: 500;
+    padding: 6px 12px 8px; cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tunnel-tab:hover { color: rgba(255,255,255,0.8); }
+.tunnel-tab.active {
+    color: #fff; border-bottom-color: #a0c0ff;
+    background: rgba(120,160,255,0.06);
+}
+
+/* ── Platform content area ── */
+.tunnel-platform-body { padding: 10px 0 4px; }
+.tunnel-steps {
+    margin: 0 0 8px 0; padding-left: 20px;
+    font-size: 12px; line-height: 1.7; opacity: 0.85;
+}
+.tunnel-steps li { margin-bottom: 2px; }
+.tunnel-steps b { color: #e0e0e0; }
+.tunnel-steps code {
+    font-size: 11px; background: rgba(255,255,255,0.07);
+    padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, monospace;
+}
+
+/* Light-theme overrides */
+[data-theme="light"] .tunnel-badge[data-state="stopped"]   { background: #f4f4f5; color: #71717a; border-color: #d4d4d8; }
+[data-theme="light"] .tunnel-badge[data-state="running"]   { background: #d1fae5; color: #059669; border-color: #6ee7b7; }
+[data-theme="light"] .tunnel-badge[data-state="downloading"],
+[data-theme="light"] .tunnel-badge[data-state="starting"]  { background: #fef3c7; color: #d97706; border-color: #fcd34d; }
+[data-theme="light"] .tunnel-badge[data-state="error"]     { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+[data-theme="light"] .tunnel-tab { color: rgba(0,0,0,0.45); }
+[data-theme="light"] .tunnel-tab:hover { color: rgba(0,0,0,0.8); }
+[data-theme="light"] .tunnel-tab.active { color: #1d1d1f; border-bottom-color: #3b82f6; background: rgba(59,130,246,0.06); }
+[data-theme="light"] .settings-mcp-btn-primary { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.4); color: #2563eb; }
+[data-theme="light"] .settings-mcp-btn-primary:hover:not(:disabled) { background: rgba(59,130,246,0.16); border-color: #2563eb; }
+[data-theme="light"] .tunnel-steps code { background: rgba(0,0,0,0.06); }

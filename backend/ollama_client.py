@@ -50,7 +50,8 @@ def _load_default_model() -> str:
     env = os.getenv("OLLAMA_MODEL")
     if env:
         return env
-    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+    from backend.paths import config_path as _config_path
+    cfg_path = str(_config_path())
     try:
         with open(cfg_path, "r", encoding="utf-8") as _f:
             _cfg = json.load(_f)
@@ -68,7 +69,8 @@ def _get_default_model() -> str:
 # All internal functions should call _get_default_model() instead.
 DEFAULT_MODEL = _load_default_model()  # exported for setup_status endpoint
 
-_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+from backend.paths import config_path as _config_path
+_CFG_PATH = str(_config_path())
 
 
 def _get_embed_model() -> str:

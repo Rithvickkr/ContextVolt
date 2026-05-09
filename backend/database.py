@@ -15,7 +15,9 @@ from datetime import datetime, timezone
 
 import sqlite_vec
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "context_volt.db")
+from backend.paths import db_path as _db_path
+
+DB_PATH = str(_db_path())
 
 _log = logging.getLogger("contextvolt")
 

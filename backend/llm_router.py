@@ -10,13 +10,12 @@ Embedding always stays local (Ollama) — see implementation_plan.md.
 
 import json
 import logging
-import os
-import time
 from typing import Iterator
 
 _log = logging.getLogger("contextvolt")
 
-_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+from backend.paths import config_path as _config_path
+_CFG_PATH = str(_config_path())
 
 
 def _read_config() -> dict:

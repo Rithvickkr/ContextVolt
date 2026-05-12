@@ -1505,10 +1505,13 @@ def generate_continuation_prompt(
     budget = _compute_budget(msg_count, len(original_chat), tier)
 
     # ── Lattice (Layer 1 verbatim regions) — STONE ────────────────
-    # Bigger budgets than the heuristic replay because the lattice is the
-    # primary verbatim source: it's evenly distributed across the whole
-    # conversation, while replay is front-loaded by score.
-    lattice_budget = {"compact": 3000, "standard": 8000, "full": 14000}.get(tier, 8000)
+    # The lattice is the primary verbatim source — bigger budgets than the
+    # heuristic replay because lattice content is evenly distributed across
+    # the whole conversation, while replay is front-loaded by score.
+    # "full" is sized so a typical 20–30KB conversation lands without any
+    # truncation; closing-tail facts otherwise get cut from the last middle
+    # sections under fair-share split.
+    lattice_budget = {"compact": 3000, "standard": 10000, "full": 24000}.get(tier, 10000)
     lattice_block = _render_lattice_block(lattice, lattice_budget)
 
     # ── Smart-select key messages ─────────────────────────────────

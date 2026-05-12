@@ -1836,7 +1836,7 @@ def api_cross_retrieve(body: PromptRequest):
     prompt = build_cross_context_prompt(
         retrieved_chunks=top_chunks,
         query=body.query.strip(),
-        prompt_size=body.size,
+        prompt_size=body.size or "standard",
     )
     return {"prompt": prompt, "mode": "retrieval", "chunks_found": len(top_chunks)}
 

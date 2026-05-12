@@ -189,6 +189,16 @@ def _clean_line(line: str) -> str:
     return s
 
 
+def _clean_value(val: str) -> str:
+    """Strip leading/trailing markdown bold markers from an extracted value.
+
+    LLMs like qwen2.5 output 'TOPIC: ** value' — the prefix strip in
+    _clean_line removes ** from the start of the whole line, but not from
+    the value portion after the colon. This strips it from the value itself.
+    """
+    return re.sub(r'^\*+|\*+$', '', val).strip()
+
+
 def _parse_text_summary(response_text: str) -> dict:
     """Parse the structured summary text from the LLM.
 
@@ -215,7 +225,7 @@ def _parse_text_summary(response_text: str) -> dict:
         # ── Section header detection ──────────────────────────────
         if line_lower.startswith("topic:") or line_lower.startswith("main topic:"):
             colon_idx = line.find(":")
-            val = line[colon_idx + 1:].strip()  # type: ignore[index]
+            val = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             # Reject unfilled placeholders like "[one sentence describing the main topic]"
             if val and not (val.startswith("[") and val.endswith("]")):
                 result["main_topic"] = val
@@ -223,47 +233,48 @@ def _parse_text_summary(response_text: str) -> dict:
 
         elif line_lower.startswith("points:") or line_lower.startswith("key points:") or line_lower.startswith("claims:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest:
-                result["key_ideas"] = [p.strip() for p in rest.split(";") if p.strip()] if ";" in rest else [rest]
+                result["key_ideas"] = [_clean_value(p) for p in rest.split(";") if _clean_value(p)] if ";" in rest else [rest]
             current_section = "key_ideas"
 
         elif line_lower.startswith("snapshot:"):
             colon_idx = line.find(":")
-            val = line[colon_idx + 1:].strip()  # type: ignore[index]
+            val = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if val and val.lower() not in ("n/a", "none", "") and not (val.startswith("[") and val.endswith("]")):
                 result["snapshot"] = val
             current_section = "snapshot"
 
         elif line_lower.startswith("vitals:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("none", "n/a"):
-                result["vitals"] = [v.strip() for v in rest.split(";") if v.strip()]
+                result["vitals"] = [_clean_value(v) for v in rest.split(";") if _clean_value(v) and _clean_value(v).lower() not in ("none", "n/a")]
             current_section = "vitals"
 
         elif line_lower.startswith("decided:") or line_lower.startswith("conclusion:") or line_lower.startswith("conclusions:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("nothing yet", "none", "n/a") and not (rest.startswith("[") and rest.endswith("]")):
                 result["conclusions"] = [rest]
             current_section = "conclusions"
 
         elif line_lower.startswith("open:") or line_lower.startswith("unresolved:") or line_lower.startswith("questions:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("none", "n/a", "no additional questions") and not (rest.startswith("[") and rest.endswith("]")):
                 result["unresolved_questions"] = [rest]
             current_section = "unresolved"
 
         # ── Bullet point under the current section ────────────────
         elif raw.startswith(("-", "•", "*", "–")) or re.match(r'^\d+[.)]\s', raw):
-            # Strip bullet marker from the raw line
-            item = re.sub(r'^[-•*–]|\d+[.)]\s*', "", raw, count=1).strip()
+            # Strip bullet marker then markdown bold from the raw line
+            item = _clean_value(re.sub(r'^[-•*–]|\d+[.)]\s*', "", raw, count=1).strip())
             if item and current_section == "key_ideas":
                 result["key_ideas"].append(item)
             elif item and current_section == "vitals":
-                result["vitals"].append(item)  # type: ignore[union-attr]
+                if item.lower() not in ("none", "n/a"):
+                    result["vitals"].append(item)  # type: ignore[union-attr]
             elif item and current_section == "snapshot":
                 result["snapshot"] = (str(result["snapshot"]) + " " + item).strip()
             elif item and current_section == "conclusions":
@@ -1412,19 +1423,23 @@ def _render_lattice_block(
 
     Allocation strategy:
       1. Anchor entries (OPENING / CLOSING / ROOT) get full inclusion first.
-      2. Remaining budget is split evenly across middle SECTION entries
-         (truncated at sentence boundaries when an individual section
-         doesn't fit its slice).
+      2. Remaining budget is split across middle SECTION entries weighted by
+         entity density (sections with more identifier tokens get more budget).
+      3. Any middle section that received no content gets a first-sentence stub
+         so the receiving LLM has a presence signal for every region.
 
-    Output order is chronological — OPENING, sections, CLOSING — regardless
-    of allocation order, so the receiving LLM reads the conversation in
-    forward time.
+    Output order is chronological — OPENING, sections, CLOSING.
     """
     if not lattice or char_budget <= 0:
         return ""
 
+    from backend.entity_extractor import extract_entities  # lazy, avoids circular
+
     def _is_anchor(e: dict) -> bool:
         return e.get("chunk_label", "").upper() in ("OPENING", "CLOSING", "ROOT")
+
+    def _entity_weight(e: dict) -> float:
+        return float(max(len(extract_entities(e.get("content") or "")), 1))
 
     anchors = [e for e in lattice if _is_anchor(e)]
     middles = [e for e in lattice if not _is_anchor(e)]
@@ -1453,18 +1468,20 @@ def _render_lattice_block(
         rendered_for[id(e)] = block
         used += size
 
-    # Pass 2: split remaining budget evenly across middle sections.
+    # Pass 2: entity-weighted budget split for middle sections.
     remaining = max(0, char_budget - used)
     if middles and remaining > 0:
-        per_section = max(remaining // len(middles), 200)
-        for e in middles:
+        weights = [_entity_weight(e) for e in middles]
+        total_w = sum(weights)
+        for e, w in zip(middles, weights):
             if used >= char_budget:
                 break
             content = (e.get("content") or "").strip()
             if not content:
                 continue
             block = _block(e, content)
-            slot = min(per_section, char_budget - used)
+            alloc = max(int(remaining * w / total_w), 200)
+            slot = min(alloc, char_budget - used)
             if len(block) + 2 <= slot:
                 rendered_for[id(e)] = block
                 used += len(block) + 2
@@ -1473,6 +1490,28 @@ def _render_lattice_block(
                 if truncated.strip():
                     rendered_for[id(e)] = truncated
                     used += len(truncated) + 2
+
+    # Pass 3: stub pass — sections that got nothing rendered receive a
+    # first-sentence presence signal (recovers compact-tier recall).
+    unrendered = [e for e in middles if id(e) not in rendered_for]
+    if unrendered:
+        stub_budget = char_budget - used
+        stub_alloc = stub_budget // len(unrendered) if unrendered else 0
+        if stub_alloc >= 60:
+            for e in unrendered:
+                if used >= char_budget:
+                    break
+                content = (e.get("content") or "").strip()
+                if not content:
+                    continue
+                first_sent = re.split(r"[.\n]", content, maxsplit=1)[0].strip()
+                if not first_sent:
+                    continue
+                stub = _block(e, first_sent + "…")
+                slot = min(stub_alloc, char_budget - used)
+                if len(stub) + 2 <= slot:
+                    rendered_for[id(e)] = stub
+                    used += len(stub) + 2
 
     # Emit in chronological order (the order they sit in `lattice`).
     return "\n\n".join(rendered_for[id(e)] for e in lattice if id(e) in rendered_for)

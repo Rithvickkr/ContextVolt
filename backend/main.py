@@ -1972,14 +1972,24 @@ def api_generate_prompt(
                 # Embedding failed — fall back to all chunks
                 top_chunks = all_chunks[:8]
 
+            # Build a lookup for fast chunk access by index (shared below).
+            by_idx = {ch["chunk_index"]: ch for ch in all_chunks}
+            seen_idx = {ch["chunk_index"] for ch in top_chunks}
+
+            # Semantic neighbor expansion — pull adjacent chunks (±1) for
+            # every semantic hit. Catches cases where the matched chunk is
+            # beside the specific fact-bearing chunk (e.g. path in next turn).
+            for ch in list(top_chunks):
+                for ni in (ch["chunk_index"] - 1, ch["chunk_index"] + 1):
+                    if ni in by_idx and ni not in seen_idx:
+                        top_chunks.append(by_idx[ni])
+                        seen_idx.add(ni)
+
             # Entity boost — if the query mentions an identifier-shaped
             # token (deploy key, ticket id, file path), pull the chunks
-            # that contain it. These are appended to top_chunks before
-            # anchoring + chronological sort so they always survive.
+            # that contain it. These survive regardless of semantic score.
             entity_chunk_indices = find_entity_chunks_for_query(context_id, query.strip())
             if entity_chunk_indices:
-                seen_idx = {ch["chunk_index"] for ch in top_chunks}
-                by_idx = {ch["chunk_index"]: ch for ch in all_chunks}
                 for idx in entity_chunk_indices:
                     if idx in by_idx and idx not in seen_idx:
                         top_chunks.append(by_idx[idx])

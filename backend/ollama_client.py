@@ -947,73 +947,136 @@ def _synthesize(
         return _empty_summary()
 
 
+def _build_lattice_entries(
+    text: str, model: str,
+) -> tuple[list[dict], str]:
+    """Run the EXTRACT (map) phase and return (lattice_entries, merged_facts).
+
+    Always chunks by message boundary, regardless of total length, so even
+    short conversations populate the lattice with verbatim per-chunk facts.
+    Each lattice entry: {depth, chunk_label, chunk_range_start, chunk_range_end, content}.
+    """
+    messages = _parse_messages(text)
+    if not messages:
+        # Fall back to a single chunk over the whole text — no message markers found.
+        facts = _extract_chunk(text, model, label="Single")
+        if not facts:
+            return [], ""
+        entry = {"depth": 1, "chunk_label": "ROOT",
+                 "chunk_range_start": 0, "chunk_range_end": 0, "content": facts}
+        return [entry], f"[ROOT]\n{facts}"
+
+    anchor_count = 2 if len(messages) > 4 else 0
+    opening = '\n\n'.join(messages[:anchor_count]) if anchor_count else ''
+    closing = '\n\n'.join(messages[-anchor_count:]) if anchor_count and len(messages) > anchor_count * 2 else ''
+
+    if anchor_count and len(messages) > anchor_count * 2:
+        middle_messages = messages[anchor_count:-anchor_count]
+        middle_start = anchor_count
+    else:
+        middle_messages = messages
+        middle_start = 0
+    middle_text = '\n\n'.join(middle_messages)
+    middle_chunks = _split_by_messages(
+        middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1,
+    ) if middle_text else []
+
+    entries: list[dict] = []
+    merged_parts: list[str] = []
+
+    # Track per-chunk message ranges so the lattice rows know which turns each
+    # extraction covers. We re-parse each chunk's own message list because
+    # _split_by_messages may have inserted overlap.
+    if opening:
+        op_facts = _extract_chunk(opening, model, label="Opening")
+        if op_facts:
+            entries.append({
+                "depth": 1, "chunk_label": "OPENING",
+                "chunk_range_start": 0, "chunk_range_end": anchor_count - 1,
+                "content": op_facts,
+            })
+            merged_parts.append(f"[OPENING]\n{op_facts}")
+
+    cursor = middle_start
+    for idx, chunk in enumerate(middle_chunks):
+        chunk_msgs = _parse_messages(chunk) or [chunk]
+        n = len(chunk_msgs)
+        start = cursor
+        end = cursor + n - 1
+        cursor = end + 1
+        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
+        if facts:
+            entries.append({
+                "depth": 1, "chunk_label": f"SECTION {idx+1}",
+                "chunk_range_start": start, "chunk_range_end": end,
+                "content": facts,
+            })
+            merged_parts.append(f"[SECTION {idx+1}]\n{facts}")
+
+    if closing:
+        cl_facts = _extract_chunk(closing, model, label="Closing")
+        if cl_facts:
+            entries.append({
+                "depth": 1, "chunk_label": "CLOSING",
+                "chunk_range_start": len(messages) - anchor_count,
+                "chunk_range_end": len(messages) - 1,
+                "content": cl_facts,
+            })
+            merged_parts.append(f"[CLOSING — most recent, highest priority]\n{cl_facts}")
+
+    return entries, "\n\n".join(merged_parts)
+
+
+def summarize_with_lattice(
+    text: str,
+    model: str | None = None,
+    important_snippets: list[str] | None = None,
+) -> dict:
+    """Summarize a conversation and return both the 6-field summary AND the
+    per-chunk lattice entries that fed it.
+
+    Pipeline (Phase 1 of the Memory Lattice):
+      EXTRACT (map) — Always chunk by message boundary. Each chunk is run through
+        _extract_chunk which produces a verbatim fact list. The per-chunk
+        outputs are the Layer-1 lattice entries.
+
+      MERGE — concatenate extractions in order. No LLM call.
+
+      SYNTHESIZE (reduce) — one final call from merged facts produces the
+        6-field summary. Same as before.
+
+    Returns: {"summary": dict, "lattice": [entry, ...]}.
+
+    Starred snippets are still ignored here — they're stored verbatim in
+    important_notes and displayed by the continuation builder directly.
+    """
+    model = model or _get_default_model()
+    first_user, last_asst = _conversation_anchors(text)
+
+    lattice, merged_facts = _build_lattice_entries(text, model)
+
+    # If extraction returned nothing (e.g. extreme model failure), fall back to
+    # synthesizing on the raw text so we still produce a usable summary.
+    source = merged_facts if merged_facts else text[:_CHAR_LIMIT]  # type: ignore[index]
+    summary = _synthesize(
+        source, model=model, label="Final",
+        first_user=first_user, last_asst=last_asst,
+    )
+    return {"summary": summary, "lattice": lattice}
+
+
 def summarize_conversation(
     text: str,
     model: str | None = None,
     important_snippets: list[str] | None = None,
 ) -> dict:
+    """Backward-compatible wrapper: returns only the 6-field summary dict.
+
+    Callers that need the lattice should use summarize_with_lattice() instead.
     """
-    Summarize a conversation using a two-phase Map-Reduce pipeline.
-
-    Phase 1 — EXTRACT (map): Each chunk gets an independent constrained extraction call.
-      The model is only asked to LIST facts (decisions, exact errors, commands, file paths).
-      This is reliable on small models; it preserves verbatim values.
-
-    Phase 2 — MERGE: All extraction outputs are concatenated in order. No LLM involved —
-      nothing is lost in this step.
-
-    Phase 3 — SYNTHESIZE (reduce): A single final LLM call works from the clean merged
-      facts to produce the 6-field summary. One compression step instead of N chained ones.
-
-    Short conversations (≤ _CHAR_LIMIT) skip the map/merge and go straight to synthesis
-      using the raw conversation text — quality is still better because SYNTHESIZE_PROMPT
-      is more structured than the old single-pass SUMMARIZE_PROMPT.
-
-    Starred messages (important_snippets) are stored separately in the database
-      (important_notes column) and displayed verbatim in the continuation prompt.
-      They do NOT influence the summary — keeping the summary a balanced representation
-      of the full conversation.
-    """
-    model = model or _get_default_model()
-    first_user, last_asst = _conversation_anchors(text)
-
-    # Short conversation: synthesize directly from raw text
-    if len(text) <= _CHAR_LIMIT:
-        return _synthesize(text, model=model, label="Single",
-                           first_user=first_user, last_asst=last_asst)
-
-    # Long conversation: Map-Reduce
-    messages = _parse_messages(text)
-    anchor_count = 2
-    opening, closing = _anchor_text(messages, anchor_count)
-
-    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
-    middle_text = '\n\n'.join(middle_messages)
-    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
-
-    # MAP: extract facts from each section independently
-    all_extractions: list[str] = []
-
-    opening_facts = _extract_chunk(opening, model, label="Opening")
-    if opening_facts:
-        all_extractions.append(f"[OPENING]\n{opening_facts}")
-
-    for idx, chunk in enumerate(middle_chunks):
-        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
-        if facts:
-            all_extractions.append(f"[SECTION {idx+1}]\n{facts}")
-
-    if closing:
-        closing_facts = _extract_chunk(closing, model, label="Closing")
-        if closing_facts:
-            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{closing_facts}")
-
-    # MERGE: concatenate all extractions — no LLM, nothing is lost
-    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:_CHAR_LIMIT]  # type: ignore[index]
-
-    # SYNTHESIZE: one final call from clean merged facts
-    return _synthesize(merged_facts, model=model, label="Final",
-                       first_user=first_user, last_asst=last_asst)
+    return summarize_with_lattice(
+        text, model=model, important_snippets=important_snippets,
+    )["summary"]
 
 
 def summarize_conversation_streaming(

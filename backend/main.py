@@ -52,6 +52,8 @@ from backend.database import (
     update_ask_session,
     delete_ask_session,
     get_context_by_url,
+    create_lattice_entries,
+    delete_lattice_by_context,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -81,6 +83,7 @@ from backend.llm_router import (
     is_cloud_active,
     summarize_conversation,
     summarize_conversation_streaming,
+    summarize_with_lattice,
     generate as router_generate,
     generate_stream as router_generate_stream,
 )
@@ -771,7 +774,15 @@ def api_capture(req: CaptureRequest):
             if chunks:
                 create_chunks(cid, chunks)
 
-            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            sl = summarize_with_lattice(text, important_snippets=snippets or None)
+            real_summary = sl["summary"]
+            lattice = sl.get("lattice") or []
+            # Replace any prior lattice for this context — capture is the
+            # canonical (re)build path, so old versions are not retained yet.
+            delete_lattice_by_context(cid)
+            if lattice:
+                create_lattice_entries(cid, lattice)
+
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
             if new_title and new_title not in ("No topic extracted", "N/A"):
@@ -855,7 +866,13 @@ def api_resummarize(context_id: int):
 
     def _bg_resummarize(cid: int, text: str, snippets: list) -> None:
         try:
-            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            sl = summarize_with_lattice(text, important_snippets=snippets or None)
+            real_summary = sl["summary"]
+            lattice = sl.get("lattice") or []
+            delete_lattice_by_context(cid)
+            if lattice:
+                create_lattice_entries(cid, lattice)
+
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
             if new_title and new_title not in ("No topic extracted", "N/A"):

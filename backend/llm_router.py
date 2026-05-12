@@ -317,110 +317,28 @@ def summarize_with_lattice(text: str, important_snippets: list[str] | None = Non
         from backend.ollama_client import summarize_with_lattice as _ollama_with_lattice
         return _ollama_with_lattice(text, important_snippets=important_snippets)
 
-    # Cloud — reuse the existing single-pass/map-reduce paths from
-    # summarize_conversation(), and synthesize a flat lattice from whatever
-    # facts were extracted on the way.
+    # Cloud — build a verbatim lattice from raw message-bounded text (no
+    # extract LLM call) and then synthesize the 6-field summary from the
+    # same regions. This sidesteps the smart-cloud-model paraphrasing
+    # problem: Gemini/GPT-4 routinely "improve" extract output by rewriting,
+    # which destroys the specific values STONE-style continuation prompts
+    # need to surface. Raw chunks preserve everything.
     from backend.ollama_client import (
-        EXTRACT_PROMPT, SYNTHESIZE_PROMPT, _parse_text_summary,
-        _conversation_anchors, _split_by_messages, _empty_summary,
-        _parse_messages, _anchor_text, _CHUNK_LIMIT,
+        SYNTHESIZE_PROMPT, _parse_text_summary,
+        _conversation_anchors, _empty_summary,
+        _build_lattice_entries,
     )
 
     first_user, last_asst = _conversation_anchors(text)
     cloud_char_limit = 100_000
 
-    lattice: list[dict] = []
-    summary: dict | None = None
+    lattice, merged_facts = _build_lattice_entries(text)
+    source = merged_facts if merged_facts else text[:cloud_char_limit]
 
-    if len(text) <= cloud_char_limit:
-        # Short — single extract for the lattice, then synthesize.
-        extract_prompt = EXTRACT_PROMPT.format(conversation=text[:cloud_char_limit])
-        try:
-            res = generate(extract_prompt, temperature=0.1, max_tokens=1200, timeout=180)
-            extracted = (res.get("response") or "").strip()
-        except Exception as e:
-            _log.warning("Cloud single-extract failed: %s", e)
-            extracted = ""
-
-        msgs = _parse_messages(text)
-        if extracted:
-            lattice.append({
-                "depth": 1, "chunk_label": "ROOT",
-                "chunk_range_start": 0,
-                "chunk_range_end": max(0, len(msgs) - 1),
-                "content": extracted,
-            })
-
-        source = extracted if extracted else text[:cloud_char_limit]
-        synth_prompt = SYNTHESIZE_PROMPT.format(
-            first_user=first_user[:800] or "(not available)",
-            last_asst=last_asst[:800] or "(not available)",
-            merged_facts=source,
-        )
-        try:
-            r = generate(synth_prompt, temperature=0.2, max_tokens=2000, timeout=180)
-            response_text = (r.get("response") or "").strip()
-            summary = _parse_text_summary(response_text) if response_text else _empty_summary()
-        except Exception as e:
-            _log.warning("Cloud synthesize failed: %s", e)
-            summary = _empty_summary()
-
-        return {"summary": summary, "lattice": lattice}
-
-    # Long cloud — map-reduce with lattice entries per chunk.
-    messages = _parse_messages(text)
-    anchor_count = 2
-    opening, closing = _anchor_text(messages, anchor_count)
-    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
-    middle_text = '\n\n'.join(middle_messages)
-    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
-
-    all_extractions: list[str] = []
-    cursor = anchor_count
-
-    def _extract(chunk_text: str) -> str:
-        try:
-            r = generate(EXTRACT_PROMPT.format(conversation=chunk_text[:_CHUNK_LIMIT]),
-                         temperature=0.1, max_tokens=800, timeout=120)
-            return (r.get("response") or "").strip()
-        except Exception as e:
-            _log.warning("Cloud extract failed: %s", e)
-            return ""
-
-    if opening:
-        e = _extract(opening)
-        if e:
-            lattice.append({"depth": 1, "chunk_label": "OPENING",
-                            "chunk_range_start": 0, "chunk_range_end": anchor_count - 1,
-                            "content": e})
-            all_extractions.append(f"[OPENING]\n{e}")
-
-    for idx, chunk in enumerate(middle_chunks):
-        chunk_msgs = _parse_messages(chunk) or [chunk]
-        n = len(chunk_msgs)
-        start, end = cursor, cursor + n - 1
-        cursor = end + 1
-        e = _extract(chunk)
-        if e:
-            lattice.append({"depth": 1, "chunk_label": f"SECTION {idx+1}",
-                            "chunk_range_start": start, "chunk_range_end": end,
-                            "content": e})
-            all_extractions.append(f"[SECTION {idx+1}]\n{e}")
-
-    if closing:
-        e = _extract(closing)
-        if e:
-            lattice.append({"depth": 1, "chunk_label": "CLOSING",
-                            "chunk_range_start": len(messages) - anchor_count,
-                            "chunk_range_end": len(messages) - 1,
-                            "content": e})
-            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{e}")
-
-    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:cloud_char_limit]
     synth_prompt = SYNTHESIZE_PROMPT.format(
         first_user=first_user[:800] or "(not available)",
         last_asst=last_asst[:800] or "(not available)",
-        merged_facts=merged_facts[:cloud_char_limit],
+        merged_facts=source[:cloud_char_limit],
     )
     try:
         r = generate(synth_prompt, temperature=0.2, max_tokens=2000, timeout=180)

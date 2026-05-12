@@ -54,6 +54,7 @@ from backend.database import (
     get_context_by_url,
     create_lattice_entries,
     delete_lattice_by_context,
+    get_lattice_entries_by_context,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -2012,7 +2013,7 @@ def api_generate_prompt(
     summary = ctx["summary"]
     if isinstance(summary, dict):
         all_chunks_static = get_chunks_by_context(context_id)
-        has_real_summary = bool(summary.get("key_ideas"))
+        lattice_entries = get_lattice_entries_by_context(context_id) or None
         prompt = generate_continuation_prompt(
             summary,
             ctx.get("original_chat", ""),
@@ -2021,6 +2022,7 @@ def api_generate_prompt(
             created_at=ctx.get("created_at", ""),
             prompt_size=effective_size,
             chunks=all_chunks_static or None,
+            lattice=lattice_entries,
         )
         mode = "context" if all_chunks_static else "static"
         return {

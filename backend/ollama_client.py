@@ -947,28 +947,32 @@ def _synthesize(
         return _empty_summary()
 
 
-def _build_lattice_entries(
-    text: str, model: str,
-) -> tuple[list[dict], str]:
-    """Run the EXTRACT (map) phase and return (lattice_entries, merged_facts).
+def _build_lattice_entries(text: str) -> tuple[list[dict], str]:
+    """Build Layer-1 lattice entries from verbatim per-region chunks of text.
 
-    Always chunks by message boundary, regardless of total length, so even
-    short conversations populate the lattice with verbatim per-chunk facts.
-    Each lattice entry: {depth, chunk_label, chunk_range_start, chunk_range_end, content}.
+    Each entry holds the raw message-bounded text for one region of the
+    conversation (OPENING / SECTION N / CLOSING). No LLM extraction is run —
+    we tried that on both Gemini 2.5 Flash and qwen2.5:1.5b and neither
+    preserved specific values reliably (the small model truncates, the big
+    cloud model paraphrases). Storing raw text trades a bit of size for full
+    fidelity, which is what STONE-style continuation prompts actually need.
+
+    Also returns a "merged_facts" string formed from the same regions so the
+    SYNTHESIZE step still gets structured per-region input. Synthesis is
+    still allowed to paraphrase for the human-readable summary, but the
+    lattice itself stays verbatim.
     """
     messages = _parse_messages(text)
     if not messages:
-        # Fall back to a single chunk over the whole text — no message markers found.
-        facts = _extract_chunk(text, model, label="Single")
-        if not facts:
-            return [], ""
         entry = {"depth": 1, "chunk_label": "ROOT",
-                 "chunk_range_start": 0, "chunk_range_end": 0, "content": facts}
-        return [entry], f"[ROOT]\n{facts}"
+                 "chunk_range_start": 0, "chunk_range_end": 0,
+                 "content": text}
+        return [entry], f"[ROOT]\n{text}"
 
     anchor_count = 2 if len(messages) > 4 else 0
-    opening = '\n\n'.join(messages[:anchor_count]) if anchor_count else ''
-    closing = '\n\n'.join(messages[-anchor_count:]) if anchor_count and len(messages) > anchor_count * 2 else ''
+    opening_msgs = messages[:anchor_count] if anchor_count else []
+    closing_msgs = (messages[-anchor_count:]
+                    if anchor_count and len(messages) > anchor_count * 2 else [])
 
     if anchor_count and len(messages) > anchor_count * 2:
         middle_messages = messages[anchor_count:-anchor_count]
@@ -977,25 +981,26 @@ def _build_lattice_entries(
         middle_messages = messages
         middle_start = 0
     middle_text = '\n\n'.join(middle_messages)
+    # Keep per-section chunks reasonably small so the prompt-budget renderer
+    # has flexibility to drop / truncate without losing whole regions. The
+    # numeric limit here is independent of _CHUNK_LIMIT (which sized inputs
+    # to the LLM extract pass that we no longer run).
+    _LATTICE_SECTION_CHARS = 6000
     middle_chunks = _split_by_messages(
-        middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1,
+        middle_text, chunk_char_limit=_LATTICE_SECTION_CHARS, overlap=0,
     ) if middle_text else []
 
     entries: list[dict] = []
     merged_parts: list[str] = []
 
-    # Track per-chunk message ranges so the lattice rows know which turns each
-    # extraction covers. We re-parse each chunk's own message list because
-    # _split_by_messages may have inserted overlap.
-    if opening:
-        op_facts = _extract_chunk(opening, model, label="Opening")
-        if op_facts:
-            entries.append({
-                "depth": 1, "chunk_label": "OPENING",
-                "chunk_range_start": 0, "chunk_range_end": anchor_count - 1,
-                "content": op_facts,
-            })
-            merged_parts.append(f"[OPENING]\n{op_facts}")
+    if opening_msgs:
+        op_text = '\n\n'.join(opening_msgs)
+        entries.append({
+            "depth": 1, "chunk_label": "OPENING",
+            "chunk_range_start": 0, "chunk_range_end": anchor_count - 1,
+            "content": op_text,
+        })
+        merged_parts.append(f"[OPENING]\n{op_text}")
 
     cursor = middle_start
     for idx, chunk in enumerate(middle_chunks):
@@ -1004,25 +1009,22 @@ def _build_lattice_entries(
         start = cursor
         end = cursor + n - 1
         cursor = end + 1
-        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
-        if facts:
-            entries.append({
-                "depth": 1, "chunk_label": f"SECTION {idx+1}",
-                "chunk_range_start": start, "chunk_range_end": end,
-                "content": facts,
-            })
-            merged_parts.append(f"[SECTION {idx+1}]\n{facts}")
+        entries.append({
+            "depth": 1, "chunk_label": f"SECTION {idx+1}",
+            "chunk_range_start": start, "chunk_range_end": end,
+            "content": chunk,
+        })
+        merged_parts.append(f"[SECTION {idx+1}]\n{chunk}")
 
-    if closing:
-        cl_facts = _extract_chunk(closing, model, label="Closing")
-        if cl_facts:
-            entries.append({
-                "depth": 1, "chunk_label": "CLOSING",
-                "chunk_range_start": len(messages) - anchor_count,
-                "chunk_range_end": len(messages) - 1,
-                "content": cl_facts,
-            })
-            merged_parts.append(f"[CLOSING — most recent, highest priority]\n{cl_facts}")
+    if closing_msgs:
+        cl_text = '\n\n'.join(closing_msgs)
+        entries.append({
+            "depth": 1, "chunk_label": "CLOSING",
+            "chunk_range_start": len(messages) - anchor_count,
+            "chunk_range_end": len(messages) - 1,
+            "content": cl_text,
+        })
+        merged_parts.append(f"[CLOSING — most recent, highest priority]\n{cl_text}")
 
     return entries, "\n\n".join(merged_parts)
 
@@ -1053,7 +1055,7 @@ def summarize_with_lattice(
     model = model or _get_default_model()
     first_user, last_asst = _conversation_anchors(text)
 
-    lattice, merged_facts = _build_lattice_entries(text, model)
+    lattice, merged_facts = _build_lattice_entries(text)
 
     # If extraction returned nothing (e.g. extreme model failure), fall back to
     # synthesizing on the raw text so we still produce a usable summary.
@@ -1403,6 +1405,79 @@ def _message_turn_label(orig_idx: int, msg_count: int, role: str) -> str:
     return " - ".join(parts)
 
 
+def _render_lattice_block(
+    lattice: list[dict] | None, char_budget: int,
+) -> str:
+    """Render Layer-1 lattice entries as a verbatim block, budget-capped.
+
+    Allocation strategy:
+      1. Anchor entries (OPENING / CLOSING / ROOT) get full inclusion first.
+      2. Remaining budget is split evenly across middle SECTION entries
+         (truncated at sentence boundaries when an individual section
+         doesn't fit its slice).
+
+    Output order is chronological — OPENING, sections, CLOSING — regardless
+    of allocation order, so the receiving LLM reads the conversation in
+    forward time.
+    """
+    if not lattice or char_budget <= 0:
+        return ""
+
+    def _is_anchor(e: dict) -> bool:
+        return e.get("chunk_label", "").upper() in ("OPENING", "CLOSING", "ROOT")
+
+    anchors = [e for e in lattice if _is_anchor(e)]
+    middles = [e for e in lattice if not _is_anchor(e)]
+
+    rendered_for: dict[int, str] = {}  # id(entry) -> rendered block
+    used = 0
+
+    def _block(entry: dict, content: str) -> str:
+        return f"[{entry.get('chunk_label', '')}]\n{content}".strip()
+
+    # Pass 1: include anchors in full (they're typically tiny).
+    for e in anchors:
+        content = (e.get("content") or "").strip()
+        if not content:
+            continue
+        block = _block(e, content)
+        size = len(block) + 2
+        if used + size > char_budget:
+            remaining = char_budget - used
+            if remaining > 80:
+                truncated = _truncate_at_sentence(block, remaining)
+                if truncated.strip():
+                    rendered_for[id(e)] = truncated
+                    used += len(truncated) + 2
+            continue
+        rendered_for[id(e)] = block
+        used += size
+
+    # Pass 2: split remaining budget evenly across middle sections.
+    remaining = max(0, char_budget - used)
+    if middles and remaining > 0:
+        per_section = max(remaining // len(middles), 200)
+        for e in middles:
+            if used >= char_budget:
+                break
+            content = (e.get("content") or "").strip()
+            if not content:
+                continue
+            block = _block(e, content)
+            slot = min(per_section, char_budget - used)
+            if len(block) + 2 <= slot:
+                rendered_for[id(e)] = block
+                used += len(block) + 2
+            else:
+                truncated = _truncate_at_sentence(block, slot - 2)
+                if truncated.strip():
+                    rendered_for[id(e)] = truncated
+                    used += len(truncated) + 2
+
+    # Emit in chronological order (the order they sit in `lattice`).
+    return "\n\n".join(rendered_for[id(e)] for e in lattice if id(e) in rendered_for)
+
+
 def generate_continuation_prompt(
     summary: dict,
     original_chat: str,
@@ -1411,6 +1486,7 @@ def generate_continuation_prompt(
     created_at: str = "",
     prompt_size: str = "standard",
     chunks: list[dict] | None = None,
+    lattice: list[dict] | None = None,
 ) -> str:
     """Build a structured XML continuation prompt deterministically (no LLM call).
 
@@ -1418,6 +1494,7 @@ def generate_continuation_prompt(
     the context as a natural conversation transcript rather than a structured dossier.
 
     overview:           compact 5-field digest (topic, state, decided, open, vitals)
+    key_facts:          verbatim Layer-1 lattice extractions (STONE) — when present
     conversation_replay: key messages in chronological order with turn labels
     code_artifacts:     extracted code blocks
     important_context:  verbatim starred snippets
@@ -1426,6 +1503,13 @@ def generate_continuation_prompt(
     messages = _parse_messages(original_chat)
     msg_count = len(messages)
     budget = _compute_budget(msg_count, len(original_chat), tier)
+
+    # ── Lattice (Layer 1 verbatim regions) — STONE ────────────────
+    # Bigger budgets than the heuristic replay because the lattice is the
+    # primary verbatim source: it's evenly distributed across the whole
+    # conversation, while replay is front-loaded by score.
+    lattice_budget = {"compact": 3000, "standard": 8000, "full": 14000}.get(tier, 8000)
+    lattice_block = _render_lattice_block(lattice, lattice_budget)
 
     # ── Smart-select key messages ─────────────────────────────────
     selected = _select_key_messages(messages, char_budget=budget["replay"], chunks=chunks)
@@ -1474,6 +1558,12 @@ def generate_continuation_prompt(
     overview_text = _build_overview(summary, budget["overview"])
     if overview_text:
         sections.append(f"\n<overview>\n{overview_text}\n</overview>")
+
+    # Verbatim per-section facts from the Memory Lattice (Layer 1).
+    # Sits between overview and replay so the receiving LLM sees the
+    # specific values before the conversational replay.
+    if lattice_block:
+        sections.append(f"\n<key_facts>\n{lattice_block}\n</key_facts>")
 
     # Conversation replay — chronological key messages with turn labels
     if replay_block:

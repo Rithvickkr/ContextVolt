@@ -816,6 +816,11 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                         <span>MCP Server</span>
                     </button>
+                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="updates" aria-selected="false" id="settings-tab-updates">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>Updates</span>
+                        <span class="update-nav-dot" id="update-nav-dot" style="display:none;"></span>
+                    </button>
                 </nav>
             <div class="settings-modal-body">
 
@@ -1023,6 +1028,61 @@
                     </div>
                 </div>
             </div>
+                <!-- ── Updates ──────────────────────────────────────────── -->
+                <div class="settings-panel settings-update-section" data-settings-panel="updates">
+                    <div class="settings-section-label">App Updates</div>
+                    <p class="settings-section-hint">ContextVolt checks GitHub releases for newer versions. Updates are downloaded and installed in the background.</p>
+
+                    <div class="update-version-row">
+                        <span class="update-version-label">Current version</span>
+                        <span class="update-version-val" id="update-current-version">—</span>
+                    </div>
+
+                    <!-- idle / no update -->
+                    <div id="update-state-idle" class="update-state">
+                        <button class="btn btn-secondary" id="btn-check-update" type="button">Check for updates</button>
+                        <span class="update-check-status" id="update-check-status"></span>
+                    </div>
+
+                    <!-- update available -->
+                    <div id="update-state-available" class="update-state" style="display:none;">
+                        <div class="update-available-card">
+                            <div class="update-available-head">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <span>Version <strong id="update-latest-version"></strong> is available</span>
+                            </div>
+                            <div class="update-notes" id="update-notes"></div>
+                            <div class="update-actions">
+                                <button class="btn btn-primary" id="btn-download-update" type="button">Download &amp; Install</button>
+                                <a class="update-changelog-link" id="update-changelog-link" href="#" target="_blank" rel="noopener">View release notes →</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- downloading -->
+                    <div id="update-state-downloading" class="update-state" style="display:none;">
+                        <div class="update-progress-wrap">
+                            <div class="update-progress-label">
+                                <span>Downloading update…</span>
+                                <span id="update-progress-pct">0%</span>
+                            </div>
+                            <div class="update-progress-bar-bg">
+                                <div class="update-progress-bar-fill" id="update-progress-bar" style="width:0%"></div>
+                            </div>
+                            <span class="update-progress-bytes" id="update-progress-bytes"></span>
+                        </div>
+                    </div>
+
+                    <!-- ready to install -->
+                    <div id="update-state-ready" class="update-state" style="display:none;">
+                        <div class="update-ready-card">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3cc878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span>Download complete — ready to install</span>
+                            <button class="btn btn-primary" id="btn-apply-update" type="button">Install &amp; Restart</button>
+                        </div>
+                    </div>
+                </div>
+
             </div><!-- /settings-shell -->
             <div class="settings-modal-footer">
                 <div class="settings-privacy-notice" id="settings-privacy-notice">

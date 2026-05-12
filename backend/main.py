@@ -208,7 +208,8 @@ _server_token: dict = {"started_at": time.time()}  # mutable — run.py updates 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "started_at": _server_token["started_at"]}
+    from backend.updater import APP_VERSION
+    return {"status": "ok", "started_at": _server_token["started_at"], "version": APP_VERSION}
 
 
 @app.get("/api/setup/status")
@@ -296,10 +297,21 @@ def embed_setup_status():
     current = cfg.get("embed_model", "nomic-embed-text")
     ollama_ok = check_ollama_running()
     ready = check_model_available(current) if ollama_ok else False
+
+    # Mark the VRAM-appropriate embed model as recommended
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    rec = recommend_models(gpu.get("vram_mb"))
+    available = [dict(m) for m in _EMBED_MODEL_OPTIONS]
+    for m in available:
+        m["recommended"] = (m["id"] == rec["embed"])
+
     return {
         "current_embed_model": current,
         "embed_model_ready": ready,
-        "available_models": _EMBED_MODEL_OPTIONS,
+        "available_models": available,
+        "gpu": gpu,
+        "recommendation": rec,
     }
 
 
@@ -360,22 +372,46 @@ def get_config():
 
     llm_models = [
         {"id": "llama3.2:3b", "label": "Llama 3.2 3B", "size": "~2 GB",
-         "desc": "Recommended — strong JSON adherence, faithful summaries, 128k context", "recommended": True},
+         "desc": "Strong JSON adherence, faithful summaries, 128k context",
+         "min_vram_mb": 5000},
         {"id": "qwen3:4b",    "label": "Qwen 3 4B",    "size": "~2.6 GB",
-         "desc": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size", "recommended": False},
+         "desc": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size",
+         "min_vram_mb": 8000},
         {"id": "qwen2.5:1.5b","label": "Qwen 2.5 1.5B","size": "~1 GB",
-         "desc": "Lightweight — minimal hardware, basic quality", "recommended": False},
+         "desc": "Lightweight — minimal hardware, basic quality",
+         "min_vram_mb": 0},
         {"id": "qwen2.5:3b",  "label": "Qwen 2.5 3B",  "size": "~2 GB",
-         "desc": "Stable fallback — proven, multilingual, runs on most hardware", "recommended": False},
+         "desc": "Stable fallback — proven, multilingual, runs on most hardware",
+         "min_vram_mb": 5000},
         {"id": "qwen2.5:7b",  "label": "Qwen 2.5 7B",  "size": "~5 GB",
-         "desc": "High quality — needs 6 GB+ VRAM or 8 GB+ RAM", "recommended": False},
+         "desc": "High quality — needs 6 GB+ VRAM or 8 GB+ RAM",
+         "min_vram_mb": 8000},
     ]
+
+    # Apply VRAM-aware recommendations
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    rec = recommend_models(gpu.get("vram_mb"))
+    vram_mb = gpu.get("vram_mb")
     for m in llm_models:
         m["installed"] = _is_installed(m["id"])
+        m["recommended"] = (m["id"] == rec["llm"])
+        m["fits_vram"] = vram_mb is None or vram_mb >= m.get("min_vram_mb", 0)
 
     embed_models = [dict(m) for m in _EMBED_MODEL_OPTIONS]
+    # Add per-embed VRAM requirements so the frontend can warn on bad pairs
+    _EMBED_VRAM = {
+        "qwen3-embedding:0.6b": 6000,   # ~1 GB peak, needs co-load headroom
+        "mxbai-embed-large":    6000,
+        "bge-m3":               7000,
+        "nomic-embed-text":     0,      # ~0.5 GB peak — fits anywhere
+        "nomic-embed-text:v1.5": 0,
+    }
     for m in embed_models:
         m["installed"] = _is_installed(m["id"])
+        m["recommended"] = (m["id"] == rec["embed"])
+        m["min_vram_mb"] = _EMBED_VRAM.get(m["id"], 0)
+        m["fits_vram"] = vram_mb is None or vram_mb >= m["min_vram_mb"]
 
     # Build cloud provider info
     cloud_providers = []
@@ -409,7 +445,17 @@ def get_config():
         "is_cloud_active": active["is_cloud"],
         "user_name": cfg.get("user_name", ""),
         "user_about": cfg.get("user_about", ""),
+        "gpu": gpu,
+        "recommendation": rec,
     }
+
+
+@app.get("/api/setup/gpu_info")
+def gpu_info():
+    """Detect GPU + VRAM and return the recommended LLM/embed pair."""
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    return {"gpu": gpu, "recommendation": recommend_models(gpu.get("vram_mb"))}
 
 
 @app.post("/api/setup/save-profile")
@@ -2501,3 +2547,40 @@ async def oauth_token(
         "expires_in": 315360000,   # 10 years — effectively non-expiring
         "scope": "",
     }
+
+
+# ---------------------------------------------------------------------------
+# Auto-update
+# ---------------------------------------------------------------------------
+
+@app.get("/api/update/check")
+def update_check():
+    """Check GitHub releases for a newer version."""
+    from backend.updater import check_for_update
+    return check_for_update()
+
+
+@app.get("/api/update/download")
+def update_download(url: str = Query(...)):
+    """Stream installer download progress as SSE."""
+    from backend.updater import download_update
+    import json as _json
+
+    def _stream():
+        for chunk in download_update(url):
+            yield f"data: {_json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    """Launch the downloaded installer silently and exit."""
+    from backend.updater import apply_update
+    if not apply_update():
+        raise HTTPException(status_code=400, detail="No downloaded update ready")
+    return {"ok": True}

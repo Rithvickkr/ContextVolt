@@ -3346,7 +3346,8 @@ function closeSettingsModal() {
 
 function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const card = document.createElement('div');
-    card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '');
+    card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '')
+                     + (item.fits_vram === false ? ' too-large' : '');
     card.dataset.id = item.id;
     card.dataset.installed = item.installed ? 'true' : 'false';
 
@@ -3355,6 +3356,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const size  = item.size  || '';
     const rec   = item.recommended;
     const inst  = item.installed;
+    const fitsVram = item.fits_vram !== false;
 
     const statusBadge = inst
         ? '<span class="settings-installed-badge">✓ Installed</span>'
@@ -3370,7 +3372,8 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
         </div>
         <div class="settings-model-card-right">
             <span class="settings-status-badge" id="status-badge-${item.id.replace(/[:.]/g, '-')}">${statusBadge.replace(/<\/?span[^>]*>/g, '')}</span>
-            ${rec ? '<span class="settings-model-badge">Recommended</span>' : ''}
+            ${rec ? '<span class="settings-model-badge">Recommended for your GPU</span>' : ''}
+            ${!fitsVram ? '<span class="settings-model-badge-warn" title="Too large for your VRAM — will run slowly with constant reloads">Low VRAM</span>' : ''}
             <span class="settings-model-size">${escapeHtml(size)}</span>
             ${inst
                 ? `<button class="settings-delete-btn" title="Delete model" aria-label="Delete ${escapeHtml(label)}">✕</button>`
@@ -3829,6 +3832,33 @@ const _PROVIDER_META = {
 let _selectedProvider = 'ollama';
 let _cloudKeyValid = {};  // { openai: true/false, ... }
 
+function _renderGpuBanner(gpu, rec) {
+    let banner = document.getElementById('gpu-info-banner');
+    if (!banner) {
+        const llmSection = document.getElementById('ollama-llm-section');
+        if (!llmSection) return;
+        banner = document.createElement('div');
+        banner.id = 'gpu-info-banner';
+        banner.className = 'gpu-info-banner';
+        llmSection.insertBefore(banner, llmSection.firstChild);
+    }
+    if (!gpu || !rec) { banner.style.display = 'none'; return; }
+    banner.style.display = '';
+
+    const tierClass = `gpu-info-tier-${rec.tier || 'unknown'}`;
+    banner.className = `gpu-info-banner ${tierClass}`;
+    const gpuLine = gpu.detected
+        ? `<strong>${escapeHtml(gpu.name || 'GPU')}</strong> · ${gpu.vram_mb} MB VRAM`
+        : `<strong>No GPU detected</strong>`;
+    banner.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01"/></svg>
+        <div class="gpu-info-text">
+            <div class="gpu-info-line">${gpuLine}</div>
+            <div class="gpu-info-reason">${escapeHtml(rec.reason || '')}</div>
+        </div>
+    `;
+}
+
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
 
@@ -3858,6 +3888,9 @@ function _renderSettingsCards() {
     });
 
     _updateCloudSections();
+
+    // ── GPU/VRAM info banner ──
+    _renderGpuBanner(_settingsConfig.gpu, _settingsConfig.recommendation);
 
     // ── LLM grid (Ollama) ──
     let selectedLlm   = _settingsConfig.model;
@@ -5293,6 +5326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _initAskVault(); // Ask Your Vault chat
     _initMcpServerPanelHandlers(); // ConVX-as-MCP-server settings panel
     _initTunnelPanelHandlers();    // Cloudflare tunnel card
+    _initUpdatePanel();            // Auto-update
 
 
     // Skip setup button (service phase)
@@ -6222,3 +6256,124 @@ async function maybeStartOnboarding() {
 
 window.startOnboarding = startOnboarding;
 window.endOnboarding = endOnboarding;
+
+// ── Auto-update ──────────────────────────────────────────────────────────────
+
+let _updateInfo = null;
+
+function _fmtBytes(b) {
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+    return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function _setUpdateState(state) {
+    ['idle', 'available', 'downloading', 'ready'].forEach(s => {
+        const el = document.getElementById(`update-state-${s}`);
+        if (el) el.style.display = s === state ? '' : 'none';
+    });
+}
+
+async function checkForUpdate(silent = true) {
+    const statusEl = document.getElementById('update-check-status');
+    if (!silent && statusEl) statusEl.textContent = 'Checking…';
+
+    try {
+        const res = await fetch(`${API}/api/update/check`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        _updateInfo = data;
+
+        const currentEl = document.getElementById('update-current-version');
+        if (currentEl) currentEl.textContent = `v${data.current_version}`;
+
+        if (data.update_available) {
+            // Show red dot on nav item
+            const dot = document.getElementById('update-nav-dot');
+            if (dot) dot.style.display = '';
+
+            const latestEl = document.getElementById('update-latest-version');
+            if (latestEl) latestEl.textContent = data.latest_version;
+
+            const notesEl = document.getElementById('update-notes');
+            if (notesEl) notesEl.textContent = data.release_notes || '';
+
+            const linkEl = document.getElementById('update-changelog-link');
+            if (linkEl && data.html_url) linkEl.href = data.html_url;
+
+            _setUpdateState('available');
+            if (!silent && statusEl) statusEl.textContent = '';
+        } else {
+            _setUpdateState('idle');
+            if (!silent && statusEl) {
+                statusEl.textContent = data.error
+                    ? `Could not check: ${data.error}`
+                    : `You're on the latest version (v${data.current_version})`;
+            }
+        }
+    } catch (e) {
+        if (!silent && statusEl) statusEl.textContent = `Check failed: ${e.message}`;
+    }
+}
+
+async function _downloadAndInstallUpdate() {
+    if (!_updateInfo?.download_url) return;
+
+    _setUpdateState('downloading');
+    const pctEl  = document.getElementById('update-progress-pct');
+    const barEl  = document.getElementById('update-progress-bar');
+    const byteEl = document.getElementById('update-progress-bytes');
+
+    const url = encodeURIComponent(_updateInfo.download_url);
+    const res = await fetch(`${API}/api/update/download?url=${url}`);
+    if (!res.ok || !res.body) {
+        _setUpdateState('available');
+        return;
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+                const msg = JSON.parse(line.slice(6));
+                if (msg.error) { _setUpdateState('available'); return; }
+                if (msg.progress >= 0 && pctEl) pctEl.textContent = `${msg.progress}%`;
+                if (barEl) barEl.style.width = `${Math.max(0, msg.progress)}%`;
+                if (byteEl && msg.total > 0) byteEl.textContent = `${_fmtBytes(msg.downloaded)} / ${_fmtBytes(msg.total)}`;
+                if (msg.done) { _setUpdateState('ready'); return; }
+            } catch (_) {}
+        }
+    }
+}
+
+async function _applyUpdate() {
+    await fetch(`${API}/api/update/apply`, { method: 'POST' });
+}
+
+function _initUpdatePanel() {
+    const checkBtn = document.getElementById('btn-check-update');
+    if (checkBtn) checkBtn.addEventListener('click', () => checkForUpdate(false));
+
+    const dlBtn = document.getElementById('btn-download-update');
+    if (dlBtn) dlBtn.addEventListener('click', _downloadAndInstallUpdate);
+
+    const applyBtn = document.getElementById('btn-apply-update');
+    if (applyBtn) applyBtn.addEventListener('click', _applyUpdate);
+
+    // Populate current version immediately from health endpoint
+    fetch(`${API}/api/health`).then(r => r.json()).then(d => {
+        const el = document.getElementById('update-current-version');
+        if (el && d.version) el.textContent = `v${d.version}`;
+    }).catch(() => {});
+
+    // Silent background check 3s after app loads
+    setTimeout(() => checkForUpdate(true), 3000);
+}

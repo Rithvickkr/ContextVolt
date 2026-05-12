@@ -11181,3 +11181,114 @@ kbd {
 [data-theme="light"] .settings-mcp-btn-primary { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.4); color: #2563eb; }
 [data-theme="light"] .settings-mcp-btn-primary:hover:not(:disabled) { background: rgba(59,130,246,0.16); border-color: #2563eb; }
 [data-theme="light"] .tunnel-steps code { background: rgba(0,0,0,0.06); }
+
+/* ── Updates settings panel ──────────────────────────────────────── */
+.settings-update-section { display: flex; flex-direction: column; gap: 16px; }
+
+.update-version-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-hover);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+}
+.update-version-label { opacity: 0.6; }
+.update-version-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.update-state { display: flex; flex-direction: column; gap: 10px; }
+
+.update-check-status { font-size: 12px; opacity: 0.65; }
+
+.update-available-card {
+    border: 1px solid rgba(99,179,237,0.3);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    background: rgba(99,179,237,0.06);
+    display: flex; flex-direction: column; gap: 10px;
+}
+.update-available-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13.5px; font-weight: 500; color: #7ec8e3;
+}
+.update-notes {
+    font-size: 12px; opacity: 0.7; line-height: 1.55;
+    white-space: pre-wrap; max-height: 100px; overflow-y: auto;
+}
+.update-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.update-changelog-link { font-size: 12px; opacity: 0.65; color: inherit; }
+.update-changelog-link:hover { opacity: 1; }
+
+.update-progress-wrap { display: flex; flex-direction: column; gap: 6px; }
+.update-progress-label { display: flex; justify-content: space-between; font-size: 12.5px; opacity: 0.75; }
+.update-progress-bar-bg {
+    height: 6px; border-radius: 999px;
+    background: var(--bg-hover);
+    overflow: hidden;
+}
+.update-progress-bar-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, #6366f1, #818cf8);
+    transition: width 0.2s ease;
+}
+.update-progress-bytes { font-size: 11px; opacity: 0.5; }
+
+.update-ready-card {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 14px;
+    background: rgba(60,200,120,0.08);
+    border: 1px solid rgba(60,200,120,0.25);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+}
+
+/* Red dot badge on Updates nav item */
+.update-nav-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #f87171; margin-left: auto; flex-shrink: 0;
+}
+
+[data-theme="light"] .update-available-card { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.05); }
+[data-theme="light"] .update-available-head { color: #2563eb; }
+[data-theme="light"] .update-ready-card { background: rgba(22,163,74,0.07); border-color: rgba(22,163,74,0.25); }
+
+/* ── GPU / VRAM info banner ─────────────────────────────────────── */
+.gpu-info-banner {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px;
+    margin: 0 0 12px 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: var(--bg-hover);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+.gpu-info-banner svg { flex-shrink: 0; margin-top: 2px; opacity: 0.7; }
+.gpu-info-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gpu-info-line { color: var(--text-secondary); }
+.gpu-info-reason { color: var(--text-muted); font-size: 11.5px; }
+
+.gpu-info-tier-high  { border-color: rgba(60,200,120,0.35); background: rgba(60,200,120,0.06); }
+.gpu-info-tier-mid   { border-color: rgba(99,179,237,0.35); background: rgba(99,179,237,0.06); }
+.gpu-info-tier-low   { border-color: rgba(234,179,8,0.35);  background: rgba(234,179,8,0.06); }
+.gpu-info-tier-tight { border-color: rgba(248,113,113,0.35); background: rgba(248,113,113,0.06); }
+
+/* "Low VRAM" warning badge on model cards */
+.settings-model-badge-warn {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 500;
+    background: rgba(248,113,113,0.16);
+    color: #fca5a5;
+    border: 1px solid rgba(248,113,113,0.3);
+}
+
+.settings-model-card.too-large {
+    opacity: 0.65;
+}
+.settings-model-card.too-large:hover { opacity: 0.9; }
+
+[data-theme="light"] .settings-model-badge-warn {
+    background: rgba(220,38,38,0.08); color: #b91c1c; border-color: rgba(220,38,38,0.3);
+}

@@ -55,6 +55,9 @@ from backend.database import (
     create_lattice_entries,
     delete_lattice_by_context,
     get_lattice_entries_by_context,
+    create_entities_for_context,
+    delete_entities_by_context,
+    find_entity_chunks_for_query,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -784,6 +787,15 @@ def api_capture(req: CaptureRequest):
             if lattice:
                 create_lattice_entries(cid, lattice)
 
+            # Entity index — heuristic, populated from the same chunks the
+            # retrieval path already uses. Rebuilt fully each capture for now.
+            from backend.entity_extractor import extract_entities_per_chunk
+            delete_entities_by_context(cid)
+            if chunks:
+                ent_map = extract_entities_per_chunk(chunks)
+                if ent_map:
+                    create_entities_for_context(cid, ent_map)
+
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
             if new_title and new_title not in ("No topic extracted", "N/A"):
@@ -873,6 +885,15 @@ def api_resummarize(context_id: int):
             delete_lattice_by_context(cid)
             if lattice:
                 create_lattice_entries(cid, lattice)
+
+            # Refresh entity index from current chunks.
+            from backend.entity_extractor import extract_entities_per_chunk
+            delete_entities_by_context(cid)
+            existing_chunks = get_chunks_by_context(cid)
+            if existing_chunks:
+                ent_map = extract_entities_per_chunk(existing_chunks)
+                if ent_map:
+                    create_entities_for_context(cid, ent_map)
 
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
@@ -1950,6 +1971,19 @@ def api_generate_prompt(
             else:
                 # Embedding failed — fall back to all chunks
                 top_chunks = all_chunks[:8]
+
+            # Entity boost — if the query mentions an identifier-shaped
+            # token (deploy key, ticket id, file path), pull the chunks
+            # that contain it. These are appended to top_chunks before
+            # anchoring + chronological sort so they always survive.
+            entity_chunk_indices = find_entity_chunks_for_query(context_id, query.strip())
+            if entity_chunk_indices:
+                seen_idx = {ch["chunk_index"] for ch in top_chunks}
+                by_idx = {ch["chunk_index"]: ch for ch in all_chunks}
+                for idx in entity_chunk_indices:
+                    if idx in by_idx and idx not in seen_idx:
+                        top_chunks.append(by_idx[idx])
+                        seen_idx.add(idx)
 
             # Always anchor: first chunk, last chunk, starred chunks
             anchor_indices = set()

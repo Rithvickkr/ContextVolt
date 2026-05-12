@@ -298,6 +298,29 @@ def init_db():
     )
     conn.commit()
 
+    # Entity index — identifier-shaped tokens extracted heuristically from
+    # chunks. Used to boost retrieval when the user's query mentions an
+    # indexed name (deploy keys, ticket IDs, file paths, env-var names).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS entities (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER NOT NULL,
+            name        TEXT    NOT NULL,
+            name_lower  TEXT    NOT NULL,
+            chunk_ids   TEXT    NOT NULL,
+            count       INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT    NOT NULL,
+            FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entities_name_lower ON entities(name_lower)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entities_ctx ON entities(context_id)"
+    )
+    conn.commit()
+
     # sqlite-vec virtual tables
     dim = _detect_embed_dim(conn)
     if dim > 0:
@@ -828,6 +851,88 @@ def delete_lattice_by_context(context_id: int) -> int:
     )
     conn.commit()
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Entity index helpers (Memory Lattice — Phase 1, Step 5)
+# ---------------------------------------------------------------------------
+
+def create_entities_for_context(
+    context_id: int, entity_chunk_map: dict[str, list[int]],
+) -> int:
+    """Bulk-insert entity rows for a context. Returns count inserted.
+
+    `entity_chunk_map` is {name: [chunk_index, ...]}. Duplicates within a
+    chunk list are collapsed; count is the de-duped length.
+    """
+    if not entity_chunk_map:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    inserted = 0
+    for name, indices in entity_chunk_map.items():
+        unique = sorted(set(indices))
+        if not unique:
+            continue
+        conn.execute(
+            "INSERT INTO entities (context_id, name, name_lower, chunk_ids, count, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (context_id, name, name.lower(), json.dumps(unique), len(unique), now),
+        )
+        inserted += 1
+    conn.commit()
+    return inserted
+
+
+def delete_entities_by_context(context_id: int) -> int:
+    """Delete all entity rows for a context."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM entities WHERE context_id = ?", (context_id,))
+    conn.commit()
+    return cur.rowcount
+
+
+def find_entity_chunks_for_query(
+    context_id: int, query: str, max_terms: int = 6,
+) -> list[int]:
+    """Return chunk_indices for any indexed entities the query mentions.
+
+    Matching is case-insensitive substring in both directions: a query of
+    "INC-4V5UYBHK" matches an indexed entity "4V5UYBHK", and a query of
+    "4V5UYBHK" matches an indexed entity "INC-4V5UYBHK". Returns the union
+    of chunk indices across all matched entities for this context,
+    de-duped and sorted.
+    """
+    if not query.strip():
+        return []
+    # Tokenize the query into candidate id-shaped substrings. We import the
+    # extractor here to avoid a hard dependency at module load.
+    from backend.entity_extractor import extract_entities
+
+    q_lower = query.lower()
+    candidates: set[str] = {q_lower}
+    for term in extract_entities(query):
+        candidates.add(term.lower())
+    # Cap how many LIKE patterns we'll OR together to avoid pathological
+    # queries on huge entity tables.
+    candidates_list = list(candidates)[:max_terms]
+    if not candidates_list:
+        return []
+
+    conn = _get_conn()
+    found: set[int] = set()
+    for cand in candidates_list:
+        rows = conn.execute(
+            "SELECT chunk_ids FROM entities "
+            "WHERE context_id = ? AND (name_lower = ? OR name_lower LIKE ? OR ? LIKE '%' || name_lower || '%')",
+            (context_id, cand, f"%{cand}%", cand),
+        ).fetchall()
+        for r in rows:
+            try:
+                found.update(int(i) for i in json.loads(r[0]))
+            except Exception:
+                continue
+    return sorted(found)
 
 
 # ---------------------------------------------------------------------------

@@ -103,6 +103,11 @@ from backend.cloud_client import (
 _rate_limit_store: dict[str, list[float]] = {}
 _rate_limit_lock = threading.Lock()
 
+# Serialises background LLM work (capture summarize, resummarize) so multiple
+# captures don't contend on the local GPU. Synchronous endpoints don't acquire
+# this — they already block the caller's request and so can't pile up.
+_local_llm_lock = threading.Lock()
+
 # Limits per route prefix (requests / window_seconds)
 _RATE_LIMITS: list[tuple[str, int, int]] = [
     ("/api/capture",          30,  60),   # extension capture: 30 req/min
@@ -203,7 +208,14 @@ if os.path.isdir(FRONTEND_DIR):
 def serve_frontend():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     return {"message": "ContextVolt API is running. Frontend not found."}
 
 
@@ -770,6 +782,8 @@ def api_capture(req: CaptureRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     def _bg_summarize(cid: int, text: str, snippets: list) -> None:
+        # Serialise local LLM work so concurrent captures don't contend on the GPU
+        _local_llm_lock.acquire()
         try:
             # Chunk + embed first so semantic search works as soon as possible
             chunks = chunk_conversation(text, starred_snippets=snippets or [])
@@ -804,6 +818,8 @@ def api_capture(req: CaptureRequest):
             _try_embed_context(cid, real_summary)
         except Exception:
             update_context(cid, status="failed")
+        finally:
+            _local_llm_lock.release()
 
     try:
         # Check if we already saved this conversation URL before
@@ -878,6 +894,8 @@ def api_resummarize(context_id: int):
     update_context(context_id, status="summarizing")
 
     def _bg_resummarize(cid: int, text: str, snippets: list) -> None:
+        # Serialise local LLM work so concurrent captures don't contend on the GPU
+        _local_llm_lock.acquire()
         try:
             sl = summarize_with_lattice(text, important_snippets=snippets or None)
             real_summary = sl["summary"]
@@ -903,6 +921,8 @@ def api_resummarize(context_id: int):
             _try_embed_context(cid, real_summary)
         except Exception:
             update_context(cid, status="failed")
+        finally:
+            _local_llm_lock.release()
 
     threading.Thread(
         target=_bg_resummarize,

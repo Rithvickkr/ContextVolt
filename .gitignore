@@ -54,3 +54,10 @@ dom result.md
 
 # ─── Ad-hoc smoke scripts ────────────────────────
 backend/_*_smoke_test.py
+
+# ─── Marketing landing page (separate concern) ───
+landing/
+
+# ─── Eval harness reports (regeneration artifacts) ───────
+# Already-committed Phase 1 baselines stay tracked; new runs are ignored.
+backend/eval/baselines/*.json

@@ -1,0 +1,340 @@
+{
+  "config": {
+    "host": "http://127.0.0.1:8000",
+    "turns": 100,
+    "n_facts": 20,
+    "seed": 42,
+    "chat_chars": 20852,
+    "context_id": 18
+  },
+  "results": [
+    {
+      "label": "no-query/compact",
+      "mode": "context",
+      "size": "compact",
+      "prompt_len": 5226,
+      "score": {
+        "recall": 0.2,
+        "hits": 4,
+        "total": 20,
+        "by_position": {
+          "opening": {
+            "recall": 0.2857142857142857,
+            "hit": 2,
+            "n": 7
+          },
+          "middle": {
+            "recall": 0.0,
+            "hit": 0,
+            "n": 7
+          },
+          "closing": {
+            "recall": 0.3333333333333333,
+            "hit": 2,
+            "n": 6
+          }
+        },
+        "hit_tokens": [
+          "LJG86LWN",
+          "7QJHTJU6",
+          "RTJ5PGTZ",
+          "LUHHCWH6"
+        ]
+      }
+    },
+    {
+      "label": "no-query/standard",
+      "mode": "context",
+      "size": "standard",
+      "prompt_len": 15196,
+      "score": {
+        "recall": 0.55,
+        "hits": 11,
+        "total": 20,
+        "by_position": {
+          "opening": {
+            "recall": 0.5714285714285714,
+            "hit": 4,
+            "n": 7
+          },
+          "middle": {
+            "recall": 0.7142857142857143,
+            "hit": 5,
+            "n": 7
+          },
+          "closing": {
+            "recall": 0.3333333333333333,
+            "hit": 2,
+            "n": 6
+          }
+        },
+        "hit_tokens": [
+          "CHDJWMMG",
+          "9WTX42HB",
+          "LJG86LWN",
+          "7QJHTJU6",
+          "NH9SCBDW",
+          "3PCN9S95",
+          "AZXTJWDP",
+          "Q86JSF75",
+          "KWVE2T2S",
+          "RTJ5PGTZ",
+          "LUHHCWH6"
+        ]
+      }
+    },
+    {
+      "label": "no-query/full",
+      "mode": "context",
+      "size": "full",
+      "prompt_len": 30357,
+      "score": {
+        "recall": 1.0,
+        "hits": 20,
+        "total": 20,
+        "by_position": {
+          "opening": {
+            "recall": 1.0,
+            "hit": 7,
+            "n": 7
+          },
+          "middle": {
+            "recall": 1.0,
+            "hit": 7,
+            "n": 7
+          },
+          "closing": {
+            "recall": 1.0,
+            "hit": 6,
+            "n": 6
+          }
+        },
+        "hit_tokens": [
+          "5V3ZT9NT",
+          "4V5UYBHK",
+          "CHDJWMMG",
+          "J7WVFZFN",
+          "9WTX42HB",
+          "LJG86LWN",
+          "7QJHTJU6",
+          "NH9SCBDW",
+          "3PCN9S95",
+          "AZXTJWDP",
+          "Q86JSF75",
+          "KWVE2T2S",
+          "ALA764KB",
+          "68CRC22E",
+          "RTJ5PGTZ",
+          "GK9WQSDH",
+          "LUHHCWH6",
+          "5CHXGE7U",
+          "R33GDPPQ",
+          "ZX9DNL5H"
+        ]
+      }
+    },
+    {
+      "label": "query/sampled",
+      "mode": "retrieval",
+      "size": "standard",
+      "prompt_len": 0,
+      "score": {
+        "recall": 0.8333333333333334,
+        "hits": 5,
+        "total": 6,
+        "per_query": [
+          {
+            "token": "5V3ZT9NT",
+            "position": "opening",
+            "query": "worker pool tag",
+            "recalled": true,
+            "prompt_len": 2964,
+            "mode": "hybrid"
+          },
+          {
+            "token": "4V5UYBHK",
+            "position": "opening",
+            "query": "the P1 customer bug ticket reference",
+            "recalled": true,
+            "prompt_len": 3302,
+            "mode": "hybrid"
+          },
+          {
+            "token": "NH9SCBDW",
+            "position": "middle",
+            "query": "shared test fixture path",
+            "recalled": false,
+            "prompt_len": 2890,
+            "mode": "hybrid"
+          },
+          {
+            "token": "3PCN9S95",
+            "position": "middle",
+            "query": "build artifact sha we shipped",
+            "recalled": true,
+            "prompt_len": 3442,
+            "mode": "hybrid"
+          },
+          {
+            "token": "RTJ5PGTZ",
+            "position": "closing",
+            "query": "opensearch index name",
+            "recalled": true,
+            "prompt_len": 3158,
+            "mode": "hybrid"
+          },
+          {
+            "token": "GK9WQSDH",
+            "position": "closing",
+            "query": "approved budget code from procurement",
+            "recalled": true,
+            "prompt_len": 2911,
+            "mode": "hybrid"
+          }
+        ]
+      }
+    }
+  ],
+  "facts": [
+    {
+      "token": "5V3ZT9NT",
+      "sentence": "Worker pool tag agreed on: pool_5V3ZT9NT.",
+      "query": "worker pool tag",
+      "position": "opening",
+      "turn_index": 26
+    },
+    {
+      "token": "4V5UYBHK",
+      "sentence": "Bug ticket reference: INC-4V5UYBHK (P1, customer-facing).",
+      "query": "the P1 customer bug ticket reference",
+      "position": "opening",
+      "turn_index": 14
+    },
+    {
+      "token": "CHDJWMMG",
+      "sentence": "The production deploy key is CHDJWMMG.",
+      "query": "what is the production deploy key",
+      "position": "opening",
+      "turn_index": 31
+    },
+    {
+      "token": "J7WVFZFN",
+      "sentence": "Migration script id assigned by ops: M_J7WVFZFN.",
+      "query": "migration script id from ops",
+      "position": "opening",
+      "turn_index": 18
+    },
+    {
+      "token": "9WTX42HB",
+      "sentence": "Release tag for the hotfix is v9.9WTX42HB.",
+      "query": "release tag for the hotfix",
+      "position": "opening",
+      "turn_index": 8
+    },
+    {
+      "token": "LJG86LWN",
+      "sentence": "API gateway route id: route-LJG86LWN.",
+      "query": "api gateway route id",
+      "position": "opening",
+      "turn_index": 25
+    },
+    {
+      "token": "7QJHTJU6",
+      "sentence": "The encryption key id is 7QJHTJU6 (rotates quarterly).",
+      "query": "encryption key id",
+      "position": "opening",
+      "turn_index": 0
+    },
+    {
+      "token": "NH9SCBDW",
+      "sentence": "Test fixture path everyone uses: fix/NH9SCBDW.json.",
+      "query": "shared test fixture path",
+      "position": "middle",
+      "turn_index": 43
+    },
+    {
+      "token": "3PCN9S95",
+      "sentence": "The build artifact SHA we shipped is 3PCN9S95.",
+      "query": "build artifact sha we shipped",
+      "position": "middle",
+      "turn_index": 60
+    },
+    {
+      "token": "AZXTJWDP",
+      "sentence": "Feature flag name: ff_AZXTJWDP (default off).",
+      "query": "feature flag name we agreed on",
+      "position": "middle",
+      "turn_index": 65
+    },
+    {
+      "token": "Q86JSF75",
+      "sentence": "The pricing tier code agreed with finance is Q86JSF75.",
+      "query": "pricing tier code from finance",
+      "position": "middle",
+      "turn_index": 41
+    },
+    {
+      "token": "KWVE2T2S",
+      "sentence": "Backup retention policy code: BR-KWVE2T2S.",
+      "query": "backup retention policy code",
+      "position": "middle",
+      "turn_index": 37
+    },
+    {
+      "token": "ALA764KB",
+      "sentence": "OAuth client id given by vendor: ALA764KB.",
+      "query": "oauth client id from vendor",
+      "position": "middle",
+      "turn_index": 39
+    },
+    {
+      "token": "68CRC22E",
+      "sentence": "Our Postgres replica password is set to 68CRC22E in vault.",
+      "query": "postgres replica password",
+      "position": "middle",
+      "turn_index": 57
+    },
+    {
+      "token": "RTJ5PGTZ",
+      "sentence": "Index name in OpenSearch: idx_RTJ5PGTZ.",
+      "query": "opensearch index name",
+      "position": "closing",
+      "turn_index": 87
+    },
+    {
+      "token": "GK9WQSDH",
+      "sentence": "Approved budget code from procurement is BC-GK9WQSDH.",
+      "query": "approved budget code from procurement",
+      "position": "closing",
+      "turn_index": 72
+    },
+    {
+      "token": "LUHHCWH6",
+      "sentence": "The runbook anchor is rb#LUHHCWH6.",
+      "query": "runbook anchor",
+      "position": "closing",
+      "turn_index": 71
+    },
+    {
+      "token": "5CHXGE7U",
+      "sentence": "Cron job id reserved: cron_5CHXGE7U.",
+      "query": "reserved cron job id",
+      "position": "closing",
+      "turn_index": 78
+    },
+    {
+      "token": "R33GDPPQ",
+      "sentence": "Customer escalation case: CASE-R33GDPPQ.",
+      "query": "customer escalation case number",
+      "position": "closing",
+      "turn_index": 69
+    },
+    {
+      "token": "ZX9DNL5H",
+      "sentence": "The kafka topic created for this is evt.ZX9DNL5H.",
+      "query": "kafka topic name",
+      "position": "closing",
+      "turn_index": 77
+    }
+  ]
+}

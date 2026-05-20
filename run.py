@@ -216,7 +216,7 @@ def main():
             pass
 
     threading.Thread(target=_set_large_taskbar_icon, daemon=True).start()
-    webview.start(debug=False)
+    webview.start(debug=True, private_mode=True)  # private_mode forces a clean cache — bust WebView2's stale index.html
     sys.exit(0)
 
 

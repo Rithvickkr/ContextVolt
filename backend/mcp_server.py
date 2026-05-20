@@ -56,8 +56,11 @@ logging.basicConfig(
 _log = logging.getLogger("contextvolt.mcp_server")
 
 try:
+    # pyrefly: ignore [missing-import]
     from mcp.server import Server
+    # pyrefly: ignore [missing-import]
     from mcp.server.stdio import stdio_server
+    # pyrefly: ignore [missing-import]
     import mcp.types as types
 except ImportError as e:
     print(f"FATAL: mcp SDK not installed ({e}). Run: pip install 'mcp>=1.0.0'",

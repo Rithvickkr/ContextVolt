@@ -274,6 +274,53 @@ def init_db():
     )
     conn.commit()
 
+    # Lattice versions — per-chunk verbatim extractions produced during
+    # summarization. Layer 1 of the Memory Lattice; consumed by the
+    # continuation-prompt builder (STONE) to surface facts that flat
+    # synthesis would otherwise paraphrase away.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lattice_versions (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id        INTEGER NOT NULL,
+            depth             INTEGER NOT NULL DEFAULT 1,
+            chunk_label       TEXT    NOT NULL,
+            chunk_range_start INTEGER DEFAULT NULL,
+            chunk_range_end   INTEGER DEFAULT NULL,
+            content           TEXT    NOT NULL,
+            version           INTEGER NOT NULL DEFAULT 1,
+            created_at        TEXT    NOT NULL,
+            FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lattice_ctx_ver "
+        "ON lattice_versions(context_id, version, depth)"
+    )
+    conn.commit()
+
+    # Entity index — identifier-shaped tokens extracted heuristically from
+    # chunks. Used to boost retrieval when the user's query mentions an
+    # indexed name (deploy keys, ticket IDs, file paths, env-var names).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS entities (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            context_id  INTEGER NOT NULL,
+            name        TEXT    NOT NULL,
+            name_lower  TEXT    NOT NULL,
+            chunk_ids   TEXT    NOT NULL,
+            count       INTEGER NOT NULL DEFAULT 1,
+            created_at  TEXT    NOT NULL,
+            FOREIGN KEY (context_id) REFERENCES contexts(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entities_name_lower ON entities(name_lower)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_entities_ctx ON entities(context_id)"
+    )
+    conn.commit()
+
     # sqlite-vec virtual tables
     dim = _detect_embed_dim(conn)
     if dim > 0:
@@ -717,6 +764,175 @@ def delete_chunks_by_context(context_id: int) -> int:
     conn.commit()
     # connection reused (thread-local pool)
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Lattice helpers (Memory Lattice — Phase 1, Layer 1)
+# ---------------------------------------------------------------------------
+
+def get_lattice_max_version(context_id: int) -> int:
+    """Return the highest version number stored for this context, or 0."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT MAX(version) FROM lattice_versions WHERE context_id = ?",
+        (context_id,),
+    ).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def create_lattice_entries(context_id: int, entries: list[dict], version: int | None = None) -> int:
+    """Bulk-insert lattice entries for a context. Returns the version written.
+
+    Each entry dict supports: depth, chunk_label, chunk_range_start,
+    chunk_range_end, content. Missing keys default sensibly.
+    """
+    if not entries:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    if version is None:
+        version = get_lattice_max_version(context_id) + 1
+    conn = _get_conn()
+    for e in entries:
+        conn.execute(
+            """INSERT INTO lattice_versions
+               (context_id, depth, chunk_label, chunk_range_start, chunk_range_end,
+                content, version, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                context_id,
+                int(e.get("depth", 1)),
+                str(e.get("chunk_label", "")),
+                e.get("chunk_range_start"),
+                e.get("chunk_range_end"),
+                str(e.get("content", "")),
+                version,
+                now,
+            ),
+        )
+    conn.commit()
+    return version
+
+
+def get_lattice_entries_by_context(
+    context_id: int, version: int | None = None, depth: int | None = None,
+) -> list[dict]:
+    """Return lattice entries for a context, defaulting to the latest version."""
+    conn = _get_conn()
+    if version is None:
+        version = get_lattice_max_version(context_id)
+        if version == 0:
+            return []
+    if depth is None:
+        rows = conn.execute(
+            "SELECT id, context_id, depth, chunk_label, chunk_range_start, "
+            "chunk_range_end, content, version, created_at "
+            "FROM lattice_versions WHERE context_id = ? AND version = ? "
+            "ORDER BY chunk_range_start IS NULL, chunk_range_start, id",
+            (context_id, version),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, context_id, depth, chunk_label, chunk_range_start, "
+            "chunk_range_end, content, version, created_at "
+            "FROM lattice_versions WHERE context_id = ? AND version = ? AND depth = ? "
+            "ORDER BY chunk_range_start IS NULL, chunk_range_start, id",
+            (context_id, version, depth),
+        ).fetchall()
+    cols = ["id", "context_id", "depth", "chunk_label", "chunk_range_start",
+            "chunk_range_end", "content", "version", "created_at"]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def delete_lattice_by_context(context_id: int) -> int:
+    """Delete all lattice rows for a context. Returns count deleted."""
+    conn = _get_conn()
+    cur = conn.execute(
+        "DELETE FROM lattice_versions WHERE context_id = ?", (context_id,)
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Entity index helpers (Memory Lattice — Phase 1, Step 5)
+# ---------------------------------------------------------------------------
+
+def create_entities_for_context(
+    context_id: int, entity_chunk_map: dict[str, list[int]],
+) -> int:
+    """Bulk-insert entity rows for a context. Returns count inserted.
+
+    `entity_chunk_map` is {name: [chunk_index, ...]}. Duplicates within a
+    chunk list are collapsed; count is the de-duped length.
+    """
+    if not entity_chunk_map:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    conn = _get_conn()
+    inserted = 0
+    for name, indices in entity_chunk_map.items():
+        unique = sorted(set(indices))
+        if not unique:
+            continue
+        conn.execute(
+            "INSERT INTO entities (context_id, name, name_lower, chunk_ids, count, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (context_id, name, name.lower(), json.dumps(unique), len(unique), now),
+        )
+        inserted += 1
+    conn.commit()
+    return inserted
+
+
+def delete_entities_by_context(context_id: int) -> int:
+    """Delete all entity rows for a context."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM entities WHERE context_id = ?", (context_id,))
+    conn.commit()
+    return cur.rowcount
+
+
+def find_entity_chunks_for_query(
+    context_id: int, query: str, max_terms: int = 6,
+) -> list[int]:
+    """Return chunk_indices for any indexed entities the query mentions.
+
+    Matching is case-insensitive substring in both directions: a query of
+    "INC-4V5UYBHK" matches an indexed entity "4V5UYBHK", and a query of
+    "4V5UYBHK" matches an indexed entity "INC-4V5UYBHK". Returns the union
+    of chunk indices across all matched entities for this context,
+    de-duped and sorted.
+    """
+    if not query.strip():
+        return []
+    # Tokenize the query into candidate id-shaped substrings. We import the
+    # extractor here to avoid a hard dependency at module load.
+    from backend.entity_extractor import extract_entities
+
+    q_lower = query.lower()
+    candidates: set[str] = {q_lower}
+    for term in extract_entities(query):
+        candidates.add(term.lower())
+    # Cap how many LIKE patterns we'll OR together to avoid pathological
+    # queries on huge entity tables.
+    candidates_list = list(candidates)[:max_terms]
+    if not candidates_list:
+        return []
+
+    conn = _get_conn()
+    found: set[int] = set()
+    for cand in candidates_list:
+        rows = conn.execute(
+            "SELECT chunk_ids FROM entities "
+            "WHERE context_id = ? AND (name_lower = ? OR name_lower LIKE ? OR ? LIKE '%' || name_lower || '%')",
+            (context_id, cand, f"%{cand}%", cand),
+        ).fetchall()
+        for r in rows:
+            try:
+                found.update(int(i) for i in json.loads(r[0]))
+            except Exception:
+                continue
+    return sorted(found)
 
 
 # ---------------------------------------------------------------------------

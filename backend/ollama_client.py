@@ -1517,6 +1517,77 @@ def _render_lattice_block(
     return "\n\n".join(rendered_for[id(e)] for e in lattice if id(e) in rendered_for)
 
 
+_STANCE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
+    (("debug", "error", "exception", "traceback", "bug", "crash", "stack trace", "fix"),
+     "You were acting as a debugging partner."),
+    (("review", "refactor", "critique", "cleanup", "code smell"),
+     "You were acting as a code reviewer."),
+    (("architect", "architecture", "design", "system design", "scaffold", "plan", "structure"),
+     "You were acting as an architecture advisor."),
+    (("explain", "how does", "what is", "understand", "learn", "teach"),
+     "You were helping the user understand this topic."),
+]
+
+
+def _detect_stance(summary: dict) -> str:
+    """Pick a stance string based on keywords in topic + key_ideas + snapshot.
+
+    Falls back to a generic stance when no keyword matches. Pure heuristic — no
+    LLM call. Tested against `main_topic` and the first 3 key_ideas because
+    later ideas tend to be tangents.
+    """
+    haystack_parts = [
+        (summary.get("main_topic", "") or ""),
+        (summary.get("snapshot", "") or ""),
+    ]
+    haystack_parts.extend((summary.get("key_ideas", []) or [])[:3])
+    haystack = " ".join(haystack_parts).lower()
+    for keywords, stance in _STANCE_KEYWORDS:
+        if any(kw in haystack for kw in keywords):
+            return stance
+    return "You were the user's assistant on this task."
+
+
+_SOURCE_STYLE_HINTS: dict[str, str] = {
+    "chatgpt": "markdown headers and numbered lists",
+    "gpt-4":   "markdown headers and numbered lists",
+    "claude":  "conversational prose with code blocks where needed",
+    "gemini":  "concise outputs with clear bullet structure",
+    "copilot": "concise inline answers",
+    "grok":    "informal prose",
+    "deepseek": "detailed step-by-step explanations",
+    "perplexity": "cited concise summaries",
+}
+
+
+def _build_cold_start_brief(summary: dict, source_llm: str, msg_count: int) -> str:
+    """2-3 sentence plain-prose orientation for the receiving LLM.
+
+    Uses only existing summary fields (no arc/next). Sits at the top of the
+    continuation prompt so the receiving LLM has its bearings before parsing
+    the structured blocks.
+    """
+    topic = (summary.get("main_topic", "") or "").strip()
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    conclusions = summary.get("conclusions", []) or []
+    source_clause = f"originally held with {source_llm}" if source_llm else "captured from a prior session"
+    parts: list[str] = []
+    if topic and topic not in ("No topic extracted",):
+        parts.append(f"This is a continuation of a {msg_count}-turn conversation {source_clause} about: {topic}.")
+    else:
+        parts.append(f"This is a continuation of a {msg_count}-turn conversation {source_clause}.")
+    if snapshot and snapshot.lower() not in ("n/a", "none"):
+        parts.append(f"At session end, the active task was: {snapshot}.")
+    if conclusions:
+        first = (conclusions[0] or "").strip()
+        if first and first.lower() not in ("none", "n/a"):
+            parts.append(f"Most recent decision: {first}.")
+    style = _SOURCE_STYLE_HINTS.get((source_llm or "").lower().strip())
+    if style:
+        parts.append(f"The prior assistant tended to use {style}; match that style for visual continuity.")
+    return " ".join(parts)
+
+
 def generate_continuation_prompt(
     summary: dict,
     original_chat: str,
@@ -1589,55 +1660,75 @@ def generate_continuation_prompt(
         meta_parts.append(f"Source: {source_llm}")
     meta_parts.append(f"Messages: {msg_count} turns")
     if created_at:
-        meta_parts.append(f"Captured: {created_at[:10]}")
+        # Add "X days ago" so the receiving LLM knows the user may have new context.
+        age_clause = ""
+        try:
+            from datetime import datetime, timezone
+            captured = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if captured.tzinfo is None:
+                captured = captured.replace(tzinfo=timezone.utc)
+            days = (datetime.now(timezone.utc) - captured).days
+            if days <= 0:
+                age_clause = " (today)"
+            elif days == 1:
+                age_clause = " (1 day ago)"
+            elif days < 365:
+                age_clause = f" ({days} days ago)"
+            else:
+                age_clause = f" ({days // 365} year{'s' if days // 365 > 1 else ''} ago)"
+        except Exception:
+            pass
+        meta_parts.append(f"Captured: {created_at[:10]}{age_clause}")
     meta_line = " | ".join(meta_parts)
 
     # ── Assemble XML prompt ───────────────────────────────────────
-    sections: list[str] = []
-    sections.append(f"<context_brief>\n<meta>\n{meta_line}\n</meta>")
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    has_snapshot = bool(snapshot and snapshot.lower() not in ("n/a", "none", ""))
 
-    # Compact overview — replaces the old multi-section dossier
+    sections: list[str] = []
+
+    # Cold-start brief: 1-3 sentence plain-prose orientation so the receiving
+    # LLM gets the situation before parsing the structured blocks below.
+    cold_brief = _build_cold_start_brief(summary, source_llm, msg_count)
+    sections.append(f"<context_brief>\n<cold_start>\n{cold_brief}\n</cold_start>")
+
+    sections.append(f"\n<meta>\n{meta_line}\n</meta>")
+
     overview_text = _build_overview(summary, budget["overview"])
     if overview_text:
         sections.append(f"\n<overview>\n{overview_text}\n</overview>")
 
     # Verbatim per-section facts from the Memory Lattice (Layer 1).
-    # Sits between overview and replay so the receiving LLM sees the
-    # specific values before the conversational replay.
     if lattice_block:
         sections.append(f"\n<key_facts>\n{lattice_block}\n</key_facts>")
 
-    # Conversation replay — chronological key messages with turn labels
     if replay_block:
         sections.append(f"\n<conversation_replay>\n{replay_block}\n</conversation_replay>")
 
-    # Code artifacts (skip if empty)
     if code_section:
         sections.append(f"\n<code_artifacts>\n{code_section}\n</code_artifacts>")
 
-    # Important context (skip if empty)
     if starred_section:
         sections.append(f"\n<important_context>\n{starred_section}\n</important_context>")
 
-    # Instructions
-    snapshot = (summary.get("snapshot", "") or "").strip()
-    has_snapshot = snapshot and snapshot.lower() not in ("n/a", "none", "")
-    source_clause = f" originally held with {source_llm}" if source_llm else ""
-    if has_snapshot:
-        instructions = (
-            f"You are continuing a conversation{source_clause}. "
-            f"The overview above summarizes the full {msg_count}-turn conversation. "
-            f"The replay shows the most relevant exchanges. "
-            f"The user was last working on: {snapshot}. Continue naturally from there."
-        )
-    else:
-        instructions = (
-            f"You are continuing a conversation{source_clause}. "
-            f"The overview above summarizes the full {msg_count}-turn conversation. "
-            "The replay shows the most relevant exchanges. Continue naturally from where it left off."
-        )
+    # Instructions — stance-aware + explicit acknowledgment + clarifying-question fallback.
+    stance = _detect_stance(summary)
+    continuation_target = snapshot if has_snapshot else "where the conversation left off"
+    instructions = (
+        f"{stance} "
+        f"You are now continuing this conversation. "
+        f"Begin by briefly acknowledging where the prior session left off (1-2 sentences), "
+        f"then continue from: {continuation_target}. "
+        f"If the current state is ambiguous, ask one focused clarifying question before proceeding. "
+        f"Maintain the same tone and technical depth as the prior session."
+    )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
     sections.append("</context_brief>")
+
+    # Explicit next-turn marker so the receiving LLM produces the next assistant
+    # message directly instead of acknowledging the brief and asking "what now?".
+    # Many models (especially smaller ones) need this framing to skip a meta-turn.
+    sections.append("\nThe next message in the conversation is yours, as the assistant. Begin now:")
 
     return "\n".join(sections)
 

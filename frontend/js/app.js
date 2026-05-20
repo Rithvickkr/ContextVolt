@@ -6,7 +6,7 @@
  */
 
 const API = '';  // Use same-origin so fetches go to whatever host pywebview loaded (127.0.0.1 or localhost)
-console.log('%c[ConVX] app.js loaded — build EXT-FIX-V16', 'background:#22c55e;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px', 'origin:', window.location.origin);
+console.log('%c[ConVX] app.js loaded — build SIDEBAR-COLLAPSE-V19', 'background:#22c55e;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px', 'origin:', window.location.origin);
 
 // â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {

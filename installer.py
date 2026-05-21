@@ -752,7 +752,7 @@ class Api:
     def get_saved_config(self):
         """Return the currently saved model + embed_model from config.json."""
         global OLLAMA_MODEL, EMBED_MODEL
-        config_path = PROJECT_ROOT / "config.json"
+        config_path = _paths.config_path()
         try:
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:

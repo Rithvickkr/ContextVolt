@@ -13,8 +13,9 @@ import requests
 
 OLLAMA_BASE = "http://localhost:11434"
 
-# File logger — writes to <project_root>/contextvolt.log with rotation (max 5 MB, 2 backups)
-_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contextvolt.log")
+# File logger — writes to the platform user-data dir with rotation (max 5 MB, 2 backups)
+from backend.paths import app_log_path as _app_log_path, config_path as _config_path
+_LOG_PATH = str(_app_log_path())
 from logging.handlers import RotatingFileHandler as _RFH
 _log = logging.getLogger("contextvolt")
 _log.setLevel(logging.DEBUG)
@@ -50,7 +51,7 @@ def _load_default_model() -> str:
     env = os.getenv("OLLAMA_MODEL")
     if env:
         return env
-    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+    cfg_path = str(_config_path())
     try:
         with open(cfg_path, "r", encoding="utf-8") as _f:
             _cfg = json.load(_f)
@@ -68,7 +69,7 @@ def _get_default_model() -> str:
 # All internal functions should call _get_default_model() instead.
 DEFAULT_MODEL = _load_default_model()  # exported for setup_status endpoint
 
-_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+_CFG_PATH = str(_config_path())
 
 
 def _get_embed_model() -> str:

@@ -51,7 +51,13 @@ def config_path() -> Path:
 
 
 def log_path() -> Path:
+    """Crash log for run.py / pythonw.exe (uncaught exceptions)."""
     return user_data_dir() / "cv_error.log"
+
+
+def app_log_path() -> Path:
+    """Application log for backend modules (ollama_client, main, etc)."""
+    return user_data_dir() / "contextvolt.log"
 
 
 def lock_path() -> Path:

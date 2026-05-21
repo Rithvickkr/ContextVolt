@@ -66,7 +66,19 @@ cd ContextVolt
 start.bat
 ```
 
-### macOS / Linux
+### macOS
+
+**Option A — `.dmg` (arm64, ad-hoc signed)**
+
+Download `ContextVolt.dmg` from the [Releases page](https://github.com/Rithvickkr/ContextVolt/releases), open it, drag **ContextVolt.app** to Applications. The build is ad-hoc signed (no Apple Developer ID yet), so the first launch needs **right-click → Open** to bypass Gatekeeper. Apple Silicon only; Intel Macs should use Option B.
+
+**Option B — From source (Apple Silicon + Intel)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
+```
+
+### Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
@@ -91,8 +103,9 @@ cd ~/.contextvolt && bash start.sh
 
 #### macOS notes
 
-- **Source install only.** There's no signed `.app` or `.dmg` — you're running Python directly from the cloned repo. Gatekeeper / notarization warnings don't apply because nothing is being launched from a `.app` bundle.
-- **Apple Silicon and Intel** are both supported via `pip` wheel resolution (`pyobjc`, `sqlite-vec`, `numpy` all ship universal/arm64/x86_64 wheels). CI smoke-tests run on Apple Silicon; Intel coverage relies on community testers — please [open an issue](https://github.com/Rithvickkr/ContextVolt/issues) if anything breaks.
+- **`.app` bundle and source install both supported.** The `.dmg` is ad-hoc signed (no Apple Developer ID yet) — Gatekeeper requires **right-click → Open** the first time. Notarization is on the roadmap.
+- **User data lives at** `~/Library/Application Support/ContextVolt/` — config, database, logs, and downloaded models. Removing the `.app` does not delete this directory; use `rm -rf ~/Library/Application\ Support/ContextVolt` for a full uninstall.
+- **Apple Silicon** is the supported architecture for the `.dmg`. Intel Macs work via source install (Option B) — `pyobjc`, `sqlite-vec`, `numpy` all ship x86_64 wheels. CI smoke-tests run on Apple Silicon; Intel coverage relies on community testers — please [open an issue](https://github.com/Rithvickkr/ContextVolt/issues) if anything breaks.
 - **Prerequisites you may need to install first:**
   ```bash
   brew install python git           # if not already present

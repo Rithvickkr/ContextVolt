@@ -149,9 +149,13 @@ def main():
     # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)
 
-    # Resolve icon path (works both from source and installed builds)
-    _icon = os.path.join(PROJECT_ROOT, "icon.ico")
-    _icon_arg = _icon if os.path.exists(_icon) else None
+    # Resolve icon path (works both from source and installed builds).
+    # Mac uses the .icns set by py2app via CFBundleIconFile — no runtime icon needed.
+    if sys.platform == "win32":
+        _icon = os.path.join(PROJECT_ROOT, "icon.ico")
+        _icon_arg = _icon if os.path.exists(_icon) else None
+    else:
+        _icon_arg = None
 
     # Open native window — blocks until the window is closed
     webview.create_window(

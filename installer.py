@@ -34,6 +34,31 @@ IS_MAC = sys.platform == "darwin"
 PROJECT_ROOT = Path(__file__).parent.absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 from backend import paths as _paths  # noqa: E402  — must follow sys.path setup
+
+
+def _find_ollama_binary():
+    """Locate the ollama CLI across PATH and platform-specific install dirs.
+
+    Returns the absolute path as a string, or None if not found.
+    """
+    found = shutil.which("ollama")
+    if found:
+        return found
+    if IS_WINDOWS:
+        candidate = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if candidate.exists():
+            return str(candidate)
+    elif IS_MAC:
+        candidates = [
+            "/usr/local/bin/ollama",
+            "/opt/homebrew/bin/ollama",
+            "/Applications/Ollama.app/Contents/Resources/ollama",
+            str(Path.home() / "Applications" / "Ollama.app" / "Contents" / "Resources" / "ollama"),
+        ]
+        for p in candidates:
+            if Path(p).exists():
+                return p
+    return None
 VENV_PATH = PROJECT_ROOT / "venv"
 VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3")
 VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
@@ -281,18 +306,8 @@ def run_installation():
                 pass
         
         # Find Ollama executable
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            # Common Homebrew / manual install paths on macOS
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
-        
+        ollama_path = _find_ollama_binary()
+
         if not ollama_path:
             state.log("  Ollama not found, downloading...")
             try:
@@ -335,7 +350,7 @@ def run_installation():
                         capture_output=True, text=True, timeout=180,
                     )
                     if result.returncode == 0:
-                        ollama_path = shutil.which("ollama")
+                        ollama_path = _find_ollama_binary()
                         if ollama_path:
                             state.log("  Ollama installed successfully")
                         else:
@@ -413,16 +428,7 @@ def run_installation():
 
     def step_pull_model():
         state.log(f"Checking AI model ({OLLAMA_MODEL})...")
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
+        ollama_path = _find_ollama_binary()
         if not ollama_path:
             state.log("  Ollama not available, skipping model pull")
             state.log(f"  You can pull the model later with: ollama pull {OLLAMA_MODEL}")
@@ -529,16 +535,7 @@ def run_installation():
 
     def step_pull_embed_model():
         state.log(f"Checking embedding model ({EMBED_MODEL})...")
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
+        ollama_path = _find_ollama_binary()
         if not ollama_path:
             state.log("  Ollama not available, skipping embed model pull")
             state.log(f"  You can pull it later with: ollama pull {EMBED_MODEL}")

@@ -52,3 +52,17 @@ jobs:
           done
           curl -sSf http://127.0.0.1:8000/api/health
           kill $UVICORN_PID || true
+
+  # Lint the Homebrew cask so syntax/style errors are caught before they reach
+  # the tap. Does not install anything — just validates the .rb.
+  cask-lint:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ruby syntax check
+        run: ruby -c installer/homebrew/contextvolt.rb
+
+      - name: brew style (cask cops)
+        run: brew style installer/homebrew/contextvolt.rb

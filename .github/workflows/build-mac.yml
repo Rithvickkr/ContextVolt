@@ -47,6 +47,25 @@ jobs:
           CONTEXTVOLT_VERSION: ${{ steps.ver.outputs.value }}
         run: bash installer/build_mac.sh
 
+      # Launch the FROZEN bundle headlessly. This is the real test that py2app
+      # packaged every runtime dependency — a clean build can still ship a
+      # bundle that crashes on a missing dynamic import at launch.
+      - name: Smoke-test the bundled .app
+        env:
+          CONTEXTVOLT_CI: "1"
+        run: |
+          APP="dist/ContextVolt.app/Contents/MacOS/ContextVolt"
+          if [ ! -x "$APP" ]; then
+            echo "Bundle executable not found at $APP"; ls -la dist/ContextVolt.app/Contents/MacOS; exit 1
+          fi
+          # 60s ceiling so a hang fails the job instead of stalling the runner.
+          OUT=$(CONTEXTVOLT_CI=1 /usr/bin/timeout 60 "$APP" 2>&1) || {
+            echo "Bundle launch failed:"; echo "$OUT"; exit 1
+          }
+          echo "$OUT"
+          echo "$OUT" | grep -q "bundled runtime import + db init OK" \
+            || { echo "Expected CI marker not found"; exit 1; }
+
       - name: Upload artifact (always)
         uses: actions/upload-artifact@v4
         with:

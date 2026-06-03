@@ -921,6 +921,17 @@ def _launch_main_app_inprocess():
 
 
 def main():
+    # CI smoke test: when CONTEXTVOLT_CI=1, import the full runtime stack (this
+    # is what proves a frozen .app bundle actually packaged every module) and
+    # exit before opening any GUI window. No effect on normal runs.
+    if os.environ.get("CONTEXTVOLT_CI") == "1":
+        import backend.main  # noqa: F401 — pulls in fastapi/uvicorn/pydantic/mcp/routes
+        import webview, numpy, sqlite_vec  # noqa: F401
+        from backend.database import init_db
+        init_db()
+        print("CONTEXTVOLT_CI: bundled runtime import + db init OK")
+        return
+
     # If already installed, skip the installer and launch the app directly
     if _paths.installed_marker_path().exists():
         if IS_FROZEN:

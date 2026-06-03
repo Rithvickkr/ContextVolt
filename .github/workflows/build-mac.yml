@@ -11,6 +11,10 @@ on:
         required: false
         default: '2.2.0'
 
+# The release-attach step needs write access to create/update GitHub Releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     # macos-14 = Apple Silicon (arm64), free for public repos.

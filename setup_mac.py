@@ -46,28 +46,24 @@ PLIST = {
 OPTIONS = {
     "iconfile": "icon.icns",
     "plist": PLIST,
-    # Python packages that py2app's static analyzer often misses — uvicorn /
-    # starlette / pydantic do a lot of dynamic imports. List them explicitly.
+    # Only force-include packages that py2app's static analyzer misses or that
+    # ship binaries / data files. Pure-Python leaf libraries (anyio, sniffio,
+    # h11, click, idna, charset_normalizer, urllib3 …) are discovered
+    # automatically through the import graph — listing them here makes py2app's
+    # collect_packagedirs choke (e.g. "No module named 'sniffio'").
     "packages": [
         "backend",
-        "fastapi",
-        "starlette",
-        "uvicorn",
+        "fastapi",       # dynamic imports
+        "starlette",     # dynamic imports
+        "uvicorn",       # dynamic protocol/loader imports
         "pydantic",
-        "pydantic_core",
-        "anyio",
-        "sniffio",
-        "h11",
-        "click",
+        "pydantic_core",  # compiled extension
         "requests",
-        "urllib3",
-        "charset_normalizer",
-        "idna",
-        "certifi",
-        "numpy",
-        "sqlite_vec",
-        "mcp",
-        "webview",
+        "certifi",        # bundles cacert.pem data file
+        "numpy",          # compiled extension
+        "sqlite_vec",     # bundles the loadable extension
+        "mcp",            # dynamic imports
+        "webview",        # pywebview loads its Cocoa backend dynamically
         # PyObjC bridge modules required by pywebview's Cocoa backend.
         "objc",
         "Foundation",
@@ -80,6 +76,11 @@ OPTIONS = {
         "json",
         "logging",
         "ssl",
+        # anyio/sniffio are normally auto-discovered, but list the entry points
+        # explicitly so a missed dynamic import can't drop them.
+        "anyio",
+        "sniffio",
+        "h11",
     ],
     # Read-only assets shipped inside Contents/Resources/.
     # Writable state (db, config, logs, .ollama, lock) goes through paths.py.

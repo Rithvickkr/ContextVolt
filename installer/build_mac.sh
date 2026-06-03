@@ -24,7 +24,7 @@ if [[ "$OSTYPE" != "darwin"* ]]; then
     exit 1
 fi
 
-VERSION="${CONTEXTVOLT_VERSION:-2.1.0}"
+VERSION="${CONTEXTVOLT_VERSION:-2.2.0}"
 DMG_NAME="ContextVolt-${VERSION}-macOS.dmg"
 
 echo ""

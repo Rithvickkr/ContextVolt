@@ -3,7 +3,7 @@
 # ContextVolt — One-line installer for macOS / Linux
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/master/install.sh | bash
 #
 # What it does:
 #   1. Checks prerequisites (Python 3, git)
@@ -109,6 +109,11 @@ elif [ -f "$HOME/.bashrc" ]; then
     SHELL_PROFILE="$HOME/.bashrc"
 elif [ -f "$HOME/.bash_profile" ]; then
     SHELL_PROFILE="$HOME/.bash_profile"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    # Fresh macOS account: zsh is the default shell since Catalina but no
+    # profile exists yet. Create one so the PATH export actually lands.
+    touch "$HOME/.zshrc"
+    SHELL_PROFILE="$HOME/.zshrc"
 fi
 
 if [ -n "$SHELL_PROFILE" ]; then
@@ -134,8 +139,12 @@ echo -e "  • Install dependencies (fastapi, pywebview, etc.)"
 echo -e "  • Check/install Ollama"
 echo -e "  • Download the AI model (~4.7GB)"
 echo ""
-echo -e "  ${CYAN}Starting in 3 seconds... (Ctrl+C to skip, run 'contextvolt' later)${NC}"
-sleep 3
+if [ "${CONTEXTVOLT_CI:-}" = "1" ]; then
+    echo -e "  ${CYAN}CONTEXTVOLT_CI=1 — running headless setup${NC}"
+else
+    echo -e "  ${CYAN}Starting in 3 seconds... (Ctrl+C to skip, run 'contextvolt' later)${NC}"
+    sleep 3
+fi
 
 cd "$INSTALL_DIR"
 bash start.sh

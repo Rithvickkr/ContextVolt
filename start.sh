@@ -36,8 +36,7 @@ VENV_PIP="./venv/bin/pip3"
 
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "  Initializing ContextVolt..."
-    python3 -m venv venv
-    if [ $? -ne 0 ]; then
+    if ! python3 -m venv venv; then
         echo "  Failed to create virtual environment."
         echo "  Make sure python3-venv is installed:"
         echo "    sudo apt install python3-venv  (Linux)"
@@ -46,37 +45,50 @@ if [ ! -f "$VENV_PYTHON" ]; then
     fi
 fi
 
+# ─── CI / headless smoke check ───────────────────────────────────
+# When CONTEXTVOLT_CI=1, skip the pywebview GUI (no display in CI runners)
+# and just verify the backend imports + boots. Short-circuited *before* the
+# pywebview install so CI doesn't pull GUI deps it never uses.
+if [ "${CONTEXTVOLT_CI:-}" = "1" ]; then
+    echo "  CONTEXTVOLT_CI=1 — running headless smoke check, skipping GUI"
+    "$VENV_PIP" install -r requirements.txt --quiet --disable-pip-version-check
+    "$VENV_PYTHON" -c "from backend.main import app; print('  backend import OK')"
+    exit $?
+fi
+
 # ─── Install pywebview if needed ─────────────────────────────────
-"$VENV_PYTHON" -c "import webview" 2>/dev/null
-if [ $? -ne 0 ]; then
+# `import webview` returns non-zero on a fresh venv — guard with `if !` so
+# `set -e` doesn't abort the script before we reach the install branch.
+if ! "$VENV_PYTHON" -c "import webview" 2>/dev/null; then
     echo "  Installing pywebview..."
-    
+
     # macOS: pywebview needs pyobjc for the native WebKit backend
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        "$VENV_PIP" install pywebview pyobjc-core pyobjc-framework-WebKit \
-            --quiet --disable-pip-version-check 2>/dev/null
+        if ! "$VENV_PIP" install pywebview pyobjc-core pyobjc-framework-WebKit \
+                --quiet --disable-pip-version-check; then
+            echo "  Failed to install pywebview."
+            echo "  Try: pip3 install pywebview pyobjc-core pyobjc-framework-WebKit"
+            exit 1
+        fi
     else
         # Linux: pywebview needs GTK
-        "$VENV_PIP" install pywebview \
-            --quiet --disable-pip-version-check 2>/dev/null
-    fi
-    
-    if [ $? -ne 0 ]; then
-        echo "  Failed to install pywebview."
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            echo "  Try: pip3 install pywebview pyobjc-core pyobjc-framework-WebKit"
-        else
+        if ! "$VENV_PIP" install pywebview \
+                --quiet --disable-pip-version-check; then
+            echo "  Failed to install pywebview."
             echo "  Make sure GTK3 is installed:"
             echo "    sudo apt install python3-gi gir1.2-webkit2-4.0"
+            exit 1
         fi
-        exit 1
     fi
 fi
 
 # ─── Launch the GUI installer ────────────────────────────────────
 echo "  Launching ContextVolt..."
+# Disable set -e for the installer call so we can report its exit code cleanly.
+set +e
 "$VENV_PYTHON" installer.py
 EXIT_CODE=$?
+set -e
 
 if [ $EXIT_CODE -ne 0 ]; then
     echo ""

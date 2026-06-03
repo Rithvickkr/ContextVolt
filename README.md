@@ -66,13 +66,35 @@ cd ContextVolt
 start.bat
 ```
 
-### macOS / Linux
+### macOS
+
+**Option A — Homebrew (recommended, Apple Silicon)**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
+brew install --cask rithvickkr/tap/contextvolt
 ```
 
-This clones the project to `~/.contextvolt` and adds a `contextvolt` shell command.
+One command installs Ollama, places **ContextVolt.app** in Applications, and clears the Gatekeeper quarantine so it opens on first click — no warning. Update with `brew upgrade --cask contextvolt`.
+
+**Option B — `.dmg` (Apple Silicon)**
+
+Download `ContextVolt-*-macOS.dmg` from the [Releases page](https://github.com/Rithvickkr/ContextVolt/releases), open it, drag **ContextVolt.app** to Applications. The build is ad-hoc signed (no Apple Developer ID yet), so the first launch is blocked once by Gatekeeper:
+
+> **First launch:** open the app, then go to **System Settings → Privacy & Security**, scroll to the bottom, and click **"Open Anyway."** (On older macOS, right-click the app → **Open**.) You only do this once.
+
+**Option C — From source (Apple Silicon + Intel)**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/master/install.sh | bash
+```
+
+### Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/master/install.sh | bash
+```
+
+This clones the project to `~/.contextvolt`, creates a Python virtual environment, installs dependencies, and adds a `contextvolt` shell command.
 
 ```bash
 contextvolt        # launch
@@ -81,6 +103,26 @@ contextvolt        # launch
 ```bash
 cd ~/.contextvolt && git pull    # update
 ```
+
+**Manual install (no curl):**
+
+```bash
+git clone https://github.com/Rithvickkr/ContextVolt.git ~/.contextvolt
+cd ~/.contextvolt && bash start.sh
+```
+
+#### macOS notes
+
+- **Homebrew is the smoothest path** (Option A) — the cask clears Gatekeeper quarantine automatically, so there is no warning. The `.dmg` (Option B) is the same ad-hoc-signed build but, downloaded manually, it keeps the quarantine flag and needs the one-time **System Settings → Privacy & Security → "Open Anyway"** step. Notarization is on the roadmap.
+- **User data lives at** `~/Library/Application Support/ContextVolt/` — config, database, logs, and downloaded models. Removing the `.app` does not delete this directory; use `brew uninstall --zap contextvolt` (Homebrew) or `rm -rf ~/Library/Application\ Support/ContextVolt` for a full uninstall.
+- **Apple Silicon** is the supported architecture for Homebrew and the `.dmg`. Intel Macs work via source install (Option C) — `pyobjc`, `sqlite-vec`, `numpy` all ship x86_64 wheels. CI smoke-tests run on Apple Silicon; Intel coverage relies on community testers — please [open an issue](https://github.com/Rithvickkr/ContextVolt/issues) if anything breaks.
+- **Prerequisites you may need to install first:**
+  ```bash
+  brew install python git           # if not already present
+  xcode-select --install            # required for pyobjc to build if a wheel is missing
+  brew install ollama               # optional — installer will fetch it otherwise
+  ```
+- **Status: beta on macOS.** The author develops on Windows. macOS bug reports are welcome and triaged quickly.
 
 ### Prerequisites
 

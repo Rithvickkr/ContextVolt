@@ -84,7 +84,15 @@ def download_update(url: str, size: int = 0) -> Iterator[dict]:
     """Generator — downloads the installer and yields SSE-friendly progress dicts."""
     global _dl_path
 
-    suffix = ".exe" if sys.platform == "win32" else ""
+    # The downloaded artifact must keep its real extension so the OS handler
+    # recognizes it: .exe (silent install) on Windows, .dmg (mounted via `open`)
+    # on macOS.
+    if sys.platform == "win32":
+        suffix = ".exe"
+    elif sys.platform == "darwin":
+        suffix = ".dmg"
+    else:
+        suffix = ""
     tmp = tempfile.mktemp(suffix=suffix, prefix="cv_update_")
     downloaded = 0
 

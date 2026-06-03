@@ -32,6 +32,33 @@ IS_WINDOWS = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 
 PROJECT_ROOT = Path(__file__).parent.absolute()
+sys.path.insert(0, str(PROJECT_ROOT))
+from backend import paths as _paths  # noqa: E402  — must follow sys.path setup
+
+
+def _find_ollama_binary():
+    """Locate the ollama CLI across PATH and platform-specific install dirs.
+
+    Returns the absolute path as a string, or None if not found.
+    """
+    found = shutil.which("ollama")
+    if found:
+        return found
+    if IS_WINDOWS:
+        candidate = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
+        if candidate.exists():
+            return str(candidate)
+    elif IS_MAC:
+        candidates = [
+            "/usr/local/bin/ollama",
+            "/opt/homebrew/bin/ollama",
+            "/Applications/Ollama.app/Contents/Resources/ollama",
+            str(Path.home() / "Applications" / "Ollama.app" / "Contents" / "Resources" / "ollama"),
+        ]
+        for p in candidates:
+            if Path(p).exists():
+                return p
+    return None
 VENV_PATH = PROJECT_ROOT / "venv"
 VENV_PYTHON = VENV_PATH / ("Scripts/python.exe" if IS_WINDOWS else "bin/python3")
 VENV_PIP = VENV_PATH / ("Scripts/pip.exe" if IS_WINDOWS else "bin/pip3")
@@ -115,12 +142,18 @@ AVAILABLE_EMBED_MODELS = [
     },
 ]
 
-# Store Ollama models within the project folder
-OLLAMA_DIR = PROJECT_ROOT / ".ollama"
-OLLAMA_MODELS_DIR = OLLAMA_DIR / "models"
+# Store Ollama models in the per-user data dir (same place run.py reads it from).
+# On Windows this is PROJECT_ROOT/.ollama (legacy); on Mac/Linux it's under the user data dir.
+OLLAMA_DIR = _paths.ollama_dir()
+OLLAMA_MODELS_DIR = _paths.ollama_models_dir()
 
-# Detect if running from embedded/bundled Python (no venv module)
+# True when running inside a py2app/PyInstaller bundle (read-only .app)
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+
+# Detect if running from embedded/bundled Python (no venv module, or frozen .app)
 def is_embedded_python():
+    if IS_FROZEN:
+        return True
     try:
         import venv  # noqa: F401
         return False
@@ -154,6 +187,7 @@ class InstallState:
         self.error_step = None
         self.installation_complete = False
         self.window = None
+        self.launch_after_close = False  # set by Api.launch_app in frozen bundles
 
     def log(self, message):
         timestamp = time.strftime("%H:%M:%S")
@@ -251,6 +285,13 @@ def run_installation():
             try:
                 profile = Path.home() / (".zshrc" if IS_MAC else ".bashrc")
                 export_line = f'export OLLAMA_MODELS="{OLLAMA_MODELS_DIR}"'
+                # On a fresh macOS user account .zshrc may not exist yet; create
+                # it so the export actually persists across new shells.
+                if IS_MAC and not profile.exists():
+                    try:
+                        profile.touch()
+                    except Exception:
+                        pass
                 if profile.exists():
                     content = profile.read_text()
                     if "OLLAMA_MODELS" not in content:
@@ -265,18 +306,8 @@ def run_installation():
                 pass
         
         # Find Ollama executable
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            # Common Homebrew / manual install paths on macOS
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
-        
+        ollama_path = _find_ollama_binary()
+
         if not ollama_path:
             state.log("  Ollama not found, downloading...")
             try:
@@ -311,26 +342,51 @@ def run_installation():
                     else:
                         state.log("  Download failed. Install from ollama.com")
                         return True
+                elif IS_MAC:
+                    # macOS: the Linux install.sh is not supported here. Prefer the
+                    # Homebrew CLI formula (no admin password, no GUI app needed).
+                    brew = shutil.which("brew")
+                    if brew:
+                        state.log("  Installing Ollama via Homebrew...")
+                        result = subprocess.run(
+                            [brew, "install", "ollama"],
+                            capture_output=True, text=True, timeout=300,
+                        )
+                        if result.returncode == 0:
+                            ollama_path = _find_ollama_binary()
+                    if ollama_path:
+                        state.log("  Ollama installed successfully")
+                    else:
+                        # No Homebrew (or brew install failed) — we can't reliably
+                        # auto-install on macOS. Point the user at the download page.
+                        state.log("  Could not auto-install Ollama.")
+                        state.log("  Install it from https://ollama.com/download")
+                        state.log("  (or run: brew install ollama), then reopen ContextVolt.")
+                        try:
+                            import webbrowser
+                            webbrowser.open("https://ollama.com/download")
+                        except Exception:
+                            pass
+                        return True
                 else:
-                    # macOS / Linux: use the official install script
+                    # Linux: use the official install script
                     state.log("  Running Ollama install script...")
                     result = subprocess.run(
                         ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
                         capture_output=True, text=True, timeout=180,
                     )
                     if result.returncode == 0:
-                        ollama_path = shutil.which("ollama")
+                        ollama_path = _find_ollama_binary()
                         if ollama_path:
                             state.log("  Ollama installed successfully")
                         else:
                             state.log("  Install completed but ollama not found in PATH")
-                            state.log("  Try: brew install ollama")
+                            state.log("  Try your package manager, e.g.: sudo snap install ollama")
                             return True
                     else:
                         state.log("  Install script failed")
-                        state.log("  Try: brew install ollama")
                         return True
-                    
+
             except subprocess.TimeoutExpired:
                 state.log("  Installation timed out")
                 state.log("  Please install manually from ollama.com")
@@ -388,6 +444,8 @@ def run_installation():
                 }
                 if IS_WINDOWS:
                     popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+                else:
+                    popen_kwargs["start_new_session"] = True
                 subprocess.Popen([ollama_path, "serve"], **popen_kwargs)
                 time.sleep(3)
                 state.log("  Ollama API started")
@@ -395,16 +453,7 @@ def run_installation():
 
     def step_pull_model():
         state.log(f"Checking AI model ({OLLAMA_MODEL})...")
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
+        ollama_path = _find_ollama_binary()
         if not ollama_path:
             state.log("  Ollama not available, skipping model pull")
             state.log(f"  You can pull the model later with: ollama pull {OLLAMA_MODEL}")
@@ -432,9 +481,11 @@ def run_installation():
                     }
                     if IS_WINDOWS:
                         serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    else:
+                        serve_kwargs["start_new_session"] = True
                     subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
                 time.sleep(2)
-        
+
         if not service_running:
             state.log("  Could not start Ollama service")
             state.log(f"  You can pull the model later with: ollama pull {OLLAMA_MODEL}")
@@ -509,16 +560,7 @@ def run_installation():
 
     def step_pull_embed_model():
         state.log(f"Checking embedding model ({EMBED_MODEL})...")
-        ollama_path = shutil.which("ollama")
-        if not ollama_path and IS_WINDOWS:
-            local = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"
-            if local.exists():
-                ollama_path = str(local)
-        if not ollama_path and IS_MAC:
-            for p in ["/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"]:
-                if Path(p).exists():
-                    ollama_path = p
-                    break
+        ollama_path = _find_ollama_binary()
         if not ollama_path:
             state.log("  Ollama not available, skipping embed model pull")
             state.log(f"  You can pull it later with: ollama pull {EMBED_MODEL}")
@@ -540,6 +582,8 @@ def run_installation():
                     serve_kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "env": ollama_env}
                     if IS_WINDOWS:
                         serve_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    else:
+                        serve_kwargs["start_new_session"] = True
                     subprocess.Popen([ollama_path, "serve"], **serve_kwargs)
                 time.sleep(2)
 
@@ -620,10 +664,11 @@ def run_installation():
         # Escape backslashes for embedding in JS strings
         ext_path_js = ext_path.replace("\\", "\\\\")
 
-        # Write a local HTML guide that opens in the browser
-        guide_path = PROJECT_ROOT / "extension_install_guide.html"
-        # Load the standalone guide template and substitute the actual extension path.
+        # Write a local HTML guide that opens in the browser.
+        # Template ships read-only in PROJECT_ROOT (Resources/ inside a Mac .app);
+        # output goes to the writable user data dir (same as PROJECT_ROOT on Windows).
         guide_template_path = PROJECT_ROOT / "extension_install_guide.html"
+        guide_path = _paths.extension_guide_path()
         try:
             template = guide_template_path.read_text(encoding="utf-8")
         except Exception:
@@ -688,7 +733,7 @@ def run_installation():
         state.log("Installation complete!")
         # Create marker file so launcher knows to run app directly next time
         try:
-            (PROJECT_ROOT / ".installed").write_text("ok")
+            _paths.installed_marker_path().write_text("ok")
         except Exception:
             pass
     except Exception as e:
@@ -729,7 +774,7 @@ class Api:
     def get_saved_config(self):
         """Return the currently saved model + embed_model from config.json."""
         global OLLAMA_MODEL, EMBED_MODEL
-        config_path = PROJECT_ROOT / "config.json"
+        config_path = _paths.config_path()
         try:
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -752,7 +797,7 @@ class Api:
             return {"success": False, "error": "Unknown model"}
         EMBED_MODEL = model_id
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -767,7 +812,7 @@ class Api:
     def set_cloud_config(self, provider: str, api_key: str, cloud_model: str):
         """Save cloud provider, API key, and model to config.json."""
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -796,7 +841,7 @@ class Api:
         OLLAMA_MODEL = model_id
         # Persist to config.json so the backend picks it up at runtime
         try:
-            config_path = PROJECT_ROOT / "config.json"
+            config_path = _paths.config_path()
             config = {}
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -830,8 +875,19 @@ class Api:
         return {"success": False}
     
     def launch_app(self):
-        """Launch the main application."""
+        """Launch the main application.
+
+        In a frozen Mac .app bundle, sys.executable is the bundle launcher and
+        cannot run arbitrary scripts via subprocess. We instead set a flag and
+        let main() call run.main() in-process after the wizard window closes.
+        On Windows / source installs we keep the subprocess.Popen flow.
+        """
         state.log("Launching ContextVolt...")
+        if IS_FROZEN:
+            state.launch_after_close = True
+            if state.window:
+                state.window.destroy()
+            return {"success": True}
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
         using_embedded = EMBEDDED_MODE or not pythonw.exists()
         if using_embedded:
@@ -843,6 +899,11 @@ class Api:
         popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_kwargs["start_new_session"] = True
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+            popen_kwargs["stdin"] = subprocess.DEVNULL
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
         if state.window:
             state.window.destroy()
@@ -853,9 +914,20 @@ class Api:
 # Main Entry Point
 # ─────────────────────────────────────────────────────────────────
 
+def _launch_main_app_inprocess():
+    """Run the main ContextVolt app in this process. Used inside frozen bundles."""
+    import run as _run_module  # imported lazily — avoids loading uvicorn at wizard time
+    _run_module.main()
+
+
 def main():
     # If already installed, skip the installer and launch the app directly
-    if (PROJECT_ROOT / ".installed").exists():
+    if _paths.installed_marker_path().exists():
+        if IS_FROZEN:
+            # Frozen .app: subprocess.Popen against sys.executable doesn't work,
+            # so just run the app in this process.
+            _launch_main_app_inprocess()
+            return
         pythonw = VENV_PATH / ("Scripts/pythonw.exe" if IS_WINDOWS else "bin/python3")
         using_embedded = EMBEDDED_MODE or not pythonw.exists()
         if using_embedded:
@@ -867,6 +939,11 @@ def main():
         popen_kwargs = {"cwd": cwd}
         if IS_WINDOWS:
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            popen_kwargs["start_new_session"] = True
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+            popen_kwargs["stdin"] = subprocess.DEVNULL
         subprocess.Popen([python_exe, str(PROJECT_ROOT / "run.py")], **popen_kwargs)
         return
 
@@ -887,6 +964,10 @@ def main():
     state.window = window
 
     def _set_installer_icon():
+        # Windows-only: native taskbar icon via ctypes/user32. macOS/Linux
+        # pywebview backends don't accept .ico anyway; leave the window iconless.
+        if not IS_WINDOWS:
+            return
         _icon = str(PROJECT_ROOT / "icon.ico")
         if not os.path.exists(_icon):
             return
@@ -923,6 +1004,11 @@ def main():
 
     threading.Thread(target=_set_installer_icon, daemon=True).start()
     webview.start()
+
+    # In a frozen Mac .app, Api.launch_app sets this flag instead of spawning a
+    # subprocess. Once the wizard window has closed, hand off to run.main().
+    if state.launch_after_close:
+        _launch_main_app_inprocess()
 
 
 if __name__ == "__main__":

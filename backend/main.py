@@ -140,7 +140,7 @@ def _check_rate_limit(client: str, path: str) -> None:
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="ContextVolt", version="1.0.0")
+app = FastAPI(title="ContextVolt", version="2.1.0")
 
 
 @app.middleware("http")
@@ -267,7 +267,8 @@ def pull_model():
 # Embed model setup
 # ---------------------------------------------------------------------------
 
-_CFG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
+from backend.paths import config_path as _config_path  # noqa: E402
+_CFG_PATH = str(_config_path())
 
 _EMBED_MODEL_OPTIONS = [
     {"id": "qwen3-embedding:0.6b", "label": "qwen3-embedding 0.6B", "size": "640 MB",
@@ -2273,7 +2274,8 @@ def api_debug_ollama():
 @app.get("/api/debug/logs")
 def api_debug_logs(lines: int = 100):
     """Return the last N lines of contextvolt.log for in-app debugging."""
-    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contextvolt.log")
+    from backend.paths import app_log_path as _app_log_path
+    log_path = str(_app_log_path())
     if not os.path.exists(log_path):
         return {"lines": [], "path": log_path, "exists": False}
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:

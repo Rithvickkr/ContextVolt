@@ -1,0 +1,60 @@
+name: Build macOS .dmg
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string for the .dmg filename'
+        required: false
+        default: '2.1.0'
+
+jobs:
+  build:
+    # macos-14 = Apple Silicon (arm64), free for public repos.
+    # Switch to macos-13 if you need an Intel build instead.
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Determine version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.event.inputs.version || '2.1.0' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .app and .dmg
+        env:
+          CONTEXTVOLT_VERSION: ${{ steps.ver.outputs.value }}
+        run: bash installer/build_mac.sh
+
+      - name: Upload artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ContextVolt-${{ steps.ver.outputs.value }}-macOS
+          path: ContextVolt-*-macOS.dmg
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (only on tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ContextVolt-*-macOS.dmg
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

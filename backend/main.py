@@ -11,10 +11,10 @@ import subprocess
 import sys
 import threading
 import time
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from backend.database import (
     init_db,
@@ -52,6 +52,12 @@ from backend.database import (
     update_ask_session,
     delete_ask_session,
     get_context_by_url,
+    create_lattice_entries,
+    delete_lattice_by_context,
+    get_lattice_entries_by_context,
+    create_entities_for_context,
+    delete_entities_by_context,
+    find_entity_chunks_for_query,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -59,6 +65,7 @@ from backend.models import (
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
     CloudKeySet, ProviderSelect, CloudKeyValidate, UserProfileUpdate,
 )
+from backend.mcp_http import mount_mcp_http
 from backend.ollama_client import (
     summarize_conversation as _ollama_summarize,
     summarize_conversation_streaming as _ollama_summarize_streaming,
@@ -80,6 +87,7 @@ from backend.llm_router import (
     is_cloud_active,
     summarize_conversation,
     summarize_conversation_streaming,
+    summarize_with_lattice,
     generate as router_generate,
     generate_stream as router_generate_stream,
 )
@@ -94,6 +102,11 @@ from backend.cloud_client import (
 
 _rate_limit_store: dict[str, list[float]] = {}
 _rate_limit_lock = threading.Lock()
+
+# Serialises background LLM work (capture summarize, resummarize) so multiple
+# captures don't contend on the local GPU. Synchronous endpoints don't acquire
+# this — they already block the caller's request and so can't pile up.
+_local_llm_lock = threading.Lock()
 
 # Limits per route prefix (requests / window_seconds)
 _RATE_LIMITS: list[tuple[str, int, int]] = [
@@ -152,6 +165,11 @@ app.add_middleware(
 init_db()
 
 
+# Mount ConVX-as-MCP-server over Streamable HTTP. Exposes the same tools and
+# resources as `python -m backend.mcp_server` (stdio) — see backend/mcp_http.py.
+mount_mcp_http(app, path="/mcp")
+
+
 def _try_embed_context(context_id: int | None, summary: dict) -> None:
     """Generate and store an embedding for a context (best-effort, never raises)."""
     if not context_id or not isinstance(summary, dict):
@@ -190,7 +208,14 @@ if os.path.isdir(FRONTEND_DIR):
 def serve_frontend():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     return {"message": "ContextVolt API is running. Frontend not found."}
 
 
@@ -202,7 +227,8 @@ _server_token: dict = {"started_at": time.time()}  # mutable — run.py updates 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "started_at": _server_token["started_at"]}
+    from backend.updater import APP_VERSION
+    return {"status": "ok", "started_at": _server_token["started_at"], "version": APP_VERSION}
 
 
 @app.get("/api/setup/status")
@@ -291,10 +317,21 @@ def embed_setup_status():
     current = cfg.get("embed_model", "nomic-embed-text")
     ollama_ok = check_ollama_running()
     ready = check_model_available(current) if ollama_ok else False
+
+    # Mark the VRAM-appropriate embed model as recommended
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    rec = recommend_models(gpu.get("vram_mb"))
+    available = [dict(m) for m in _EMBED_MODEL_OPTIONS]
+    for m in available:
+        m["recommended"] = (m["id"] == rec["embed"])
+
     return {
         "current_embed_model": current,
         "embed_model_ready": ready,
-        "available_models": _EMBED_MODEL_OPTIONS,
+        "available_models": available,
+        "gpu": gpu,
+        "recommendation": rec,
     }
 
 
@@ -355,22 +392,46 @@ def get_config():
 
     llm_models = [
         {"id": "llama3.2:3b", "label": "Llama 3.2 3B", "size": "~2 GB",
-         "desc": "Recommended — strong JSON adherence, faithful summaries, 128k context", "recommended": True},
+         "desc": "Strong JSON adherence, faithful summaries, 128k context",
+         "min_vram_mb": 5000},
         {"id": "qwen3:4b",    "label": "Qwen 3 4B",    "size": "~2.6 GB",
-         "desc": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size", "recommended": False},
+         "desc": "Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size",
+         "min_vram_mb": 8000},
         {"id": "qwen2.5:1.5b","label": "Qwen 2.5 1.5B","size": "~1 GB",
-         "desc": "Lightweight — minimal hardware, basic quality", "recommended": False},
+         "desc": "Lightweight — minimal hardware, basic quality",
+         "min_vram_mb": 0},
         {"id": "qwen2.5:3b",  "label": "Qwen 2.5 3B",  "size": "~2 GB",
-         "desc": "Stable fallback — proven, multilingual, runs on most hardware", "recommended": False},
+         "desc": "Stable fallback — proven, multilingual, runs on most hardware",
+         "min_vram_mb": 5000},
         {"id": "qwen2.5:7b",  "label": "Qwen 2.5 7B",  "size": "~5 GB",
-         "desc": "High quality — needs 6 GB+ VRAM or 8 GB+ RAM", "recommended": False},
+         "desc": "High quality — needs 6 GB+ VRAM or 8 GB+ RAM",
+         "min_vram_mb": 8000},
     ]
+
+    # Apply VRAM-aware recommendations
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    rec = recommend_models(gpu.get("vram_mb"))
+    vram_mb = gpu.get("vram_mb")
     for m in llm_models:
         m["installed"] = _is_installed(m["id"])
+        m["recommended"] = (m["id"] == rec["llm"])
+        m["fits_vram"] = vram_mb is None or vram_mb >= m.get("min_vram_mb", 0)
 
     embed_models = [dict(m) for m in _EMBED_MODEL_OPTIONS]
+    # Add per-embed VRAM requirements so the frontend can warn on bad pairs
+    _EMBED_VRAM = {
+        "qwen3-embedding:0.6b": 6000,   # ~1 GB peak, needs co-load headroom
+        "mxbai-embed-large":    6000,
+        "bge-m3":               7000,
+        "nomic-embed-text":     0,      # ~0.5 GB peak — fits anywhere
+        "nomic-embed-text:v1.5": 0,
+    }
     for m in embed_models:
         m["installed"] = _is_installed(m["id"])
+        m["recommended"] = (m["id"] == rec["embed"])
+        m["min_vram_mb"] = _EMBED_VRAM.get(m["id"], 0)
+        m["fits_vram"] = vram_mb is None or vram_mb >= m["min_vram_mb"]
 
     # Build cloud provider info
     cloud_providers = []
@@ -404,7 +465,17 @@ def get_config():
         "is_cloud_active": active["is_cloud"],
         "user_name": cfg.get("user_name", ""),
         "user_about": cfg.get("user_about", ""),
+        "gpu": gpu,
+        "recommendation": rec,
     }
+
+
+@app.get("/api/setup/gpu_info")
+def gpu_info():
+    """Detect GPU + VRAM and return the recommended LLM/embed pair."""
+    from backend.gpu_info import detect_gpu, recommend_models
+    gpu = detect_gpu()
+    return {"gpu": gpu, "recommendation": recommend_models(gpu.get("vram_mb"))}
 
 
 @app.post("/api/setup/save-profile")
@@ -712,6 +783,8 @@ def api_capture(req: CaptureRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     def _bg_summarize(cid: int, text: str, snippets: list) -> None:
+        # Serialise local LLM work so concurrent captures don't contend on the GPU
+        _local_llm_lock.acquire()
         try:
             # Chunk + embed first so semantic search works as soon as possible
             chunks = chunk_conversation(text, starred_snippets=snippets or [])
@@ -720,7 +793,24 @@ def api_capture(req: CaptureRequest):
             if chunks:
                 create_chunks(cid, chunks)
 
-            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            sl = summarize_with_lattice(text, important_snippets=snippets or None)
+            real_summary = sl["summary"]
+            lattice = sl.get("lattice") or []
+            # Replace any prior lattice for this context — capture is the
+            # canonical (re)build path, so old versions are not retained yet.
+            delete_lattice_by_context(cid)
+            if lattice:
+                create_lattice_entries(cid, lattice)
+
+            # Entity index — heuristic, populated from the same chunks the
+            # retrieval path already uses. Rebuilt fully each capture for now.
+            from backend.entity_extractor import extract_entities_per_chunk
+            delete_entities_by_context(cid)
+            if chunks:
+                ent_map = extract_entities_per_chunk(chunks)
+                if ent_map:
+                    create_entities_for_context(cid, ent_map)
+
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
             if new_title and new_title not in ("No topic extracted", "N/A"):
@@ -729,6 +819,8 @@ def api_capture(req: CaptureRequest):
             _try_embed_context(cid, real_summary)
         except Exception:
             update_context(cid, status="failed")
+        finally:
+            _local_llm_lock.release()
 
     try:
         # Check if we already saved this conversation URL before
@@ -803,8 +895,25 @@ def api_resummarize(context_id: int):
     update_context(context_id, status="summarizing")
 
     def _bg_resummarize(cid: int, text: str, snippets: list) -> None:
+        # Serialise local LLM work so concurrent captures don't contend on the GPU
+        _local_llm_lock.acquire()
         try:
-            real_summary = summarize_conversation(text, important_snippets=snippets or None)
+            sl = summarize_with_lattice(text, important_snippets=snippets or None)
+            real_summary = sl["summary"]
+            lattice = sl.get("lattice") or []
+            delete_lattice_by_context(cid)
+            if lattice:
+                create_lattice_entries(cid, lattice)
+
+            # Refresh entity index from current chunks.
+            from backend.entity_extractor import extract_entities_per_chunk
+            delete_entities_by_context(cid)
+            existing_chunks = get_chunks_by_context(cid)
+            if existing_chunks:
+                ent_map = extract_entities_per_chunk(existing_chunks)
+                if ent_map:
+                    create_entities_for_context(cid, ent_map)
+
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
             if new_title and new_title not in ("No topic extracted", "N/A"):
@@ -813,6 +922,8 @@ def api_resummarize(context_id: int):
             _try_embed_context(cid, real_summary)
         except Exception:
             update_context(cid, status="failed")
+        finally:
+            _local_llm_lock.release()
 
     threading.Thread(
         target=_bg_resummarize,
@@ -1632,7 +1743,7 @@ RULES:
 
     full_prompt = f"{system_prompt}\n\nUSER: {question}\nASSISTANT:"
 
-    # 5. Stream the response via the LLM router (works for both Ollama and cloud)
+    # Stream the response via the LLM router (Ollama or cloud).
     def _stream():
         accumulated: list[str] = []
         persisted = False
@@ -1767,7 +1878,7 @@ def api_cross_retrieve(body: PromptRequest):
     prompt = build_cross_context_prompt(
         retrieved_chunks=top_chunks,
         query=body.query.strip(),
-        prompt_size=body.size,
+        prompt_size=body.size or "standard",
     )
     return {"prompt": prompt, "mode": "retrieval", "chunks_found": len(top_chunks)}
 
@@ -1882,6 +1993,29 @@ def api_generate_prompt(
                 # Embedding failed — fall back to all chunks
                 top_chunks = all_chunks[:8]
 
+            # Build a lookup for fast chunk access by index (shared below).
+            by_idx = {ch["chunk_index"]: ch for ch in all_chunks}
+            seen_idx = {ch["chunk_index"] for ch in top_chunks}
+
+            # Semantic neighbor expansion — pull adjacent chunks (±1) for
+            # every semantic hit. Catches cases where the matched chunk is
+            # beside the specific fact-bearing chunk (e.g. path in next turn).
+            for ch in list(top_chunks):
+                for ni in (ch["chunk_index"] - 1, ch["chunk_index"] + 1):
+                    if ni in by_idx and ni not in seen_idx:
+                        top_chunks.append(by_idx[ni])
+                        seen_idx.add(ni)
+
+            # Entity boost — if the query mentions an identifier-shaped
+            # token (deploy key, ticket id, file path), pull the chunks
+            # that contain it. These survive regardless of semantic score.
+            entity_chunk_indices = find_entity_chunks_for_query(context_id, query.strip())
+            if entity_chunk_indices:
+                for idx in entity_chunk_indices:
+                    if idx in by_idx and idx not in seen_idx:
+                        top_chunks.append(by_idx[idx])
+                        seen_idx.add(idx)
+
             # Always anchor: first chunk, last chunk, starred chunks
             anchor_indices = set()
             first_idx = 0
@@ -1944,7 +2078,7 @@ def api_generate_prompt(
     summary = ctx["summary"]
     if isinstance(summary, dict):
         all_chunks_static = get_chunks_by_context(context_id)
-        has_real_summary = bool(summary.get("key_ideas"))
+        lattice_entries = get_lattice_entries_by_context(context_id) or None
         prompt = generate_continuation_prompt(
             summary,
             ctx.get("original_chat", ""),
@@ -1953,6 +2087,7 @@ def api_generate_prompt(
             created_at=ctx.get("created_at", ""),
             prompt_size=effective_size,
             chunks=all_chunks_static or None,
+            lattice=lattice_entries,
         )
         mode = "context" if all_chunks_static else "static"
         return {
@@ -2253,3 +2388,284 @@ def api_restart():
 
     threading.Thread(target=_trigger, daemon=True).start()
     return {"status": "restarting"}
+
+
+# ---------------------------------------------------------------------------
+# ConVX-as-MCP-server — info for the in-app settings panel.
+# Distinct namespace (`mcp_server`) from the host endpoints (`mcp`) above.
+# ---------------------------------------------------------------------------
+
+def _mcp_server_info_payload(request: Request) -> dict:
+    """Build the full payload shown in the settings UI.
+
+    Sensitive: includes the bearer token. Only return on requests bound to
+    loopback — anyone hitting this endpoint from elsewhere shouldn't see it.
+    """
+    from backend.mcp_http import get_http_token, get_auth_required
+
+    # Compose the URL the host should use. We keep the path consistent with
+    # mount_mcp_http() above.
+    host = (request.headers.get("host") or "127.0.0.1:8000").strip()
+    http_url = f"http://{host}/mcp"
+
+    # Detect the venv python actually running the app — that's exactly what
+    # the user should put in their Claude Desktop config.
+    python_path = sys.executable
+    script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server.py"))
+
+    stdio_command = python_path
+    stdio_args = [script_path]
+    stdio_config_snippet = json.dumps({
+        "mcpServers": {
+            "contextvolt": {
+                "command": stdio_command,
+                "args": stdio_args,
+            }
+        }
+    }, indent=2)
+
+    return {
+        "http": {
+            "url": http_url,
+            "auth_required": get_auth_required(),
+            "token": get_http_token(),
+        },
+        "stdio": {
+            "command": stdio_command,
+            "args": stdio_args,
+            "config_snippet": stdio_config_snippet,
+        },
+        "tools": ["search_vault", "get_context", "list_recent_contexts",
+                  "get_chunks", "vault_stats"],
+    }
+
+
+def _is_loopback(request: Request) -> bool:
+    client = request.client
+    host = client.host if client else ""
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+@app.get("/api/mcp_server/info")
+def mcp_server_info(request: Request):
+    """Full info for the settings panel (URL + token + stdio snippet).
+
+    Loopback-only — refuses requests from anywhere else.
+    """
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    return _mcp_server_info_payload(request)
+
+
+@app.post("/api/mcp_server/regenerate_token")
+def mcp_server_regenerate_token(request: Request):
+    """Generate a fresh bearer token, persist to config.json, return it."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend.mcp_http import regenerate_http_token
+    new_token = regenerate_http_token()
+    return {"token": new_token}
+
+
+@app.post("/api/mcp_server/auth_required")
+def mcp_server_set_auth_required(request: Request, body: dict):
+    """Toggle whether the HTTP transport requires a bearer token."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    if "required" not in body or not isinstance(body["required"], bool):
+        raise HTTPException(status_code=400, detail="body must be {required: bool}")
+    from backend.mcp_http import set_auth_required
+    set_auth_required(body["required"])
+    return {"auth_required": body["required"]}
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Tunnel — gives the local MCP server a public HTTPS URL so that
+# remote LLMs (Grok, ChatGPT, Claude.ai) can reach it.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/mcp_server/tunnel")
+def mcp_tunnel_status(request: Request):
+    """Return current tunnel state + public HTTPS MCP URL (if running)."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    return cloudflare_tunnel.get_status()
+
+
+@app.post("/api/mcp_server/tunnel/start")
+def mcp_tunnel_start(request: Request):
+    """Download cloudflared if needed and start a Quick Tunnel."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    cloudflare_tunnel.start(port=8000)
+    return {"ok": True, "status": cloudflare_tunnel.get_status()["status"]}
+
+
+@app.post("/api/mcp_server/tunnel/stop")
+def mcp_tunnel_stop(request: Request):
+    """Terminate the tunnel process."""
+    if not _is_loopback(request):
+        raise HTTPException(status_code=403, detail="loopback only")
+    from backend import cloudflare_tunnel
+    cloudflare_tunnel.stop()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# OAuth 2.0 + PKCE — required by Grok, ChatGPT, Claude.ai remote MCP connectors.
+#
+# Exposes /oauth/authorize and /oauth/token (public — reachable through the
+# Cloudflare tunnel) and /.well-known/oauth-authorization-server (discovery).
+# The issued access_token is the existing MCP bearer token; no new credential
+# is created.
+# ---------------------------------------------------------------------------
+
+from fastapi import Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+
+@app.get("/.well-known/oauth-authorization-server", include_in_schema=False)
+def oauth_discovery(request: Request):
+    """RFC 8414 discovery — some clients fetch this before starting OAuth."""
+    from backend.oauth_server import authorization_server_metadata
+    base = str(request.base_url).rstrip("/")
+    return authorization_server_metadata(base)
+
+
+@app.get("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
+def oauth_authorize_get(
+    response_type: str = "",
+    client_id: str = "",
+    redirect_uri: str = "",
+    code_challenge: str = "",
+    code_challenge_method: str = "S256",
+    state: str = "",
+    scope: str = "",   # accepted but not used — we grant full vault read access
+):
+    """Show the user a consent page."""
+    from backend.oauth_server import CLIENT_ID, _consent_html
+
+    if response_type != "code":
+        raise HTTPException(status_code=400, detail="only response_type=code is supported")
+    if not redirect_uri:
+        raise HTTPException(status_code=400, detail="redirect_uri required")
+    if not code_challenge:
+        raise HTTPException(status_code=400, detail="PKCE code_challenge required")
+    if code_challenge_method != "S256":
+        raise HTTPException(status_code=400, detail="only S256 code_challenge_method supported")
+
+    return _consent_html(
+        client_id=client_id or CLIENT_ID,
+        redirect_uri=redirect_uri,
+        challenge=code_challenge,
+        challenge_method=code_challenge_method,
+        state=state,
+    )
+
+
+@app.post("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
+async def oauth_authorize_post(
+    decision: str = Form(...),
+    redirect_uri: str = Form(...),
+    code_challenge: str = Form(...),
+    client_id: str = Form(default="convx"),
+    state: str = Form(default=""),
+):
+    """User clicked Allow or Deny — redirect back to the client."""
+    from backend.oauth_server import _new_code, _consent_html
+    from urllib.parse import urlencode
+
+    if decision != "allow":
+        params = urlencode({"error": "access_denied", "state": state})
+        return RedirectResponse(f"{redirect_uri}?{params}", status_code=302)
+
+    code = _new_code(
+        challenge=code_challenge,
+        redirect_uri=redirect_uri,
+        client_id=client_id,
+    )
+    params: dict = {"code": code}
+    if state:
+        params["state"] = state
+    return RedirectResponse(f"{redirect_uri}?{urlencode(params)}", status_code=302)
+
+
+@app.post("/oauth/token", include_in_schema=False)
+async def oauth_token(
+    grant_type: str = Form(default=""),
+    code: str = Form(default=""),
+    code_verifier: str = Form(default=""),
+    redirect_uri: str = Form(default=""),
+    client_id: str = Form(default=""),   # accepted for spec compliance, not validated
+):
+    """Exchange an auth code + PKCE verifier for the MCP bearer token."""
+    from backend.oauth_server import _pop_code, _verify_pkce
+    from backend.mcp_http import get_http_token
+
+    def _err(error: str, desc: str = ""):
+        body = {"error": error}
+        if desc:
+            body["error_description"] = desc
+        return JSONResponse(body, status_code=400)
+
+    if grant_type != "authorization_code":
+        return _err("unsupported_grant_type")
+    if not code:
+        return _err("invalid_request", "code required")
+    if not code_verifier:
+        return _err("invalid_request", "code_verifier required")
+
+    entry = _pop_code(code)
+    if not entry:
+        return _err("invalid_grant", "code not found or expired")
+    if not _verify_pkce(code_verifier, entry["challenge"]):
+        return _err("invalid_grant", "PKCE verification failed")
+    if redirect_uri and redirect_uri != entry["redirect_uri"]:
+        return _err("invalid_grant", "redirect_uri mismatch")
+
+    token = get_http_token()
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 315360000,   # 10 years — effectively non-expiring
+        "scope": "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auto-update
+# ---------------------------------------------------------------------------
+
+@app.get("/api/update/check")
+def update_check():
+    """Check GitHub releases for a newer version."""
+    from backend.updater import check_for_update
+    return check_for_update()
+
+
+@app.get("/api/update/download")
+def update_download(url: str = Query(...)):
+    """Stream installer download progress as SSE."""
+    from backend.updater import download_update
+    import json as _json
+
+    def _stream():
+        for chunk in download_update(url):
+            yield f"data: {_json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    """Launch the downloaded installer silently and exit."""
+    from backend.updater import apply_update
+    if not apply_update():
+        raise HTTPException(status_code=400, detail="No downloaded update ready")
+    return {"ok": True}

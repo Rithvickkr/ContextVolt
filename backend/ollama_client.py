@@ -188,6 +188,16 @@ def _clean_line(line: str) -> str:
     return s
 
 
+def _clean_value(val: str) -> str:
+    """Strip leading/trailing markdown bold markers from an extracted value.
+
+    LLMs like qwen2.5 output 'TOPIC: ** value' — the prefix strip in
+    _clean_line removes ** from the start of the whole line, but not from
+    the value portion after the colon. This strips it from the value itself.
+    """
+    return re.sub(r'^\*+|\*+$', '', val).strip()
+
+
 def _parse_text_summary(response_text: str) -> dict:
     """Parse the structured summary text from the LLM.
 
@@ -214,7 +224,7 @@ def _parse_text_summary(response_text: str) -> dict:
         # ── Section header detection ──────────────────────────────
         if line_lower.startswith("topic:") or line_lower.startswith("main topic:"):
             colon_idx = line.find(":")
-            val = line[colon_idx + 1:].strip()  # type: ignore[index]
+            val = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             # Reject unfilled placeholders like "[one sentence describing the main topic]"
             if val and not (val.startswith("[") and val.endswith("]")):
                 result["main_topic"] = val
@@ -222,47 +232,48 @@ def _parse_text_summary(response_text: str) -> dict:
 
         elif line_lower.startswith("points:") or line_lower.startswith("key points:") or line_lower.startswith("claims:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest:
-                result["key_ideas"] = [p.strip() for p in rest.split(";") if p.strip()] if ";" in rest else [rest]
+                result["key_ideas"] = [_clean_value(p) for p in rest.split(";") if _clean_value(p)] if ";" in rest else [rest]
             current_section = "key_ideas"
 
         elif line_lower.startswith("snapshot:"):
             colon_idx = line.find(":")
-            val = line[colon_idx + 1:].strip()  # type: ignore[index]
+            val = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if val and val.lower() not in ("n/a", "none", "") and not (val.startswith("[") and val.endswith("]")):
                 result["snapshot"] = val
             current_section = "snapshot"
 
         elif line_lower.startswith("vitals:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("none", "n/a"):
-                result["vitals"] = [v.strip() for v in rest.split(";") if v.strip()]
+                result["vitals"] = [_clean_value(v) for v in rest.split(";") if _clean_value(v) and _clean_value(v).lower() not in ("none", "n/a")]
             current_section = "vitals"
 
         elif line_lower.startswith("decided:") or line_lower.startswith("conclusion:") or line_lower.startswith("conclusions:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("nothing yet", "none", "n/a") and not (rest.startswith("[") and rest.endswith("]")):
                 result["conclusions"] = [rest]
             current_section = "conclusions"
 
         elif line_lower.startswith("open:") or line_lower.startswith("unresolved:") or line_lower.startswith("questions:"):
             colon_idx = line.find(":")
-            rest = line[colon_idx + 1:].strip()  # type: ignore[index]
+            rest = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             if rest and rest.lower() not in ("none", "n/a", "no additional questions") and not (rest.startswith("[") and rest.endswith("]")):
                 result["unresolved_questions"] = [rest]
             current_section = "unresolved"
 
         # ── Bullet point under the current section ────────────────
         elif raw.startswith(("-", "•", "*", "–")) or re.match(r'^\d+[.)]\s', raw):
-            # Strip bullet marker from the raw line
-            item = re.sub(r'^[-•*–]|\d+[.)]\s*', "", raw, count=1).strip()
+            # Strip bullet marker then markdown bold from the raw line
+            item = _clean_value(re.sub(r'^[-•*–]|\d+[.)]\s*', "", raw, count=1).strip())
             if item and current_section == "key_ideas":
                 result["key_ideas"].append(item)
             elif item and current_section == "vitals":
-                result["vitals"].append(item)  # type: ignore[union-attr]
+                if item.lower() not in ("none", "n/a"):
+                    result["vitals"].append(item)  # type: ignore[union-attr]
             elif item and current_section == "snapshot":
                 result["snapshot"] = (str(result["snapshot"]) + " " + item).strip()
             elif item and current_section == "conclusions":
@@ -946,73 +957,138 @@ def _synthesize(
         return _empty_summary()
 
 
+def _build_lattice_entries(text: str) -> tuple[list[dict], str]:
+    """Build Layer-1 lattice entries from verbatim per-region chunks of text.
+
+    Each entry holds the raw message-bounded text for one region of the
+    conversation (OPENING / SECTION N / CLOSING). No LLM extraction is run —
+    we tried that on both Gemini 2.5 Flash and qwen2.5:1.5b and neither
+    preserved specific values reliably (the small model truncates, the big
+    cloud model paraphrases). Storing raw text trades a bit of size for full
+    fidelity, which is what STONE-style continuation prompts actually need.
+
+    Also returns a "merged_facts" string formed from the same regions so the
+    SYNTHESIZE step still gets structured per-region input. Synthesis is
+    still allowed to paraphrase for the human-readable summary, but the
+    lattice itself stays verbatim.
+    """
+    messages = _parse_messages(text)
+    if not messages:
+        entry = {"depth": 1, "chunk_label": "ROOT",
+                 "chunk_range_start": 0, "chunk_range_end": 0,
+                 "content": text}
+        return [entry], f"[ROOT]\n{text}"
+
+    anchor_count = 2 if len(messages) > 4 else 0
+    opening_msgs = messages[:anchor_count] if anchor_count else []
+    closing_msgs = (messages[-anchor_count:]
+                    if anchor_count and len(messages) > anchor_count * 2 else [])
+
+    if anchor_count and len(messages) > anchor_count * 2:
+        middle_messages = messages[anchor_count:-anchor_count]
+        middle_start = anchor_count
+    else:
+        middle_messages = messages
+        middle_start = 0
+    middle_text = '\n\n'.join(middle_messages)
+    # Keep per-section chunks reasonably small so the prompt-budget renderer
+    # has flexibility to drop / truncate without losing whole regions. The
+    # numeric limit here is independent of _CHUNK_LIMIT (which sized inputs
+    # to the LLM extract pass that we no longer run).
+    _LATTICE_SECTION_CHARS = 6000
+    middle_chunks = _split_by_messages(
+        middle_text, chunk_char_limit=_LATTICE_SECTION_CHARS, overlap=0,
+    ) if middle_text else []
+
+    entries: list[dict] = []
+    merged_parts: list[str] = []
+
+    if opening_msgs:
+        op_text = '\n\n'.join(opening_msgs)
+        entries.append({
+            "depth": 1, "chunk_label": "OPENING",
+            "chunk_range_start": 0, "chunk_range_end": anchor_count - 1,
+            "content": op_text,
+        })
+        merged_parts.append(f"[OPENING]\n{op_text}")
+
+    cursor = middle_start
+    for idx, chunk in enumerate(middle_chunks):
+        chunk_msgs = _parse_messages(chunk) or [chunk]
+        n = len(chunk_msgs)
+        start = cursor
+        end = cursor + n - 1
+        cursor = end + 1
+        entries.append({
+            "depth": 1, "chunk_label": f"SECTION {idx+1}",
+            "chunk_range_start": start, "chunk_range_end": end,
+            "content": chunk,
+        })
+        merged_parts.append(f"[SECTION {idx+1}]\n{chunk}")
+
+    if closing_msgs:
+        cl_text = '\n\n'.join(closing_msgs)
+        entries.append({
+            "depth": 1, "chunk_label": "CLOSING",
+            "chunk_range_start": len(messages) - anchor_count,
+            "chunk_range_end": len(messages) - 1,
+            "content": cl_text,
+        })
+        merged_parts.append(f"[CLOSING — most recent, highest priority]\n{cl_text}")
+
+    return entries, "\n\n".join(merged_parts)
+
+
+def summarize_with_lattice(
+    text: str,
+    model: str | None = None,
+    important_snippets: list[str] | None = None,
+) -> dict:
+    """Summarize a conversation and return both the 6-field summary AND the
+    per-chunk lattice entries that fed it.
+
+    Pipeline (Phase 1 of the Memory Lattice):
+      EXTRACT (map) — Always chunk by message boundary. Each chunk is run through
+        _extract_chunk which produces a verbatim fact list. The per-chunk
+        outputs are the Layer-1 lattice entries.
+
+      MERGE — concatenate extractions in order. No LLM call.
+
+      SYNTHESIZE (reduce) — one final call from merged facts produces the
+        6-field summary. Same as before.
+
+    Returns: {"summary": dict, "lattice": [entry, ...]}.
+
+    Starred snippets are still ignored here — they're stored verbatim in
+    important_notes and displayed by the continuation builder directly.
+    """
+    model = model or _get_default_model()
+    first_user, last_asst = _conversation_anchors(text)
+
+    lattice, merged_facts = _build_lattice_entries(text)
+
+    # If extraction returned nothing (e.g. extreme model failure), fall back to
+    # synthesizing on the raw text so we still produce a usable summary.
+    source = merged_facts if merged_facts else text[:_CHAR_LIMIT]  # type: ignore[index]
+    summary = _synthesize(
+        source, model=model, label="Final",
+        first_user=first_user, last_asst=last_asst,
+    )
+    return {"summary": summary, "lattice": lattice}
+
+
 def summarize_conversation(
     text: str,
     model: str | None = None,
     important_snippets: list[str] | None = None,
 ) -> dict:
+    """Backward-compatible wrapper: returns only the 6-field summary dict.
+
+    Callers that need the lattice should use summarize_with_lattice() instead.
     """
-    Summarize a conversation using a two-phase Map-Reduce pipeline.
-
-    Phase 1 — EXTRACT (map): Each chunk gets an independent constrained extraction call.
-      The model is only asked to LIST facts (decisions, exact errors, commands, file paths).
-      This is reliable on small models; it preserves verbatim values.
-
-    Phase 2 — MERGE: All extraction outputs are concatenated in order. No LLM involved —
-      nothing is lost in this step.
-
-    Phase 3 — SYNTHESIZE (reduce): A single final LLM call works from the clean merged
-      facts to produce the 6-field summary. One compression step instead of N chained ones.
-
-    Short conversations (≤ _CHAR_LIMIT) skip the map/merge and go straight to synthesis
-      using the raw conversation text — quality is still better because SYNTHESIZE_PROMPT
-      is more structured than the old single-pass SUMMARIZE_PROMPT.
-
-    Starred messages (important_snippets) are stored separately in the database
-      (important_notes column) and displayed verbatim in the continuation prompt.
-      They do NOT influence the summary — keeping the summary a balanced representation
-      of the full conversation.
-    """
-    model = model or _get_default_model()
-    first_user, last_asst = _conversation_anchors(text)
-
-    # Short conversation: synthesize directly from raw text
-    if len(text) <= _CHAR_LIMIT:
-        return _synthesize(text, model=model, label="Single",
-                           first_user=first_user, last_asst=last_asst)
-
-    # Long conversation: Map-Reduce
-    messages = _parse_messages(text)
-    anchor_count = 2
-    opening, closing = _anchor_text(messages, anchor_count)
-
-    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
-    middle_text = '\n\n'.join(middle_messages)
-    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
-
-    # MAP: extract facts from each section independently
-    all_extractions: list[str] = []
-
-    opening_facts = _extract_chunk(opening, model, label="Opening")
-    if opening_facts:
-        all_extractions.append(f"[OPENING]\n{opening_facts}")
-
-    for idx, chunk in enumerate(middle_chunks):
-        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
-        if facts:
-            all_extractions.append(f"[SECTION {idx+1}]\n{facts}")
-
-    if closing:
-        closing_facts = _extract_chunk(closing, model, label="Closing")
-        if closing_facts:
-            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{closing_facts}")
-
-    # MERGE: concatenate all extractions — no LLM, nothing is lost
-    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:_CHAR_LIMIT]  # type: ignore[index]
-
-    # SYNTHESIZE: one final call from clean merged facts
-    return _synthesize(merged_facts, model=model, label="Final",
-                       first_user=first_user, last_asst=last_asst)
+    return summarize_with_lattice(
+        text, model=model, important_snippets=important_snippets,
+    )["summary"]
 
 
 def summarize_conversation_streaming(
@@ -1339,6 +1415,178 @@ def _message_turn_label(orig_idx: int, msg_count: int, role: str) -> str:
     return " - ".join(parts)
 
 
+def _render_lattice_block(
+    lattice: list[dict] | None, char_budget: int,
+) -> str:
+    """Render Layer-1 lattice entries as a verbatim block, budget-capped.
+
+    Allocation strategy:
+      1. Anchor entries (OPENING / CLOSING / ROOT) get full inclusion first.
+      2. Remaining budget is split across middle SECTION entries weighted by
+         entity density (sections with more identifier tokens get more budget).
+      3. Any middle section that received no content gets a first-sentence stub
+         so the receiving LLM has a presence signal for every region.
+
+    Output order is chronological — OPENING, sections, CLOSING.
+    """
+    if not lattice or char_budget <= 0:
+        return ""
+
+    from backend.entity_extractor import extract_entities  # lazy, avoids circular
+
+    def _is_anchor(e: dict) -> bool:
+        return e.get("chunk_label", "").upper() in ("OPENING", "CLOSING", "ROOT")
+
+    def _entity_weight(e: dict) -> float:
+        return float(max(len(extract_entities(e.get("content") or "")), 1))
+
+    anchors = [e for e in lattice if _is_anchor(e)]
+    middles = [e for e in lattice if not _is_anchor(e)]
+
+    rendered_for: dict[int, str] = {}  # id(entry) -> rendered block
+    used = 0
+
+    def _block(entry: dict, content: str) -> str:
+        return f"[{entry.get('chunk_label', '')}]\n{content}".strip()
+
+    # Pass 1: include anchors in full (they're typically tiny).
+    for e in anchors:
+        content = (e.get("content") or "").strip()
+        if not content:
+            continue
+        block = _block(e, content)
+        size = len(block) + 2
+        if used + size > char_budget:
+            remaining = char_budget - used
+            if remaining > 80:
+                truncated = _truncate_at_sentence(block, remaining)
+                if truncated.strip():
+                    rendered_for[id(e)] = truncated
+                    used += len(truncated) + 2
+            continue
+        rendered_for[id(e)] = block
+        used += size
+
+    # Pass 2: entity-weighted budget split for middle sections.
+    remaining = max(0, char_budget - used)
+    if middles and remaining > 0:
+        weights = [_entity_weight(e) for e in middles]
+        total_w = sum(weights)
+        for e, w in zip(middles, weights):
+            if used >= char_budget:
+                break
+            content = (e.get("content") or "").strip()
+            if not content:
+                continue
+            block = _block(e, content)
+            alloc = max(int(remaining * w / total_w), 200)
+            slot = min(alloc, char_budget - used)
+            if len(block) + 2 <= slot:
+                rendered_for[id(e)] = block
+                used += len(block) + 2
+            else:
+                truncated = _truncate_at_sentence(block, slot - 2)
+                if truncated.strip():
+                    rendered_for[id(e)] = truncated
+                    used += len(truncated) + 2
+
+    # Pass 3: stub pass — sections that got nothing rendered receive a
+    # first-sentence presence signal (recovers compact-tier recall).
+    unrendered = [e for e in middles if id(e) not in rendered_for]
+    if unrendered:
+        stub_budget = char_budget - used
+        stub_alloc = stub_budget // len(unrendered) if unrendered else 0
+        if stub_alloc >= 60:
+            for e in unrendered:
+                if used >= char_budget:
+                    break
+                content = (e.get("content") or "").strip()
+                if not content:
+                    continue
+                first_sent = re.split(r"[.\n]", content, maxsplit=1)[0].strip()
+                if not first_sent:
+                    continue
+                stub = _block(e, first_sent + "…")
+                slot = min(stub_alloc, char_budget - used)
+                if len(stub) + 2 <= slot:
+                    rendered_for[id(e)] = stub
+                    used += len(stub) + 2
+
+    # Emit in chronological order (the order they sit in `lattice`).
+    return "\n\n".join(rendered_for[id(e)] for e in lattice if id(e) in rendered_for)
+
+
+_STANCE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
+    (("debug", "error", "exception", "traceback", "bug", "crash", "stack trace", "fix"),
+     "You were acting as a debugging partner."),
+    (("review", "refactor", "critique", "cleanup", "code smell"),
+     "You were acting as a code reviewer."),
+    (("architect", "architecture", "design", "system design", "scaffold", "plan", "structure"),
+     "You were acting as an architecture advisor."),
+    (("explain", "how does", "what is", "understand", "learn", "teach"),
+     "You were helping the user understand this topic."),
+]
+
+
+def _detect_stance(summary: dict) -> str:
+    """Pick a stance string based on keywords in topic + key_ideas + snapshot.
+
+    Falls back to a generic stance when no keyword matches. Pure heuristic — no
+    LLM call. Tested against `main_topic` and the first 3 key_ideas because
+    later ideas tend to be tangents.
+    """
+    haystack_parts = [
+        (summary.get("main_topic", "") or ""),
+        (summary.get("snapshot", "") or ""),
+    ]
+    haystack_parts.extend((summary.get("key_ideas", []) or [])[:3])
+    haystack = " ".join(haystack_parts).lower()
+    for keywords, stance in _STANCE_KEYWORDS:
+        if any(kw in haystack for kw in keywords):
+            return stance
+    return "You were the user's assistant on this task."
+
+
+_SOURCE_STYLE_HINTS: dict[str, str] = {
+    "chatgpt": "markdown headers and numbered lists",
+    "gpt-4":   "markdown headers and numbered lists",
+    "claude":  "conversational prose with code blocks where needed",
+    "gemini":  "concise outputs with clear bullet structure",
+    "copilot": "concise inline answers",
+    "grok":    "informal prose",
+    "deepseek": "detailed step-by-step explanations",
+    "perplexity": "cited concise summaries",
+}
+
+
+def _build_cold_start_brief(summary: dict, source_llm: str, msg_count: int) -> str:
+    """2-3 sentence plain-prose orientation for the receiving LLM.
+
+    Uses only existing summary fields (no arc/next). Sits at the top of the
+    continuation prompt so the receiving LLM has its bearings before parsing
+    the structured blocks.
+    """
+    topic = (summary.get("main_topic", "") or "").strip()
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    conclusions = summary.get("conclusions", []) or []
+    source_clause = f"originally held with {source_llm}" if source_llm else "captured from a prior session"
+    parts: list[str] = []
+    if topic and topic not in ("No topic extracted",):
+        parts.append(f"This is a continuation of a {msg_count}-turn conversation {source_clause} about: {topic}.")
+    else:
+        parts.append(f"This is a continuation of a {msg_count}-turn conversation {source_clause}.")
+    if snapshot and snapshot.lower() not in ("n/a", "none"):
+        parts.append(f"At session end, the active task was: {snapshot}.")
+    if conclusions:
+        first = (conclusions[0] or "").strip()
+        if first and first.lower() not in ("none", "n/a"):
+            parts.append(f"Most recent decision: {first}.")
+    style = _SOURCE_STYLE_HINTS.get((source_llm or "").lower().strip())
+    if style:
+        parts.append(f"The prior assistant tended to use {style}; match that style for visual continuity.")
+    return " ".join(parts)
+
+
 def generate_continuation_prompt(
     summary: dict,
     original_chat: str,
@@ -1347,6 +1595,7 @@ def generate_continuation_prompt(
     created_at: str = "",
     prompt_size: str = "standard",
     chunks: list[dict] | None = None,
+    lattice: list[dict] | None = None,
 ) -> str:
     """Build a structured XML continuation prompt deterministically (no LLM call).
 
@@ -1354,6 +1603,7 @@ def generate_continuation_prompt(
     the context as a natural conversation transcript rather than a structured dossier.
 
     overview:           compact 5-field digest (topic, state, decided, open, vitals)
+    key_facts:          verbatim Layer-1 lattice extractions (STONE) — when present
     conversation_replay: key messages in chronological order with turn labels
     code_artifacts:     extracted code blocks
     important_context:  verbatim starred snippets
@@ -1362,6 +1612,16 @@ def generate_continuation_prompt(
     messages = _parse_messages(original_chat)
     msg_count = len(messages)
     budget = _compute_budget(msg_count, len(original_chat), tier)
+
+    # ── Lattice (Layer 1 verbatim regions) — STONE ────────────────
+    # The lattice is the primary verbatim source — bigger budgets than the
+    # heuristic replay because lattice content is evenly distributed across
+    # the whole conversation, while replay is front-loaded by score.
+    # "full" is sized so a typical 20–30KB conversation lands without any
+    # truncation; closing-tail facts otherwise get cut from the last middle
+    # sections under fair-share split.
+    lattice_budget = {"compact": 3000, "standard": 10000, "full": 24000}.get(tier, 10000)
+    lattice_block = _render_lattice_block(lattice, lattice_budget)
 
     # ── Smart-select key messages ─────────────────────────────────
     selected = _select_key_messages(messages, char_budget=budget["replay"], chunks=chunks)
@@ -1399,49 +1659,75 @@ def generate_continuation_prompt(
         meta_parts.append(f"Source: {source_llm}")
     meta_parts.append(f"Messages: {msg_count} turns")
     if created_at:
-        meta_parts.append(f"Captured: {created_at[:10]}")
+        # Add "X days ago" so the receiving LLM knows the user may have new context.
+        age_clause = ""
+        try:
+            from datetime import datetime, timezone
+            captured = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            if captured.tzinfo is None:
+                captured = captured.replace(tzinfo=timezone.utc)
+            days = (datetime.now(timezone.utc) - captured).days
+            if days <= 0:
+                age_clause = " (today)"
+            elif days == 1:
+                age_clause = " (1 day ago)"
+            elif days < 365:
+                age_clause = f" ({days} days ago)"
+            else:
+                age_clause = f" ({days // 365} year{'s' if days // 365 > 1 else ''} ago)"
+        except Exception:
+            pass
+        meta_parts.append(f"Captured: {created_at[:10]}{age_clause}")
     meta_line = " | ".join(meta_parts)
 
     # ── Assemble XML prompt ───────────────────────────────────────
-    sections: list[str] = []
-    sections.append(f"<context_brief>\n<meta>\n{meta_line}\n</meta>")
+    snapshot = (summary.get("snapshot", "") or "").strip()
+    has_snapshot = bool(snapshot and snapshot.lower() not in ("n/a", "none", ""))
 
-    # Compact overview — replaces the old multi-section dossier
+    sections: list[str] = []
+
+    # Cold-start brief: 1-3 sentence plain-prose orientation so the receiving
+    # LLM gets the situation before parsing the structured blocks below.
+    cold_brief = _build_cold_start_brief(summary, source_llm, msg_count)
+    sections.append(f"<context_brief>\n<cold_start>\n{cold_brief}\n</cold_start>")
+
+    sections.append(f"\n<meta>\n{meta_line}\n</meta>")
+
     overview_text = _build_overview(summary, budget["overview"])
     if overview_text:
         sections.append(f"\n<overview>\n{overview_text}\n</overview>")
 
-    # Conversation replay — chronological key messages with turn labels
+    # Verbatim per-section facts from the Memory Lattice (Layer 1).
+    if lattice_block:
+        sections.append(f"\n<key_facts>\n{lattice_block}\n</key_facts>")
+
     if replay_block:
         sections.append(f"\n<conversation_replay>\n{replay_block}\n</conversation_replay>")
 
-    # Code artifacts (skip if empty)
     if code_section:
         sections.append(f"\n<code_artifacts>\n{code_section}\n</code_artifacts>")
 
-    # Important context (skip if empty)
     if starred_section:
         sections.append(f"\n<important_context>\n{starred_section}\n</important_context>")
 
-    # Instructions
-    snapshot = (summary.get("snapshot", "") or "").strip()
-    has_snapshot = snapshot and snapshot.lower() not in ("n/a", "none", "")
-    source_clause = f" originally held with {source_llm}" if source_llm else ""
-    if has_snapshot:
-        instructions = (
-            f"You are continuing a conversation{source_clause}. "
-            f"The overview above summarizes the full {msg_count}-turn conversation. "
-            f"The replay shows the most relevant exchanges. "
-            f"The user was last working on: {snapshot}. Continue naturally from there."
-        )
-    else:
-        instructions = (
-            f"You are continuing a conversation{source_clause}. "
-            f"The overview above summarizes the full {msg_count}-turn conversation. "
-            "The replay shows the most relevant exchanges. Continue naturally from where it left off."
-        )
+    # Instructions — stance-aware + explicit acknowledgment + clarifying-question fallback.
+    stance = _detect_stance(summary)
+    continuation_target = snapshot if has_snapshot else "where the conversation left off"
+    instructions = (
+        f"{stance} "
+        f"You are now continuing this conversation. "
+        f"Begin by briefly acknowledging where the prior session left off (1-2 sentences), "
+        f"then continue from: {continuation_target}. "
+        f"If the current state is ambiguous, ask one focused clarifying question before proceeding. "
+        f"Maintain the same tone and technical depth as the prior session."
+    )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
     sections.append("</context_brief>")
+
+    # Explicit next-turn marker so the receiving LLM produces the next assistant
+    # message directly instead of acknowledging the brief and asking "what now?".
+    # Many models (especially smaller ones) need this framing to skip a meta-turn.
+    sections.append("\nThe next message in the conversation is yours, as the assistant. Begin now:")
 
     return "\n".join(sections)
 

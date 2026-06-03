@@ -10,7 +10,6 @@ Embedding always stays local (Ollama) — see implementation_plan.md.
 
 import json
 import logging
-import time
 from typing import Iterator
 
 _log = logging.getLogger("contextvolt")
@@ -299,6 +298,56 @@ def summarize_conversation(text: str, important_snippets: list[str] | None = Non
         _log.warning("Cloud synthesize failed: %s", e)
 
     return _empty_summary()
+
+
+def summarize_with_lattice(text: str, important_snippets: list[str] | None = None) -> dict:
+    """Summarize and return both the 6-field summary AND lattice entries.
+
+    For Ollama: delegates to ollama_client.summarize_with_lattice which always
+    runs the chunked extract path so the lattice is populated for every capture.
+
+    For cloud: produces a minimal lattice (a single ROOT entry holding the
+    extracted/merged facts) so STONE-style continuation prompts work the same
+    way regardless of provider. The cloud path doesn't need recursive chunking
+    on small inputs, so the lattice is a single root entry by default.
+    """
+    active = get_active_provider()
+
+    if not active["is_cloud"]:
+        from backend.ollama_client import summarize_with_lattice as _ollama_with_lattice
+        return _ollama_with_lattice(text, important_snippets=important_snippets)
+
+    # Cloud — build a verbatim lattice from raw message-bounded text (no
+    # extract LLM call) and then synthesize the 6-field summary from the
+    # same regions. This sidesteps the smart-cloud-model paraphrasing
+    # problem: Gemini/GPT-4 routinely "improve" extract output by rewriting,
+    # which destroys the specific values STONE-style continuation prompts
+    # need to surface. Raw chunks preserve everything.
+    from backend.ollama_client import (
+        SYNTHESIZE_PROMPT, _parse_text_summary,
+        _conversation_anchors, _empty_summary,
+        _build_lattice_entries,
+    )
+
+    first_user, last_asst = _conversation_anchors(text)
+    cloud_char_limit = 100_000
+
+    lattice, merged_facts = _build_lattice_entries(text)
+    source = merged_facts if merged_facts else text[:cloud_char_limit]
+
+    synth_prompt = SYNTHESIZE_PROMPT.format(
+        first_user=first_user[:800] or "(not available)",
+        last_asst=last_asst[:800] or "(not available)",
+        merged_facts=source[:cloud_char_limit],
+    )
+    try:
+        r = generate(synth_prompt, temperature=0.2, max_tokens=2000, timeout=180)
+        response_text = (r.get("response") or "").strip()
+        summary = _parse_text_summary(response_text) if response_text else _empty_summary()
+    except Exception as e:
+        _log.warning("Cloud synthesize failed: %s", e)
+        summary = _empty_summary()
+    return {"summary": summary, "lattice": lattice}
 
 
 def summarize_conversation_streaming(text: str, important_snippets: list[str] | None = None):

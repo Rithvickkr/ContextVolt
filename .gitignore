@@ -48,3 +48,16 @@ backend/tools/rag_test.py
 .claude/settings.local.json
 _patch_settings.py
 dom result.md
+
+# ─── Tunneling / local-only binaries ─────────────
+.cloudflared/
+
+# ─── Ad-hoc smoke scripts ────────────────────────
+backend/_*_smoke_test.py
+
+# ─── Marketing landing page (separate concern) ───
+landing/
+
+# ─── Eval harness reports (regeneration artifacts) ───────
+# Already-committed Phase 1 baselines stay tracked; new runs are ignored.
+backend/eval/baselines/*.json

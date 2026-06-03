@@ -5,7 +5,8 @@
  * Handles: Setup Wizard, Chat Input, Context Library, Detail View, Prompt Builder.
  */
 
-const API = 'http://localhost:8000';
+const API = '';  // Use same-origin so fetches go to whatever host pywebview loaded (127.0.0.1 or localhost)
+console.log('%c[ConVX] app.js loaded — build SIDEBAR-COLLAPSE-V19', 'background:#22c55e;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px', 'origin:', window.location.origin);
 
 // â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {
@@ -347,6 +348,9 @@ async function _globalSummarizingPoll() {
         if (!res.ok) return;
         const { contexts } = await res.json();
         const currentIds = new Set(contexts.map(c => c.id));
+        if (currentIds.size > 0 || _globalPollPrevIds.size > 0) {
+            console.log('[ConVX poll] in-flight:', currentIds.size, '| prev:', _globalPollPrevIds.size);
+        }
 
         // IDs that were summarizing last tick but aren't now → just finished
         for (const id of _globalPollPrevIds) {
@@ -371,12 +375,11 @@ async function _globalSummarizingPoll() {
 
         _globalPollPrevIds = currentIds;
 
-        if (currentIds.size > 0) {
-            // Still work in progress — poll again in 4 s
-            _globalPollTimer = setTimeout(_globalSummarizingPoll, 4000);
-        } else {
-            _globalPollTimer = null;
-        }
+        // Heartbeat: poll fast (4s) while work is in flight, slow (15s) when idle.
+        // The slow heartbeat is critical so extension captures get noticed without
+        // the user having to click anything.
+        const nextDelay = currentIds.size > 0 ? 4000 : 15000;
+        _globalPollTimer = setTimeout(_globalSummarizingPoll, nextDelay);
     } catch (_) {
         // Network hiccup — retry in 8 s
         _globalPollTimer = setTimeout(_globalSummarizingPoll, 8000);
@@ -385,6 +388,7 @@ async function _globalSummarizingPoll() {
 
 function _startGlobalSummarizingPoll() {
     if (_globalPollTimer) return; // already running
+    console.log('%c[ConVX] global summarize poll STARTED', 'color:#facc15;font-weight:bold');
     _globalSummarizingPoll();
 }
 
@@ -701,11 +705,13 @@ function _pipelineAppendToken(token) {
 
 let _summarizing = false;
 async function summarizeAndSave() {
-    if (_summarizing) return;
+    console.log('%c[ConVX] summarizeAndSave() called', 'color:#22c55e;font-weight:bold');
+    if (_summarizing) { console.warn('[ConVX] already in flight — bailing'); return; }
     const textarea = $('#chat-textarea');
     const btn = $('#summarize-btn');
     const text = textarea.value.trim();
-    if (!text) return;
+    console.log('[ConVX] textarea:', !!textarea, 'btn:', !!btn, 'text length:', text.length);
+    if (!text) { console.warn('[ConVX] empty text — bailing'); return; }
 
     _summarizing = true;
     // Show loading
@@ -821,13 +827,15 @@ async function summarizeAndSave() {
         $('#char-count').textContent = '0 characters';
         btn.disabled = true;
 
-        showToast('Context saved and embedded!', 'success');
+        console.log('[ConVX] summarize complete — calling showToast');
+        showToast('Context summarized & saved', 'success');
 
         // Navigate to detail view
         setTimeout(() => showDetail(created.id), 500);
 
     } catch (err) {
-        showToast(err.message, 'error');
+        console.error('[ConVX] summarize failed', err);
+        showToast(`Summarization failed: ${err.message}`, 'error');
         _pipelineHide();
     } finally {
         _summarizing = false;
@@ -1924,6 +1932,35 @@ function renderDetail(ctx) {
     if (tagCount)   statLine.push(`${tagCount} tag${tagCount === 1 ? '' : 's'}`);
     eyebrowBits.push(`<span>${statLine.join(' · ') || 'No metrics yet'}</span>`);
 
+    // Aside detail rows (rendered as a sleek key-value list on the right)
+    const detailRows = [
+        { k: 'Model',      v: aiModel,                  ic: 'cpu' },
+        { k: 'Source',     v: source || '—',            ic: 'globe' },
+        { k: 'Turns',      v: turnCount || '—',         ic: 'msg'  },
+        { k: 'Words',      v: wordCount ? wordCount.toLocaleString() : '—', ic: 'type' },
+        { k: 'Tags',       v: tagCount || '—',          ic: 'tag'  },
+        { k: 'Collection', v: currentColl ? currentColl.name : '—', ic: 'folder' },
+        { k: 'Created',    v: date,                     ic: 'cal'  },
+        { k: 'Updated',    v: timeAgo,                  ic: 'clk'  },
+    ];
+    const asideIc = {
+        cpu:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
+        globe:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+        msg:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+        type:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+        tag:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
+        folder: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+        cal:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+        clk:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    };
+    const detailRowsHtml = detailRows.map(r => `
+        <div class="cv-aside-row">
+            <span class="cv-aside-ic">${asideIc[r.ic] || ''}</span>
+            <span class="cv-aside-k">${escapeHtml(r.k)}</span>
+            <span class="cv-aside-v" title="${escapeHtml(String(r.v))}">${escapeHtml(String(r.v))}</span>
+        </div>
+    `).join('');
+
     container.innerHTML = `
         <!-- Rail: back + meta + actions -->
         <div class="cv-detail-rail">
@@ -1933,7 +1970,7 @@ function renderDetail(ctx) {
             <div class="cv-rail-meta">
                 <span>Context <b>#${ctx.id}</b></span>
                 <span class="cv-rail-sep">·</span>
-                <span>${escapeHtml(date)} · ${escapeHtml(timeAgo)}</span>
+                <span>${escapeHtml(timeAgo)}</span>
             </div>
             <div class="cv-rail-actions">
                 <button class="cv-ibtn${starred ? ' on' : ''}" id="cv-btn-pin"
@@ -1958,10 +1995,9 @@ function renderDetail(ctx) {
         <section class="cv-dhero">
             <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
             <h1 class="cv-dtitle" id="detail-title-heading">${safeTitle}</h1>
-            ${mainTopic ? `<p class="cv-dsnap" style="margin-top:12px;color:var(--cv-text-3);font-size:13px;font-family:var(--cv-mono);letter-spacing:0.02em;">${escapeHtml(mainTopic)}</p>` : ''}
+            ${mainTopic ? `<p class="cv-dtopic">${escapeHtml(mainTopic)}</p>` : ''}
             ${snapshot ? `<p class="cv-dsnap">${escapeHtml(snapshot)}</p>` : ''}
             <div class="cv-dmeta">
-                ${tagsHtml}
                 <span class="cv-collection-inline">
                     <select id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
                         <option value="">Collection: None</option>
@@ -1974,150 +2010,194 @@ function renderDetail(ctx) {
             ${statusInfo ? `<div class="cv-dstatus${ctx.status === 'failed' ? ' err' : ''}">${statusInfo}</div>` : ''}
         </section>
 
-        <!-- Two-column grid -->
-        <section class="cv-dgrid">
-            <div class="cv-dcol-main">
-
-                ${importantNotes.length ? `
-                <div class="cv-block cv-block-pinned">
-                    <div class="cv-block-head">
-                        <span class="cv-block-ic cv-ic-volt">${icon.pinIc}</span>
-                        <h3>Pinned notes</h3>
-                        <span class="cv-count">${importantNotes.length}</span>
+        <!-- ⚡ Continuation prompt — hero action -->
+        <section class="cv-action" id="cv-action-card">
+            <div class="cv-action-head">
+                <span class="cv-action-ic">${icon.bolt}</span>
+                <div>
+                    <h2 class="cv-action-title">Continuation prompt</h2>
+                    <p class="cv-action-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
+                </div>
+            </div>
+            <div class="cv-action-row">
+                <input type="text" id="retrieval-query" class="cv-action-input"
+                       placeholder="Focus the prompt on… (optional — e.g. 'auth flow', 'the migration plan')" />
+                <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
+                    ${icon.bolt}<span>Generate</span>
+                </button>
+            </div>
+            <div class="cv-action-foot">
+                <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
+                    <button class="prompt-size-btn" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
+                    <button class="prompt-size-btn on" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
+                    <button class="prompt-size-btn" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
+                </div>
+                <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
+                <span class="cv-action-kbd" aria-hidden="true"><kbd>⌘</kbd><kbd>↵</kbd></span>
+            </div>
+            <div class="cv-prompt-out" id="prompt-section" role="region" aria-labelledby="prompt-section-heading" style="display:none;">
+                <div class="cv-prompt-out-head">
+                    <h3 id="prompt-section-heading">Generated prompt</h3>
+                    <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
+                    <div class="cv-prompt-out-acts">
+                        <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            <span>Copy</span>
+                        </button>
+                        <button class="cv-prompt-close" id="close-prompt-btn" type="button" aria-label="Close">×</button>
                     </div>
-                    <ul class="cv-notes">
-                        ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
-                    </ul>
-                </div>` : ''}
+                </div>
+                <pre class="prompt-display" id="prompt-display" tabindex="0"></pre>
+            </div>
+        </section>
 
-                ${(keyIdeas.length || conclusions.length || unresolved.length) ? `
-                <div class="cv-insights">
-                    ${keyIdeas.length ? `
-                    <div class="cv-block">
-                        <div class="cv-block-head">
-                            <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
-                            <h3>Key ideas</h3>
-                            <span class="cv-count">${keyIdeas.length}</span>
-                        </div>
-                        <ul class="cv-list">${keyIdeas.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
-                    </div>` : ''}
-                    ${conclusions.length ? `
-                    <div class="cv-block">
-                        <div class="cv-block-head">
-                            <span class="cv-block-ic cv-ic-done">${icon.done}</span>
-                            <h3>Conclusions</h3>
-                            <span class="cv-count">${conclusions.length}</span>
-                        </div>
-                        <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-                    </div>` : ''}
-                    ${unresolved.length ? `
-                    <div class="cv-block">
-                        <div class="cv-block-head">
-                            <span class="cv-block-ic cv-ic-open">${icon.open}</span>
-                            <h3>Open questions</h3>
-                            <span class="cv-count">${unresolved.length}</span>
-                        </div>
-                        <ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
-                    </div>` : ''}
-                </div>` : ''}
+        <!-- Body: 2-column layout — main content + sleek sticky aside -->
+        <section class="cv-dlayout">
+          <div class="cv-dmain">
 
-                ${_currentSnippets.length ? `
+            ${importantNotes.length ? `
+            <div class="cv-block cv-block-pinned">
+                <div class="cv-block-head">
+                    <span class="cv-block-ic cv-ic-volt">${icon.pinIc}</span>
+                    <h3>Pinned notes</h3>
+                    <span class="cv-count">${importantNotes.length}</span>
+                </div>
+                <ul class="cv-notes">
+                    ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+                </ul>
+            </div>` : ''}
+
+            ${(keyIdeas.length || conclusions.length || unresolved.length) ? `
+            <div class="cv-insights">
+                ${keyIdeas.length ? `
                 <div class="cv-block">
                     <div class="cv-block-head">
-                        <span class="cv-block-ic">${icon.code}</span>
-                        <h3>Code snippets</h3>
-                        <span class="cv-count">${_currentSnippets.length}</span>
+                        <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
+                        <h3>Key ideas</h3>
+                        <span class="cv-count">${keyIdeas.length}</span>
                     </div>
-                    <div class="cv-snips">
-                        ${_currentSnippets.map((s, i) => `
-                        <div class="cv-snip">
-                            <div class="cv-snip-head">
-                                <span class="cv-snip-lang">${escapeHtml(s.label)}</span>
-                                <span class="cv-snip-lines">${s.code.split('\n').filter(l => l.trim()).length} lines</span>
-                                <button class="cv-snip-copy code-snippet-copy" data-idx="${i}" onclick="copyCodeSnippet(${i})">Copy</button>
-                            </div>
-                            <pre class="cv-snip-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
-                        </div>`).join('')}
-                    </div>
+                    <ul class="cv-list">${keyIdeas.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
                 </div>` : ''}
+                ${conclusions.length ? `
+                <div class="cv-block">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic cv-ic-done">${icon.done}</span>
+                        <h3>Conclusions</h3>
+                        <span class="cv-count">${conclusions.length}</span>
+                    </div>
+                    <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+                </div>` : ''}
+                ${unresolved.length ? `
+                <div class="cv-block">
+                    <div class="cv-block-head">
+                        <span class="cv-block-ic cv-ic-open">${icon.open}</span>
+                        <h3>Open questions</h3>
+                        <span class="cv-count">${unresolved.length}</span>
+                    </div>
+                    <ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+                </div>` : ''}
+            </div>` : ''}
 
-                <!-- Original conversation (collapsible) -->
-                <div class="cv-block cv-collapse" id="origConv">
-                    <button class="cv-block-head cv-collapse-head" onclick="this.parentElement.classList.toggle('open')">
-                        <span class="cv-block-ic">${icon.chat}</span>
-                        <h3>Original conversation</h3>
-                        <span class="cv-count">${turnCount || '—'} turns</span>
-                        <span class="cv-collapse-chev">${icon.chev}</span>
-                    </button>
-                    <div class="cv-chat" id="original-chat-box">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
+            ${_currentSnippets.length ? `
+            <div class="cv-block">
+                <div class="cv-block-head">
+                    <span class="cv-block-ic">${icon.code}</span>
+                    <h3>Code snippets</h3>
+                    <span class="cv-count">${_currentSnippets.length}</span>
                 </div>
-
-                <!-- Chunk viewer (collapsible) -->
-                <div class="cv-block cv-collapse" id="chunksBlock">
-                    <button class="cv-block-head cv-collapse-head" id="chunks-toggle"
-                            onclick="this.parentElement.classList.toggle('open'); toggleChunkViewer(${ctx.id});">
-                        <span class="cv-block-ic">${icon.chunks}</span>
-                        <h3>Indexed chunks</h3>
-                        <span class="cv-count" id="chunks-count-badge">view</span>
-                        <span class="cv-collapse-chev">${icon.chev}</span>
-                    </button>
-                    <div id="chunks-viewer-content" class="cv-chunks"></div>
+                <div class="cv-snips">
+                    ${_currentSnippets.map((s, i) => `
+                    <div class="cv-snip">
+                        <div class="cv-snip-head">
+                            <span class="cv-snip-lang">${escapeHtml(s.label)}</span>
+                            <span class="cv-snip-lines">${s.code.split('\n').filter(l => l.trim()).length} lines</span>
+                            <button class="cv-snip-copy code-snippet-copy" data-idx="${i}" onclick="copyCodeSnippet(${i})">Copy</button>
+                        </div>
+                        <pre class="cv-snip-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
+                    </div>`).join('')}
                 </div>
+            </div>` : ''}
 
+            <!-- Original conversation (collapsible) -->
+            <div class="cv-block cv-collapse" id="origConv">
+                <button class="cv-block-head cv-collapse-head" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="cv-block-ic">${icon.chat}</span>
+                    <h3>Original conversation</h3>
+                    <span class="cv-count">${turnCount || '—'} turns</span>
+                    <span class="cv-collapse-chev">${icon.chev}</span>
+                </button>
+                <div class="cv-chat" id="original-chat-box">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
             </div>
 
-            <!-- Aside -->
-            <aside class="cv-dcol-aside">
-
-                <!-- Facts snapshot -->
-                <div class="cv-block cv-block-fact">
-                    <div class="cv-fact-grid">
-                        <div class="cv-fact"><span class="cv-fact-k">Model</span><span class="cv-fact-v">${escapeHtml(aiModel)}</span></div>
-                        <div class="cv-fact"><span class="cv-fact-k">Source</span><span class="cv-fact-v">${escapeHtml(source || '—')}</span></div>
-                        <div class="cv-fact"><span class="cv-fact-k">Turns</span><span class="cv-fact-v">${turnCount || '—'}</span></div>
-                        <div class="cv-fact"><span class="cv-fact-k">Words</span><span class="cv-fact-v">${wordCount ? wordCount.toLocaleString() : '—'}</span></div>
-                        <div class="cv-fact"><span class="cv-fact-k">Tags</span><span class="cv-fact-v">${tagCount || '—'}</span></div>
-                        <div class="cv-fact"><span class="cv-fact-k">Collection</span><span class="cv-fact-v">${escapeHtml(currentColl ? currentColl.name : '—')}</span></div>
-                    </div>
+            <!-- Diagnostics: indexed chunks (collapsed, dev-facing) -->
+            <details class="cv-diag" id="chunksBlock">
+                <summary class="cv-diag-sum">
+                    <span class="cv-diag-ic">${icon.chunks}</span>
+                    <span class="cv-diag-label">Diagnostics · indexed chunks</span>
+                    <span class="cv-diag-hint" id="chunks-count-badge">view retrieval index</span>
+                </summary>
+                <div class="cv-diag-body">
+                    <div id="chunks-viewer-content" class="cv-chunks"></div>
                 </div>
+            </details>
 
-                ${vitals.length ? `
-                <div class="cv-block">
-                    <div class="cv-block-head">
-                        <span class="cv-block-ic">${icon.vitals}</span>
-                        <h3>Technical vitals</h3>
-                    </div>
-                    <div class="cv-vitals">
-                        ${vitals.map(v => `<code>${escapeHtml(v)}</code>`).join('')}
-                    </div>
-                </div>` : ''}
+          </div>
 
-                <!-- Continuation prompt builder -->
-                <div class="cv-block cv-block-prompt">
-                    <div class="cv-block-head">
-                        <span class="cv-block-ic cv-ic-volt">${icon.bolt}</span>
-                        <h3>Continuation prompt</h3>
-                    </div>
-                    <div class="cv-size">
-                        <span class="cv-size-lbl">Size</span>
-                        <div class="cv-size-seg" id="cv-size-seg">
-                            <button class="prompt-size-btn" data-size="compact" title="~2k chars">Compact</button>
-                            <button class="prompt-size-btn on" data-size="standard" title="~5k chars">Standard</button>
-                            <button class="prompt-size-btn" data-size="full" title="~12k chars">Full</button>
-                        </div>
-                    </div>
-                    <input type="text" id="retrieval-query" class="cv-focus" placeholder="Focus on… (optional)" />
-                    <button class="cv-primary-block" onclick="generatePrompt(${ctx.id}, this)">
-                        ${icon.bolt} Generate prompt
-                    </button>
-                    <div class="cv-size-hint">Standard · ~5,200 chars — fits most 8k contexts</div>
+          <!-- Sticky aside: details + vitals -->
+          <aside class="cv-daside">
+            <div class="cv-aside-card">
+                <div class="cv-aside-head">
+                    <span class="cv-aside-eyebrow">Details</span>
                 </div>
+                <div class="cv-aside-rows">
+                    ${detailRowsHtml}
+                </div>
+            </div>
 
-            </aside>
+            ${vitals.length ? `
+            <div class="cv-aside-card">
+                <div class="cv-aside-head">
+                    <span class="cv-aside-eyebrow">Technical vitals</span>
+                    <span class="cv-aside-pill">${vitals.length}</span>
+                </div>
+                <div class="cv-aside-vitals">
+                    ${vitals.map(v => `<code>${escapeHtml(v)}</code>`).join('')}
+                </div>
+            </div>` : ''}
+
+            ${tagsHtml ? `
+            <div class="cv-aside-card">
+                <div class="cv-aside-head">
+                    <span class="cv-aside-eyebrow">Tags</span>
+                    <span class="cv-aside-pill">${tagCount}</span>
+                </div>
+                <div class="cv-aside-tags">${tagsHtml}</div>
+            </div>` : ''}
+          </aside>
         </section>
     `;
 
-    // Segmented size control — toggle .on class
+    // Bind copy/close on the inline prompt-output (rendered fresh each view)
+    const copyBtn  = document.getElementById('copy-prompt-btn');
+    const closeBtn = document.getElementById('close-prompt-btn');
+    if (copyBtn)  copyBtn.addEventListener('click', copyPrompt);
+    if (closeBtn) closeBtn.addEventListener('click', () => {
+        const s = document.getElementById('prompt-section');
+        if (s) s.style.display = 'none';
+    });
+
+    // Open chunks viewer when the <details> is toggled open (replaces old onclick)
+    const diag = document.getElementById('chunksBlock');
+    if (diag) {
+        diag.addEventListener('toggle', () => {
+            if (diag.open && !_chunksLoaded) {
+                toggleChunkViewer(ctx.id);
+            }
+        });
+    }
+
+    // Segmented size control — toggle .on class + update live hint
+    const hintEl = document.getElementById('cv-action-hint');
     document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(b => {
@@ -2126,8 +2206,21 @@ function renderDetail(ctx) {
             });
             btn.classList.add('on');
             btn.classList.add('active');
+            if (hintEl && btn.dataset.hint) hintEl.textContent = btn.dataset.hint;
         });
     });
+
+    // ⌘/Ctrl+Enter on the focus input triggers Generate
+    const focusInput = document.getElementById('retrieval-query');
+    if (focusInput) {
+        focusInput.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const goBtn = document.querySelector('.cv-action-go');
+                if (goBtn && !goBtn.disabled) goBtn.click();
+            }
+        });
+    }
 
     _initInsightExpand();
     $('#prompt-section').style.display = 'none';
@@ -2395,7 +2488,13 @@ async function generatePrompt(id, btn) {
         const section = $('#prompt-section');
         section.style.display = 'block';
         $('#prompt-display').textContent = data.prompt;
-        section.scrollIntoView({ behavior: 'smooth' });
+        const statEl = document.getElementById('cv-prompt-stat');
+        if (statEl) {
+            const chars = data.prompt.length;
+            const tokens = Math.round(chars / 4); // rough heuristic
+            statEl.textContent = `${chars.toLocaleString()} chars · ~${tokens.toLocaleString()} tokens`;
+        }
+        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (err) {
         showToast('Failed to generate prompt', 'error');
     } finally {
@@ -2626,6 +2725,17 @@ async function copyPrompt() {
     try {
         await navigator.clipboard.writeText(state.currentPrompt);
         showToast('Copied to clipboard!', 'success');
+        const btn = document.getElementById('copy-prompt-btn');
+        if (btn) {
+            const label = btn.querySelector('span');
+            const original = label ? label.textContent : '';
+            btn.classList.add('copied');
+            if (label) label.textContent = 'Copied';
+            setTimeout(() => {
+                btn.classList.remove('copied');
+                if (label) label.textContent = original || 'Copy';
+            }, 1400);
+        }
     } catch {
         showToast('Copy failed — clipboard access denied', 'error');
     }
@@ -2712,7 +2822,17 @@ function showPrompt({ title, message, defaultValue = '', placeholder = '', confi
 }
 
 function showToast(message, type = 'success') {
-    const stack = $('#toast-stack');
+    console.log('%c[TOAST]', 'background:#facc15;color:#000;padding:2px 6px;border-radius:3px;font-weight:bold', type, message);
+    let stack = document.getElementById('toast-stack');
+    if (!stack) {
+        // Fallback: create the stack on the fly if it was somehow removed
+        stack = document.createElement('div');
+        stack.className = 'toast-stack';
+        stack.id = 'toast-stack';
+        stack.setAttribute('role', 'status');
+        stack.setAttribute('aria-live', 'polite');
+        document.body.appendChild(stack);
+    }
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.innerHTML = `<span class="toast-icon">${type === 'success' ? '\u2705' : '\u274C'}</span><span class="toast-message">${escapeHtml(message)}</span>`;
@@ -2729,6 +2849,184 @@ function showToast(message, type = 'success') {
     while (stack.children.length > 5) {
         stack.firstChild.remove();
     }
+
+    // Mirror into the Notification Center with a smarter title
+    try {
+        const m = String(message || '').toLowerCase();
+        let title;
+        if (m.includes('summariz')) title = type === 'error' ? 'Summarization failed' : 'Summarization complete';
+        else if (m.includes('embed')) title = type === 'error' ? 'Embedding failed' : 'Context saved';
+        else if (m.includes('retry') || m.includes('retrying') || m.includes('re-summariz')) title = 'Retrying';
+        else if (m.includes('deleted') || m.includes('delete')) title = type === 'error' ? 'Delete failed' : 'Deleted';
+        else if (m.includes('copied') || m.includes('copy')) title = type === 'error' ? 'Copy failed' : 'Copied';
+        else if (m.includes('failed') || m.includes('error')) title = 'Error';
+        cvNotify(type, message, title ? { title } : {});
+    } catch (_) {}
+}
+
+// \u2500\u2500\u2500 Notification Center \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const CV_NOTIF_KEY = 'cv_notifications_v1';
+let _cvNotifs = [];
+let _cvNotifLoaded = false;
+
+function _cvLoadNotifs() {
+    if (_cvNotifLoaded) return;
+    try { _cvNotifs = JSON.parse(localStorage.getItem(CV_NOTIF_KEY) || '[]'); } catch (_) { _cvNotifs = []; }
+    if (!Array.isArray(_cvNotifs)) _cvNotifs = [];
+    _cvNotifLoaded = true;
+}
+function _cvSaveNotifs() {
+    try { localStorage.setItem(CV_NOTIF_KEY, JSON.stringify(_cvNotifs.slice(0, 50))); } catch (_) {}
+}
+function _cvNotifDefaultTitle(type) {
+    return ({
+        success: 'Done',
+        error: 'Something went wrong',
+        warning: 'Heads up',
+        info: 'Notice',
+        retry: 'Retrying',
+    })[type] || 'Notification';
+}
+function cvNotify(type, message, opts = {}) {
+    _cvLoadNotifs();
+    const t = ['success','error','warning','info','retry'].includes(type) ? type : 'info';
+    const n = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        type: t,
+        title: opts.title || _cvNotifDefaultTitle(t),
+        message: message || '',
+        ts: Date.now(),
+        read: false,
+    };
+    // Collapse duplicate of the most recent (same type + message) within 2s
+    const head = _cvNotifs[0];
+    if (head && head.type === t && head.message === n.message && (n.ts - head.ts) < 2000) return;
+    _cvNotifs.unshift(n);
+    _cvNotifs = _cvNotifs.slice(0, 50);
+    _cvSaveNotifs();
+    _cvRenderBadge();
+    if (_cvPanelOpen()) _cvRenderList();
+}
+window.cvNotify = cvNotify;
+
+function _cvPanelOpen() {
+    const p = document.getElementById('cv-notify-panel');
+    return !!(p && !p.hasAttribute('hidden'));
+}
+function _cvOpenPanel() {
+    const p = document.getElementById('cv-notify-panel');
+    const b = document.getElementById('cv-notify-btn');
+    if (!p) return;
+    p.removeAttribute('hidden');
+    if (b) b.setAttribute('aria-expanded', 'true');
+    _cvRenderList();
+    // Mark as read on open
+    let dirty = false;
+    _cvNotifs.forEach(n => { if (!n.read) { n.read = true; dirty = true; } });
+    if (dirty) { _cvSaveNotifs(); _cvRenderBadge(); }
+}
+function _cvClosePanel() {
+    const p = document.getElementById('cv-notify-panel');
+    const b = document.getElementById('cv-notify-btn');
+    if (!p) return;
+    p.setAttribute('hidden', '');
+    if (b) b.setAttribute('aria-expanded', 'false');
+}
+function _cvRenderBadge() {
+    const dot = document.getElementById('cv-notify-dot');
+    if (!dot) return;
+    const unread = _cvNotifs.filter(n => !n.read).length;
+    if (unread > 0) {
+        dot.removeAttribute('hidden');
+        dot.textContent = unread > 9 ? '9+' : String(unread);
+    } else {
+        dot.setAttribute('hidden', '');
+        dot.textContent = '';
+    }
+}
+function _cvNotifIcon(t) {
+    const wrap = (inner) => `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+    if (t === 'success') return wrap('<polyline points="20 6 9 17 4 12"/>');
+    if (t === 'error')   return wrap('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>');
+    if (t === 'warning') return wrap('<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>');
+    if (t === 'retry')   return wrap('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>');
+    return wrap('<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>');
+}
+function _cvRelTime(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+    if (s < 604800) return `${Math.floor(s/86400)}d ago`;
+    const d = new Date(ts);
+    return d.toLocaleDateString();
+}
+function _cvRenderList() {
+    const list  = document.getElementById('cv-notify-list');
+    const empty = document.getElementById('cv-notify-empty');
+    const count = document.getElementById('cv-notify-count');
+    if (!list) return;
+    if (count) count.textContent = String(_cvNotifs.length);
+    if (!_cvNotifs.length) {
+        list.innerHTML = '';
+        if (empty) empty.style.display = '';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+    list.innerHTML = _cvNotifs.map(n => `
+        <div class="cv-notif-item type-${n.type}${n.read ? '' : ' unread'}" data-nid="${n.id}">
+            <div class="cv-notif-icon">${_cvNotifIcon(n.type)}</div>
+            <div class="cv-notif-body">
+                <div class="cv-notif-title">${escapeHtml(n.title)}</div>
+                <div class="cv-notif-msg">${escapeHtml(n.message)}</div>
+                <div class="cv-notif-time">${_cvRelTime(n.ts)}</div>
+            </div>
+            <button class="cv-notif-dismiss" aria-label="Dismiss notification" data-dismiss="${n.id}" type="button">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+    `).join('');
+    list.querySelectorAll('[data-dismiss]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.getAttribute('data-dismiss');
+            _cvNotifs = _cvNotifs.filter(n => n.id !== id);
+            _cvSaveNotifs();
+            _cvRenderList();
+            _cvRenderBadge();
+        });
+    });
+}
+function _initNotifCenter() {
+    _cvLoadNotifs();
+    _cvRenderBadge();
+    const btn   = document.getElementById('cv-notify-btn');
+    const panel = document.getElementById('cv-notify-panel');
+    const wrap  = document.getElementById('cv-notify-wrap');
+    if (!btn || !panel || !wrap) return;
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (_cvPanelOpen()) _cvClosePanel(); else _cvOpenPanel();
+    });
+    const clearBtn = document.getElementById('cv-notify-clear');
+    if (clearBtn) clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _cvNotifs = []; _cvSaveNotifs(); _cvRenderList(); _cvRenderBadge();
+    });
+    const markBtn = document.getElementById('cv-notify-mark-read');
+    if (markBtn) markBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _cvNotifs.forEach(n => n.read = true);
+        _cvSaveNotifs(); _cvRenderList(); _cvRenderBadge();
+    });
+    document.addEventListener('click', (e) => {
+        if (_cvPanelOpen() && !e.target.closest('#cv-notify-wrap')) _cvClosePanel();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && _cvPanelOpen()) _cvClosePanel();
+    });
+    // Refresh relative timestamps every 60s while open
+    setInterval(() => { if (_cvPanelOpen()) _cvRenderList(); }, 60000);
 }
 
 // â”€â”€â”€ P2-10: Undo Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -2864,6 +3162,413 @@ async function rebuildEmbeddings() {
 let _settingsConfig = null; // last loaded config from backend
 let _settingsConfigPromise = null; // in-flight fetch (deduplicated)
 
+// ─── ConVX as MCP Server panel ──────────────────────────────────────────
+// Populated each time the settings modal opens. Loopback-only endpoint —
+// the backend rejects non-127.0.0.1 callers, so the token is safe to display.
+
+let _mcpServerInfoCached = null;
+
+function _setMcpStatus(state, text) {
+    const el = $('#settings-mcp-status');
+    if (!el) return;
+    el.dataset.state = state;
+    el.textContent = text;
+}
+
+async function _loadMcpServerPanel(force = false) {
+    if (_mcpServerInfoCached && !force) {
+        _renderMcpServerPanel(_mcpServerInfoCached);
+        // Refresh in background to pick up token regenerations from elsewhere
+        _fetchMcpServerInfo().then(info => {
+            if (info) { _mcpServerInfoCached = info; _renderMcpServerPanel(info); }
+        });
+        return;
+    }
+    _setMcpStatus('loading', 'checking…');
+    const info = await _fetchMcpServerInfo();
+    if (info) {
+        _mcpServerInfoCached = info;
+        _renderMcpServerPanel(info);
+    }
+}
+
+async function _fetchMcpServerInfo() {
+    try {
+        const r = await fetch(`${API}/api/mcp_server/info`);
+        if (!r.ok) {
+            _setMcpStatus('error', `unreachable (${r.status})`);
+            return null;
+        }
+        return await r.json();
+    } catch (e) {
+        _setMcpStatus('error', 'unreachable');
+        return null;
+    }
+}
+
+function _renderMcpServerPanel(info) {
+    if (!info) return;
+    const urlInput   = $('#settings-mcp-http-url');
+    const tokenInput = $('#settings-mcp-http-token');
+    const authChk    = $('#settings-mcp-auth-required');
+    const snippet    = $('#settings-mcp-stdio-snippet');
+
+    if (urlInput)   urlInput.value   = info.http?.url || '';
+    if (tokenInput) tokenInput.value = info.http?.token || '';
+    if (authChk)    authChk.checked  = !!info.http?.auth_required;
+    if (snippet)    snippet.textContent = info.stdio?.config_snippet || '';
+
+    _setMcpStatus('ok', 'running');
+}
+
+function _initMcpServerPanelHandlers() {
+    // Generic copy buttons (any element with data-copy-target)
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('[data-copy-target]');
+        if (!btn) return;
+        const target = document.getElementById(btn.dataset.copyTarget);
+        if (!target) return;
+        const value = target.value !== undefined ? target.value : target.textContent;
+        try {
+            await navigator.clipboard.writeText(value || '');
+            const orig = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('settings-mcp-btn-success');
+            setTimeout(() => {
+                btn.textContent = orig;
+                btn.classList.remove('settings-mcp-btn-success');
+            }, 1200);
+        } catch {
+            showToast('Copy failed', 'error');
+        }
+    });
+
+    // Show/hide token
+    const toggle = $('#settings-mcp-token-toggle');
+    if (toggle) {
+        toggle.addEventListener('click', () => {
+            const input = $('#settings-mcp-http-token');
+            if (!input) return;
+            const showing = input.type === 'text';
+            input.type = showing ? 'password' : 'text';
+            toggle.textContent = showing ? 'Show' : 'Hide';
+            toggle.setAttribute('aria-pressed', String(!showing));
+        });
+    }
+
+    // Regenerate token
+    const regen = $('#settings-mcp-token-regen');
+    if (regen) {
+        regen.addEventListener('click', async () => {
+            if (!confirm('Regenerating revokes the old token immediately. Any client using it will need the new value. Continue?')) return;
+            regen.disabled = true;
+            try {
+                const r = await fetch(`${API}/api/mcp_server/regenerate_token`, { method: 'POST' });
+                if (!r.ok) throw new Error(`status ${r.status}`);
+                const data = await r.json();
+                const input = $('#settings-mcp-http-token');
+                if (input) input.value = data.token || '';
+                if (_mcpServerInfoCached?.http) _mcpServerInfoCached.http.token = data.token;
+                showToast('Token regenerated', 'success');
+            } catch (e) {
+                showToast(`Regenerate failed: ${e.message}`, 'error');
+            } finally {
+                regen.disabled = false;
+            }
+        });
+    }
+
+    // Auth-required toggle
+    const authChk = $('#settings-mcp-auth-required');
+    if (authChk) {
+        authChk.addEventListener('change', async () => {
+            const required = authChk.checked;
+            try {
+                const r = await fetch(`${API}/api/mcp_server/auth_required`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ required }),
+                });
+                if (!r.ok) throw new Error(`status ${r.status}`);
+                if (_mcpServerInfoCached?.http) _mcpServerInfoCached.http.auth_required = required;
+                showToast(required ? 'Bearer token now required' : 'Auth disabled — be careful', required ? 'success' : 'warning');
+            } catch (e) {
+                authChk.checked = !required; // revert
+                showToast(`Update failed: ${e.message}`, 'error');
+            }
+        });
+    }
+}
+
+// ─── Cloudflare Tunnel panel ──────────────────────────────────────────────────
+
+let _tunnelPollTimer = null;
+let _tunnelInfo = null;   // last known status
+
+const _TUNNEL_PLATFORM_CONFIGS = {
+    'claude-ai': (url, _token) => {
+        const base = url.replace(/\/mcp$/, '');
+        return {
+            steps: [
+                'Open <b>claude.ai</b> → avatar → <b>Settings</b> → <b>Integrations</b>',
+                'Click <b>Add integration</b> and paste the MCP URL below',
+                'Claude.ai will redirect you to a ConVX "Allow Access" page — click <b>Allow</b>',
+            ],
+            snippet: null,
+            snippetLabel: null,
+            fields: [
+                { label: 'MCP URL', value: url },
+                { label: 'OAuth authorize', value: `${base}/oauth/authorize` },
+                { label: 'OAuth token', value: `${base}/oauth/token` },
+            ],
+        };
+    },
+    'chatgpt': (url, token) => ({
+        steps: [
+            'Open <b>chatgpt.com</b> → Settings → <b>Connected apps</b>',
+            'Click <b>Add MCP server</b> and enter the URL below',
+            'Add <code>Authorization: Bearer &lt;token&gt;</code> as a custom header',
+        ],
+        snippet: null,
+        snippetLabel: null,
+        fields: [
+            { label: 'MCP URL', value: url },
+            { label: 'Bearer token', value: token },
+        ],
+    }),
+    'grok': (url, _token) => {
+        const base = url.replace(/\/mcp$/, '');
+        return {
+            steps: [
+                'Go to <b>grok.com/connectors</b> → <b>New Connector</b>',
+                'Paste the values below into the OAuth form — leave Client Secret empty',
+                'Click <b>Save &amp; Connect</b> → Grok opens a browser tab → click <b>Allow Access</b>',
+            ],
+            snippet: null,
+            snippetLabel: null,
+            fields: [
+                { label: 'Client ID', value: 'convx' },
+                { label: 'Client Secret', value: '(leave empty)' },
+                { label: 'Authorization Endpoint', value: `${base}/oauth/authorize` },
+                { label: 'Token Endpoint', value: `${base}/oauth/token` },
+                { label: 'Scopes', value: '(leave empty)' },
+                { label: 'Token Auth Method', value: 'none (PKCE only, recommended)' },
+            ],
+        };
+    },
+    'cursor': (url, token) => ({
+        steps: [
+            'Open <b>~/.cursor/mcp.json</b> (global) or <b>.cursor/mcp.json</b> in your project',
+            'Add the snippet below, then restart Cursor',
+        ],
+        snippet: JSON.stringify({
+            mcpServers: {
+                contextvolt: {
+                    url,
+                    headers: { Authorization: `Bearer ${token}` },
+                },
+            },
+        }, null, 2),
+        snippetLabel: 'Paste into ~/.cursor/mcp.json',
+        fields: null,
+    }),
+    'claude-desktop': (url, token) => ({
+        steps: [
+            'Open Claude Desktop → Settings → <b>Developer</b> → <b>Edit Config</b>',
+            'Add the snippet below to your <code>claude_desktop_config.json</code>',
+            'Restart Claude Desktop',
+        ],
+        snippet: JSON.stringify({
+            mcpServers: {
+                contextvolt: {
+                    url,
+                    headers: { Authorization: `Bearer ${token}` },
+                },
+            },
+        }, null, 2),
+        snippetLabel: 'Paste into claude_desktop_config.json',
+        fields: null,
+    }),
+};
+
+function _renderTunnelPlatformContent(platform, mcpUrl, token) {
+    const el = $('#tunnel-platform-content');
+    if (!el) return;
+    const cfg = (_TUNNEL_PLATFORM_CONFIGS[platform] || _TUNNEL_PLATFORM_CONFIGS['claude-ai'])(mcpUrl, token);
+    let html = '<div class="tunnel-platform-body">';
+
+    // Steps
+    if (cfg.steps?.length) {
+        html += '<ol class="tunnel-steps">';
+        cfg.steps.forEach(s => { html += `<li>${s}</li>`; });
+        html += '</ol>';
+    }
+
+    // Key-value fields (URL / token)
+    if (cfg.fields?.length) {
+        cfg.fields.forEach(f => {
+            const id = `tunnel-field-${f.label.replace(/\s+/g, '-').toLowerCase()}`;
+            html += `
+            <div class="settings-mcp-row" style="margin-top:8px;">
+                <label class="settings-mcp-label">${f.label}</label>
+                <div class="settings-mcp-input-row">
+                    <input type="text" class="settings-mcp-input" id="${id}" readonly value="${_esc(f.value)}">
+                    <button type="button" class="settings-mcp-btn" data-copy-target="${id}">Copy</button>
+                </div>
+            </div>`;
+        });
+    }
+
+    // JSON snippet
+    if (cfg.snippet) {
+        const snippetId = 'tunnel-snippet-' + platform;
+        html += `
+        <div class="settings-mcp-row" style="margin-top:8px;">
+            <label class="settings-mcp-label">${cfg.snippetLabel || 'Config snippet'}</label>
+            <div class="settings-mcp-input-row settings-mcp-input-row-stack">
+                <pre class="settings-mcp-code" id="${snippetId}">${_esc(cfg.snippet)}</pre>
+                <button type="button" class="settings-mcp-btn" data-copy-target="${snippetId}">Copy JSON</button>
+            </div>
+        </div>`;
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+function _esc(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function _renderTunnelPanel(data) {
+    _tunnelInfo = data;
+    const badge   = $('#tunnel-badge');
+    const urlInput = $('#tunnel-url-input');
+    const copyBtn  = $('#tunnel-copy-btn');
+    const toggleBtn = $('#tunnel-toggle-btn');
+    const helpText  = $('#tunnel-help-text');
+    const platformSection = $('#tunnel-platform-section');
+
+    if (!badge) return;
+
+    const { status, mcp_url, error } = data;
+
+    badge.dataset.state = status;
+    const labels = { stopped:'stopped', downloading:'downloading…', starting:'connecting…', running:'running', error:'error' };
+    badge.textContent = labels[status] || status;
+
+    const running = status === 'running';
+    const busy    = status === 'downloading' || status === 'starting';
+
+    if (urlInput) urlInput.value = running && mcp_url ? mcp_url : '';
+    if (copyBtn)  copyBtn.disabled = !running;
+
+    if (toggleBtn) {
+        toggleBtn.textContent = running ? 'Stop Tunnel' : (busy ? '…' : 'Start Tunnel');
+        toggleBtn.disabled = busy;
+        toggleBtn.classList.toggle('settings-mcp-btn-danger', running);
+        toggleBtn.classList.toggle('settings-mcp-btn-primary', !running);
+    }
+
+    if (helpText) {
+        if (error) {
+            helpText.innerHTML = `<span style="color:var(--danger,#f87171)">Error: ${_esc(error)}</span>`;
+        } else if (running) {
+            helpText.textContent = "Tunnel active — your vault's /mcp endpoint is reachable over HTTPS. Pick a platform below to get its connection config.";
+        } else if (busy) {
+            helpText.textContent = status === 'downloading'
+                ? 'Downloading cloudflared (~40 MB)…'
+                : 'Establishing tunnel — this usually takes 5–10 seconds…';
+        } else {
+            helpText.textContent = 'cloudflared is downloaded once and cached. Your vault stays on your machine — only /mcp is exposed, protected by your bearer token.';
+        }
+    }
+
+    if (platformSection) platformSection.style.display = running ? 'block' : 'none';
+
+    // If running, refresh the active platform tab
+    if (running && mcp_url) {
+        const active = $('.tunnel-tab.active');
+        const plat = active?.dataset?.platform || 'claude-ai';
+        const token = _mcpServerInfoCached?.http?.token || '';
+        _renderTunnelPlatformContent(plat, mcp_url, token);
+    }
+}
+
+async function _fetchTunnelStatus() {
+    try {
+        const r = await fetch(`${API}/api/mcp_server/tunnel`);
+        if (!r.ok) return null;
+        return await r.json();
+    } catch {
+        return null;
+    }
+}
+
+async function _loadTunnelPanel() {
+    const data = await _fetchTunnelStatus();
+    if (data) _renderTunnelPanel(data);
+}
+
+function _startTunnelPoll() {
+    _stopTunnelPoll();
+    _tunnelPollTimer = setInterval(async () => {
+        const data = await _fetchTunnelStatus();
+        if (!data) return;
+        _renderTunnelPanel(data);
+        // Stop polling once stable
+        if (data.status === 'running' || data.status === 'stopped' || data.status === 'error') {
+            _stopTunnelPoll();
+        }
+    }, 2000);
+}
+
+function _stopTunnelPoll() {
+    if (_tunnelPollTimer) { clearInterval(_tunnelPollTimer); _tunnelPollTimer = null; }
+}
+
+function _initTunnelPanelHandlers() {
+    const toggleBtn = $('#tunnel-toggle-btn');
+    if (!toggleBtn) return;
+
+    toggleBtn.addEventListener('click', async () => {
+        const status = _tunnelInfo?.status || 'stopped';
+        const running = status === 'running';
+        toggleBtn.disabled = true;
+
+        try {
+            const endpoint = running ? '/api/mcp_server/tunnel/stop' : '/api/mcp_server/tunnel/start';
+            const r = await fetch(`${API}${endpoint}`, { method: 'POST' });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+
+            // Immediately refresh and start polling for transient states
+            const data = await _fetchTunnelStatus();
+            if (data) _renderTunnelPanel(data);
+            if (!running) _startTunnelPoll();
+        } catch (e) {
+            showToast(`Tunnel error: ${e.message}`, 'error');
+        } finally {
+            toggleBtn.disabled = false;
+        }
+    });
+
+    // Platform tab switching
+    document.addEventListener('click', (e) => {
+        const tab = e.target.closest('.tunnel-tab');
+        if (!tab) return;
+        document.querySelectorAll('.tunnel-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const plat = tab.dataset.platform;
+        const mcp_url = _tunnelInfo?.mcp_url || '';
+        const token = _mcpServerInfoCached?.http?.token || '';
+        _renderTunnelPlatformContent(plat, mcp_url, token);
+    });
+}
+
 function _prefetchSettingsConfig() {
     if (_settingsConfig || _settingsConfigPromise) return;
     _settingsConfigPromise = fetch(`${API}/api/setup/config`)
@@ -2889,6 +3594,10 @@ async function openSettingsModal() {
 
     // Keyboard trap — keep focus inside while open
     trapFocus(modal.querySelector('.settings-modal'), $('#btn-settings'));
+
+    // Load the ConVX-as-MCP-server panel in parallel — independent of provider config
+    _loadMcpServerPanel();
+    _loadTunnelPanel();
 
     // If already cached, render instantly — no loading state needed
     if (_settingsConfig) {
@@ -2935,7 +3644,8 @@ function closeSettingsModal() {
 
 function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const card = document.createElement('div');
-    card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '');
+    card.className = 'settings-model-card' + (item.id === selectedId ? ' selected' : '')
+                     + (item.fits_vram === false ? ' too-large' : '');
     card.dataset.id = item.id;
     card.dataset.installed = item.installed ? 'true' : 'false';
 
@@ -2944,6 +3654,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
     const size  = item.size  || '';
     const rec   = item.recommended;
     const inst  = item.installed;
+    const fitsVram = item.fits_vram !== false;
 
     const statusBadge = inst
         ? '<span class="settings-installed-badge">✓ Installed</span>'
@@ -2959,7 +3670,8 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
         </div>
         <div class="settings-model-card-right">
             <span class="settings-status-badge" id="status-badge-${item.id.replace(/[:.]/g, '-')}">${statusBadge.replace(/<\/?span[^>]*>/g, '')}</span>
-            ${rec ? '<span class="settings-model-badge">Recommended</span>' : ''}
+            ${rec ? '<span class="settings-model-badge">Recommended for your GPU</span>' : ''}
+            ${!fitsVram ? '<span class="settings-model-badge-warn" title="Too large for your VRAM — will run slowly with constant reloads">Low VRAM</span>' : ''}
             <span class="settings-model-size">${escapeHtml(size)}</span>
             ${inst
                 ? `<button class="settings-delete-btn" title="Delete model" aria-label="Delete ${escapeHtml(label)}">✕</button>`
@@ -3418,6 +4130,33 @@ const _PROVIDER_META = {
 let _selectedProvider = 'ollama';
 let _cloudKeyValid = {};  // { openai: true/false, ... }
 
+function _renderGpuBanner(gpu, rec) {
+    let banner = document.getElementById('gpu-info-banner');
+    if (!banner) {
+        const llmSection = document.getElementById('ollama-llm-section');
+        if (!llmSection) return;
+        banner = document.createElement('div');
+        banner.id = 'gpu-info-banner';
+        banner.className = 'gpu-info-banner';
+        llmSection.insertBefore(banner, llmSection.firstChild);
+    }
+    if (!gpu || !rec) { banner.style.display = 'none'; return; }
+    banner.style.display = '';
+
+    const tierClass = `gpu-info-tier-${rec.tier || 'unknown'}`;
+    banner.className = `gpu-info-banner ${tierClass}`;
+    const gpuLine = gpu.detected
+        ? `<strong>${escapeHtml(gpu.name || 'GPU')}</strong> · ${gpu.vram_mb} MB VRAM`
+        : `<strong>No GPU detected</strong>`;
+    banner.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01"/></svg>
+        <div class="gpu-info-text">
+            <div class="gpu-info-line">${gpuLine}</div>
+            <div class="gpu-info-reason">${escapeHtml(rec.reason || '')}</div>
+        </div>
+    `;
+}
+
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
 
@@ -3447,6 +4186,9 @@ function _renderSettingsCards() {
     });
 
     _updateCloudSections();
+
+    // ── GPU/VRAM info banner ──
+    _renderGpuBanner(_settingsConfig.gpu, _settingsConfig.recommendation);
 
     // ── LLM grid (Ollama) ──
     let selectedLlm   = _settingsConfig.model;
@@ -3648,14 +4390,20 @@ async function saveSettings() {
     saveBtn.textContent = 'Saving…';
 
     try {
-        // 1. Save Ollama models + user profile in parallel
+        // 1. Save Ollama models + user profile sequentially.
+        // Each endpoint does a read-modify-write on config.json; running them in
+        // parallel races on Windows (os.replace contention → "Failed to fetch")
+        // and also causes lost updates between the three snapshots.
         const profileName  = ($('#profile-name-input')  || {}).value || '';
         const profileAbout = ($('#profile-about-input') || {}).value || '';
-        await Promise.all([
-            fetch(`${API}/api/setup/select-model`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newModel }) }),
-            fetch(`${API}/api/setup/select-embed-model`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ model: newEmbed }) }),
-            fetch(`${API}/api/setup/save-profile`,       { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: profileName, about: profileAbout }) }),
-        ]);
+        const _post = (url, body) => fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+        });
+        await _post(`${API}/api/setup/select-model`,       { model: newModel });
+        await _post(`${API}/api/setup/select-embed-model`, { model: newEmbed });
+        await _post(`${API}/api/setup/save-profile`,       { name: profileName, about: profileAbout });
 
         // 2. Save cloud API key if entered
         const keyInput = $('#cloud-key-input');
@@ -4610,6 +5358,46 @@ function _askFlushStream() {
     _askScrollToBottom();
 }
 
+// ─── MCP tool cards ──────────────────────────────────────────────────────
+// Tool events arrive between prose tokens. Each card is appended as a sibling
+// to the active streaming-content; we then rotate the streaming target so the
+// next `token` event starts a fresh prose block under the card.
+
+function _askMsgBody() {
+    const msg = $('#ask-streaming-msg');
+    return msg ? msg.querySelector('.ask-msg-body') : null;
+}
+
+function _askRotateStreamingContent() {
+    const body = _askMsgBody();
+    if (!body) return;
+    const old = body.querySelector('#ask-streaming-content');
+    if (old) {
+        // Finalize prior block: render markdown, drop streaming id + cursor.
+        const raw = old.getAttribute('data-raw') || old.textContent || '';
+        old.innerHTML = _askSimpleMarkdown(raw);
+        old.removeAttribute('id');
+        old.removeAttribute('data-raw');
+    }
+    const fresh = document.createElement('div');
+    fresh.className = 'ask-msg-content';
+    fresh.id = 'ask-streaming-content';
+    fresh.innerHTML = '<span class="ask-cursor"></span>';
+    body.appendChild(fresh);
+}
+
+function _askEnsureStreamingContent() {
+    if ($('#ask-streaming-content')) return;
+    _askRotateStreamingContent();
+}
+
+function _askEscapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+
 function _askFinalizeMsg(sources) {
     const content = $('#ask-streaming-content');
     if (!content) return;
@@ -4759,6 +5547,7 @@ async function askVault(question) {
                     const data = JSON.parse(line);
                     if (data.token) {
                         _ensureAssistantBubble();
+                        _askEnsureStreamingContent();
                         fullResponse += data.token;
                         _askAppendToken(data.token);
                     }
@@ -4833,6 +5622,10 @@ document.addEventListener('DOMContentLoaded', () => {
     _initSettingsHint(); // Show active models in sidebar hint
     _initSidebarTooltips(); // Sidebar hover tooltips
     _initAskVault(); // Ask Your Vault chat
+    _initMcpServerPanelHandlers(); // ConVX-as-MCP-server settings panel
+    _initTunnelPanelHandlers();    // Cloudflare tunnel card
+    _initUpdatePanel();            // Auto-update
+    _initNotifCenter();            // Topbar notification center
 
 
     // Skip setup button (service phase)
@@ -4875,11 +5668,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('#delete-btn').addEventListener('click', deleteCurrentContext);
 
-    // Prompt buttons
-    $('#copy-prompt-btn').addEventListener('click', copyPrompt);
-    $('#close-prompt-btn').addEventListener('click', () => {
-        $('#prompt-section').style.display = 'none';
-    });
+    // Prompt buttons are now rendered inline by renderDetail() per context view.
+    // Handlers are bound there to avoid stale node references after re-renders.
 
     // Backfill embeddings & chunks
     if ($('#btn-rebuild-embeddings')) $('#btn-rebuild-embeddings').addEventListener('click', rebuildEmbeddings);
@@ -5116,6 +5906,23 @@ document.addEventListener('DOMContentLoaded', () => {
     $('#settings-save-btn').addEventListener('click', saveSettings);
     $('#settings-modal').addEventListener('click', (e) => {
         if (e.target === $('#settings-modal')) closeSettingsModal();
+    });
+
+    // Settings sidebar nav — switch active panel
+    document.querySelectorAll('.settings-nav-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.settingsTab;
+            document.querySelectorAll('.settings-nav-item').forEach(b => {
+                const on = b === btn;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('.settings-panel').forEach(p => {
+                p.classList.toggle('active', p.dataset.settingsPanel === tab);
+            });
+            const body = document.querySelector('.settings-modal-body');
+            if (body) body.scrollTop = 0;
+        });
     });
 
     // Cloud key validate + show/hide toggle
@@ -5436,9 +6243,27 @@ window.copyCodeSnippet = copyCodeSnippet;
 // â”€â”€â”€ Feature 1: Collapsible Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function toggleSidebar() {
     const app = document.getElementById('app');
+    if (!app) return;
+    // Mark as animating so CSS can suppress scrollbar flicker during the
+    // width transition (which is what makes the collapse feel laggy).
+    app.classList.add('sidebar-animating');
     app.classList.toggle('sidebar-collapsed');
     const collapsed = app.classList.contains('sidebar-collapsed');
     localStorage.setItem('cv-sidebar-collapsed', collapsed ? '1' : '0');
+    const sidebar = document.getElementById('sidebar');
+    const clear = () => app.classList.remove('sidebar-animating');
+    if (sidebar) {
+        const onEnd = (e) => {
+            if (e.propertyName !== 'width') return;
+            sidebar.removeEventListener('transitionend', onEnd);
+            clear();
+        };
+        sidebar.addEventListener('transitionend', onEnd);
+        // Safety fallback in case transitionend doesn't fire
+        setTimeout(clear, 200);
+    } else {
+        setTimeout(clear, 180);
+    }
 }
 
 function _restoreSidebarState() {
@@ -5745,3 +6570,150 @@ async function maybeStartOnboarding() {
 
 window.startOnboarding = startOnboarding;
 window.endOnboarding = endOnboarding;
+
+// ── Auto-update ──────────────────────────────────────────────────────────────
+
+let _updateInfo = null;
+
+function _fmtBytes(b) {
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+    return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function _setUpdateState(state) {
+    ['idle', 'available', 'downloading', 'ready'].forEach(s => {
+        const el = document.getElementById(`update-state-${s}`);
+        if (el) el.style.display = s === state ? '' : 'none';
+    });
+}
+
+async function checkForUpdate(silent = true) {
+    const statusEl = document.getElementById('update-check-status');
+    if (!silent && statusEl) statusEl.textContent = 'Checking…';
+
+    try {
+        const res = await fetch(`${API}/api/update/check`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        _updateInfo = data;
+
+        const currentEl = document.getElementById('update-current-version');
+        if (currentEl) currentEl.textContent = `v${data.current_version}`;
+
+        // Stamp last-checked time
+        try {
+            const stamp = Date.now();
+            localStorage.setItem('cv_update_last_checked', String(stamp));
+            _renderLastChecked(stamp);
+        } catch (_) {}
+
+        if (data.update_available) {
+            // Show red dot on nav item
+            const dot = document.getElementById('update-nav-dot');
+            if (dot) dot.style.display = '';
+
+            const latestEl = document.getElementById('update-latest-version');
+            if (latestEl) latestEl.textContent = data.latest_version;
+
+            const notesEl = document.getElementById('update-notes');
+            if (notesEl) notesEl.textContent = data.release_notes || '';
+
+            const linkEl = document.getElementById('update-changelog-link');
+            if (linkEl && data.html_url) linkEl.href = data.html_url;
+
+            _setUpdateState('available');
+            if (!silent && statusEl) statusEl.textContent = '';
+        } else {
+            _setUpdateState('idle');
+            if (!silent && statusEl) {
+                statusEl.textContent = data.error
+                    ? `Could not check: ${data.error}`
+                    : `You're on the latest version (v${data.current_version})`;
+            }
+        }
+    } catch (e) {
+        if (!silent && statusEl) statusEl.textContent = `Check failed: ${e.message}`;
+    }
+}
+
+async function _downloadAndInstallUpdate() {
+    if (!_updateInfo?.download_url) return;
+
+    _setUpdateState('downloading');
+    const pctEl  = document.getElementById('update-progress-pct');
+    const barEl  = document.getElementById('update-progress-bar');
+    const byteEl = document.getElementById('update-progress-bytes');
+
+    const url = encodeURIComponent(_updateInfo.download_url);
+    const res = await fetch(`${API}/api/update/download?url=${url}`);
+    if (!res.ok || !res.body) {
+        _setUpdateState('available');
+        return;
+    }
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+                const msg = JSON.parse(line.slice(6));
+                if (msg.error) { _setUpdateState('available'); return; }
+                if (msg.progress >= 0 && pctEl) pctEl.textContent = `${msg.progress}%`;
+                if (barEl) barEl.style.width = `${Math.max(0, msg.progress)}%`;
+                if (byteEl && msg.total > 0) byteEl.textContent = `${_fmtBytes(msg.downloaded)} / ${_fmtBytes(msg.total)}`;
+                if (msg.done) { _setUpdateState('ready'); return; }
+            } catch (_) {}
+        }
+    }
+}
+
+async function _applyUpdate() {
+    await fetch(`${API}/api/update/apply`, { method: 'POST' });
+}
+
+function _renderLastChecked(stamp) {
+    const el = document.getElementById('update-last-checked');
+    if (!el) return;
+    if (!stamp) { el.textContent = 'Never checked'; return; }
+    const s = Math.floor((Date.now() - stamp) / 1000);
+    let when;
+    if (s < 45) when = 'just now';
+    else if (s < 3600) when = `${Math.floor(s/60)}m ago`;
+    else if (s < 86400) when = `${Math.floor(s/3600)}h ago`;
+    else when = new Date(stamp).toLocaleString();
+    el.textContent = `Last checked ${when}`;
+}
+
+function _initUpdatePanel() {
+    const checkBtn = document.getElementById('btn-check-update');
+    if (checkBtn) checkBtn.addEventListener('click', () => checkForUpdate(false));
+
+    // Restore last-checked timestamp
+    try {
+        const raw = localStorage.getItem('cv_update_last_checked');
+        if (raw) _renderLastChecked(parseInt(raw, 10));
+    } catch (_) {}
+
+    const dlBtn = document.getElementById('btn-download-update');
+    if (dlBtn) dlBtn.addEventListener('click', _downloadAndInstallUpdate);
+
+    const applyBtn = document.getElementById('btn-apply-update');
+    if (applyBtn) applyBtn.addEventListener('click', _applyUpdate);
+
+    // Populate current version immediately from health endpoint
+    fetch(`${API}/api/health`).then(r => r.json()).then(d => {
+        const el = document.getElementById('update-current-version');
+        if (el && d.version) el.textContent = `v${d.version}`;
+    }).catch(() => {});
+
+    // Silent background check 3s after app loads
+    setTimeout(() => checkForUpdate(true), 3000);
+}

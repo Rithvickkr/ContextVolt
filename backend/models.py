@@ -29,9 +29,14 @@ class SummaryData(BaseModel):
 
 
 class PromptRequest(BaseModel):
-    """Optional body for POST /api/contexts/{id}/prompt — enables retrieval mode."""
+    """Optional body for POST /api/contexts/{id}/prompt — enables retrieval mode.
+
+    `size` defaults to None (not "standard") so callers can pass a query in
+    the body while letting the `?size=` query param decide the tier. When
+    both are None the endpoint falls back to "standard".
+    """
     query: str | None = None
-    size: str = "standard"
+    size: str | None = None
 
 
 class ContextCreate(BaseModel):
@@ -109,4 +114,6 @@ class UserProfileUpdate(BaseModel):
     """Request body for saving user profile info."""
     name: str = ""
     about: str = ""
+
+
 

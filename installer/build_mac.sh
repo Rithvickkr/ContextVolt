@@ -24,7 +24,7 @@ if [[ "$OSTYPE" != "darwin"* ]]; then
     exit 1
 fi
 
-VERSION="${CONTEXTVOLT_VERSION:-1.1.0}"
+VERSION="${CONTEXTVOLT_VERSION:-2.1.0}"
 DMG_NAME="ContextVolt-${VERSION}-macOS.dmg"
 
 echo ""
@@ -103,6 +103,7 @@ echo "  [7/7] Creating ${DMG_NAME}…"
 rm -f "$DMG_NAME"
 create-dmg \
     --volname "ContextVolt" \
+    --volicon icon.icns \
     --window-size 600 400 \
     --icon-size 100 \
     --icon "ContextVolt.app" 175 190 \
@@ -116,8 +117,13 @@ echo "  ✅ Build complete!"
 echo "     ${PWD}/${DMG_NAME}"
 echo "  ═══════════════════════════════════════════"
 echo ""
-echo "  First-launch instructions for users:"
+echo "  First-launch instructions for users (direct .dmg download):"
 echo "    1. Open the .dmg, drag ContextVolt.app to Applications"
-echo "    2. Right-click ContextVolt.app → Open → Open"
-echo "       (one-time Gatekeeper bypass; unsigned app)"
+echo "    2. Open it once — Gatekeeper will block it"
+echo "    3. System Settings → Privacy & Security → 'Open Anyway'"
+echo "       (older macOS: right-click ContextVolt.app → Open)"
+echo "       (one-time only; the app is ad-hoc signed, not notarized)"
+echo ""
+echo "  Tip: the Homebrew cask avoids this step entirely —"
+echo "       brew install --cask rithvickkr/tap/contextvolt"
 echo ""

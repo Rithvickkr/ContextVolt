@@ -140,7 +140,7 @@ def _check_rate_limit(client: str, path: str) -> None:
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="ContextVolt", version="1.0.0")
+app = FastAPI(title="ContextVolt", version="2.1.0")
 
 
 @app.middleware("http")

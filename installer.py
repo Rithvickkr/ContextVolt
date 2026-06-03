@@ -342,8 +342,34 @@ def run_installation():
                     else:
                         state.log("  Download failed. Install from ollama.com")
                         return True
+                elif IS_MAC:
+                    # macOS: the Linux install.sh is not supported here. Prefer the
+                    # Homebrew CLI formula (no admin password, no GUI app needed).
+                    brew = shutil.which("brew")
+                    if brew:
+                        state.log("  Installing Ollama via Homebrew...")
+                        result = subprocess.run(
+                            [brew, "install", "ollama"],
+                            capture_output=True, text=True, timeout=300,
+                        )
+                        if result.returncode == 0:
+                            ollama_path = _find_ollama_binary()
+                    if ollama_path:
+                        state.log("  Ollama installed successfully")
+                    else:
+                        # No Homebrew (or brew install failed) — we can't reliably
+                        # auto-install on macOS. Point the user at the download page.
+                        state.log("  Could not auto-install Ollama.")
+                        state.log("  Install it from https://ollama.com/download")
+                        state.log("  (or run: brew install ollama), then reopen ContextVolt.")
+                        try:
+                            import webbrowser
+                            webbrowser.open("https://ollama.com/download")
+                        except Exception:
+                            pass
+                        return True
                 else:
-                    # macOS / Linux: use the official install script
+                    # Linux: use the official install script
                     state.log("  Running Ollama install script...")
                     result = subprocess.run(
                         ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
@@ -355,13 +381,12 @@ def run_installation():
                             state.log("  Ollama installed successfully")
                         else:
                             state.log("  Install completed but ollama not found in PATH")
-                            state.log("  Try: brew install ollama")
+                            state.log("  Try your package manager, e.g.: sudo snap install ollama")
                             return True
                     else:
                         state.log("  Install script failed")
-                        state.log("  Try: brew install ollama")
                         return True
-                    
+
             except subprocess.TimeoutExpired:
                 state.log("  Installation timed out")
                 state.log("  Please install manually from ollama.com")

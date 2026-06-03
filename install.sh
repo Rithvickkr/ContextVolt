@@ -3,7 +3,7 @@
 # ContextVolt — One-line installer for macOS / Linux
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Rithvickkr/ContextVolt/master/install.sh | bash
 #
 # What it does:
 #   1. Checks prerequisites (Python 3, git)

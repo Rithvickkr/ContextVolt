@@ -13,7 +13,7 @@
 
 cask "contextvolt" do
   version "2.2.0"
-  sha256 :no_check # replaced with the real digest by update_cask.sh
+  sha256 "96ffae714adebdb265f28768f7f4cae1c3cd777095f5e0e0c3553d16bce79733"
 
   url "https://github.com/Rithvickkr/ContextVolt/releases/download/v#{version}/ContextVolt-#{version}-macOS.dmg",
       verified: "github.com/Rithvickkr/ContextVolt/"

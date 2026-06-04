@@ -529,6 +529,18 @@ _RETRIEVAL_BUDGETS: dict[str, tuple[int, int, int]] = {
 }
 
 
+# Anti-hallucination directive shared by every continuation-prompt builder.
+# A continuation prompt is a lossy digest: when a specific identifier was dropped
+# during compression, the receiving model must abstain rather than invent a
+# plausible-but-wrong value. Blind-continuation eval showed invented values are
+# the dominant failure mode under compression — this is the cheap guard.
+_FIDELITY_DIRECTIVE = (
+    "Use only the information above. If the user asks for a specific value — an "
+    "identifier, key, token, ticket number, path, hostname, or name — that does "
+    "not appear above, say you don't have it on hand rather than inventing one."
+)
+
+
 def build_retrieval_prompt(
     retrieved_chunks: list[dict],
     query: str,
@@ -616,7 +628,8 @@ def build_retrieval_prompt(
     instructions = (
         f"Continue this conversation. The user wants to resume: \"{query}\". "
         f"The chunks above are the most relevant parts of a {total}-message conversation. "
-        "Use them as context to provide a helpful, informed response."
+        "Use them as context to provide a helpful, informed response. "
+        f"{_FIDELITY_DIRECTIVE}"
     )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
     sections.append("</context_brief>")
@@ -734,7 +747,8 @@ def build_hybrid_prompt(
         f"You are continuing a conversation{source_clause}. "
         f"The overview summarizes the full {total_chunks}-chunk conversation. "
         f'The replay shows the most relevant exchanges for: "{query}". '
-        "Continue naturally from where the conversation left off."
+        "Continue naturally from where the conversation left off. "
+        f"{_FIDELITY_DIRECTIVE}"
     )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
     sections.append("</context_brief>")
@@ -1719,7 +1733,8 @@ def generate_continuation_prompt(
         f"Begin by briefly acknowledging where the prior session left off (1-2 sentences), "
         f"then continue from: {continuation_target}. "
         f"If the current state is ambiguous, ask one focused clarifying question before proceeding. "
-        f"Maintain the same tone and technical depth as the prior session."
+        f"Maintain the same tone and technical depth as the prior session. "
+        f"{_FIDELITY_DIRECTIVE}"
     )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
     sections.append("</context_brief>")

@@ -4555,9 +4555,6 @@ body {
     animation: spin 0.6s linear infinite;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
 
 /* ── Cloud Model Cost Badge ───────────────────────────────────── */
 
@@ -6894,15 +6891,17 @@ kbd {
   border-top: 1px solid var(--cv-line);
 }
 
-/* Settings & Models pinned to very bottom (Claude-style) */
+/* LLM ready status + Settings & Models pinned to the very bottom (Claude-style) */
 .cv-side-settings-anchor {
-  margin-top: 12px;
+  margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--cv-line);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
+/* Ready indicator sits flush in the bottom group (its own top margin is redundant here) */
+.cv-side-settings-anchor .cv-status { margin-top: 0; }
 .cv-util.cv-util-settings {
   background: var(--bg-hover);
   border: 1px solid var(--border);
@@ -7294,10 +7293,17 @@ kbd {
    short enough that the per-frame jank is imperceptible. A snappy
    ease-out at 140ms reads as "responsive" rather than "smooth-but-slow". */
 .sidebar.cv-side {
-    transition: width 0.14s ease-out;
+    /* easeOutQuint — fast start, long gentle glide to rest = reads as "smooth" */
+    transition: width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.34s cubic-bezier(0.22, 1, 0.36, 1);
     overflow-x: hidden;
     overflow-y: auto;
     min-height: 0;
+    will-change: width;
+    /* Isolate the sidebar's own layout so its internal reflow doesn't ripple
+       outward each frame during the width animation (no paint containment —
+       that would clip the status-dot's pulsing glow). */
+    contain: layout;
 }
 /* During the width animation: lock the sidebar (hide scrollbar, freeze
    pointer interactions on children) so the only thing moving is width.
@@ -7801,6 +7807,71 @@ kbd {
 }
 [data-theme="light"] .cv-block-pinned { background: linear-gradient(180deg, rgba(217,119,6,0.05), rgba(255,255,255,0.9)); border-color: rgba(217,119,6,0.2); }
 
+/* Pinned notes — rendered as markdown prose cards so long starred messages
+   keep their paragraphs, lists, code and emphasis instead of collapsing into
+   one run-on line. */
+.cv-pinned { display: flex; flex-direction: column; gap: 10px; }
+.cv-note {
+    padding: 12px 14px;
+    font-size: 13px; line-height: 1.6; color: var(--cv-text-1);
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--cv-line);
+    border-radius: 10px;
+    overflow-wrap: anywhere;
+}
+.cv-note > :first-child { margin-top: 0; }
+.cv-note > :last-child  { margin-bottom: 0; }
+.cv-note p  { margin: 0 0 8px; }
+.cv-note ul, .cv-note ol { margin: 6px 0; padding-left: 20px; list-style: revert; }
+.cv-note li { margin: 3px 0; }
+.cv-note strong { color: var(--cv-text-0); font-weight: 600; }
+.cv-note em { font-style: italic; }
+.cv-note code {
+    font-family: var(--cv-mono, ui-monospace, monospace);
+    font-size: 0.9em; padding: 1px 5px; border-radius: 5px;
+    background: rgba(255,255,255,0.07);
+}
+.cv-note pre {
+    margin: 8px 0; padding: 10px 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.32); border: 1px solid var(--cv-line);
+    overflow-x: auto;
+}
+.cv-note pre code { background: none; padding: 0; }
+[data-theme="light"] .cv-note { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.06); color: #27272a; }
+[data-theme="light"] .cv-note code { background: rgba(0,0,0,0.06); }
+[data-theme="light"] .cv-note pre { background: rgba(0,0,0,0.05); }
+
+/* Markdown tables (shared by pinned notes + Ask Vault answers) */
+.cv-md-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    border: 1px solid var(--cv-line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.cv-md-table th, .cv-md-table td {
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--cv-line);
+    border-right: 1px solid var(--cv-line);
+    overflow-wrap: anywhere;
+}
+.cv-md-table th:last-child, .cv-md-table td:last-child { border-right: 0; }
+.cv-md-table tbody tr:last-child td { border-bottom: 0; }
+.cv-md-table thead th {
+    background: rgba(255,255,255,0.05);
+    font-weight: 600;
+    color: var(--cv-text-0);
+    white-space: nowrap;
+}
+.cv-md-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+[data-theme="light"] .cv-md-table thead th { background: rgba(0,0,0,0.045); }
+[data-theme="light"] .cv-md-table tbody tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+
 /* ── Insights (3-col at wide, 1-col narrow) ──────────────── */
 .cv-insights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 1400px) { .cv-insights { grid-template-columns: 1fr; } }
@@ -8050,6 +8121,40 @@ kbd {
     box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
 .cv-action-glow { display: none; }
+
+/* Continuation prompt now lives inside the main column — drop its standalone
+   vertical margins so it follows the column's flex-gap rhythm. */
+.cv-dmain .cv-action { margin: 0; }
+
+/* Empty state shown when a context has no extracted insights */
+.cv-empty-insights {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.cv-empty-insights .cv-block-ic { flex-shrink: 0; }
+.cv-empty-insights-text { flex: 1; min-width: 200px; }
+.cv-empty-insights-text h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--cv-text-1); }
+.cv-empty-insights-text p  { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--cv-text-3); }
+.cv-empty-insights-btn {
+    flex-shrink: 0;
+    padding: 7px 14px; border-radius: 8px;
+    background: var(--cv-volt-dim); color: var(--cv-volt);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 35%, transparent);
+    font: 600 12px/1 var(--cv-body); cursor: pointer;
+    transition: all 0.18s var(--cv-ease);
+}
+.cv-empty-insights-btn:hover { background: color-mix(in oklab, var(--cv-volt) 18%, transparent); }
+
+/* Clean empty state inside an always-on block (e.g. Open questions with none) */
+.cv-block-empty {
+    margin: 6px 0 2px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--cv-text-3);
+    font-style: italic;
+}
 
 .cv-action-head {
     display: flex; align-items: center; gap: 12px;
@@ -11932,15 +12037,17 @@ kbd {
     width: 360px; max-width: calc(100vw - 32px);
     max-height: 460px;
     display: flex; flex-direction: column;
-    background: rgba(18,18,22,0.96);
+    /* Solid, NOT translucent: this panel is nested inside .cv-topbar which has
+       its own backdrop-filter — a nested backdrop-filter + alpha background
+       composites incorrectly (the panel renders see-through). Use an opaque
+       fill and no backdrop-filter so it always reads solid. */
+    background: #16161c;
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     box-shadow:
         0 1px 0 rgba(255,255,255,0.05) inset,
         0 20px 60px -12px rgba(0,0,0,0.7),
         0 8px 24px -4px rgba(0,0,0,0.5);
-    backdrop-filter: blur(20px) saturate(140%);
-    -webkit-backdrop-filter: blur(20px) saturate(140%);
     z-index: 200;
     overflow: hidden;
     animation: cv-notify-panel-in 180ms cubic-bezier(0.16,1,0.3,1);
@@ -12087,7 +12194,7 @@ kbd {
 [data-theme="light"] .cv-notify-btn { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); color: #52525b; }
 [data-theme="light"] .cv-notify-btn:hover { background: rgba(0,0,0,0.06); color: #18181b; border-color: rgba(0,0,0,0.14); }
 [data-theme="light"] .cv-notify-dot { box-shadow: 0 0 0 2px #ffffff, 0 4px 10px rgba(216,51,69,0.3); }
-[data-theme="light"] .cv-notify-panel { background: rgba(255,255,255,0.98); border-color: rgba(0,0,0,0.1); box-shadow: 0 20px 60px -12px rgba(0,0,0,0.18), 0 8px 24px -4px rgba(0,0,0,0.1); }
+[data-theme="light"] .cv-notify-panel { background: #ffffff; border-color: rgba(0,0,0,0.1); box-shadow: 0 20px 60px -12px rgba(0,0,0,0.18), 0 8px 24px -4px rgba(0,0,0,0.1); }
 [data-theme="light"] .cv-notify-head { border-bottom-color: rgba(0,0,0,0.06); background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent); }
 [data-theme="light"] .cv-notify-title { color: #18181b; }
 [data-theme="light"] .cv-notify-count { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); color: #71717a; }
@@ -12119,7 +12226,7 @@ kbd {
         0 4px 12px rgba(0,0,0,0.4);
 }
 [data-vibe="noir"] .cv-notify-panel {
-    background: linear-gradient(180deg, rgba(22,22,28,0.96), rgba(14,14,18,0.96));
+    background: linear-gradient(180deg, #16161c, #0e0e12);
     border-color: rgba(255,255,255,0.09);
     box-shadow:
         0 1px 0 rgba(255,255,255,0.06) inset,

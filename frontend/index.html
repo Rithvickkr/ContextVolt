@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'"
         onerror="this.remove()">
-    <link rel="stylesheet" href="/static/css/styles.css?v=SIDEBAR-COLLAPSE-V19">
+    <link rel="stylesheet" href="/static/css/styles.css?v=detail-ui-v23">
     <style>
         /* Screen-reader only utility */
         .sr-only {
@@ -183,7 +183,7 @@
                         <button class="color-swatch" data-color="#ef4444" style="background:#ef4444" title="Red"></button>
                         <button class="color-swatch" data-color="#06b6d4" style="background:#06b6d4" title="Cyan"></button>
                     </div>
-                    <input class="collection-name-input" id="collection-name-input" type="text" placeholder="Collection name…" maxlength="40" />
+                    <input class="collection-name-input" id="collection-name-input" type="text" placeholder="Collection name…" aria-label="Collection name" maxlength="40" />
                 </div>
                 <div class="collections-list" id="collections-list"><!-- rendered by JS --></div>
             </div>
@@ -219,19 +219,19 @@
                     <span>Restart Backend</span>
                 </button>
 
+            </div>
+
+            <!-- Pinned to the very bottom (Claude-style): LLM ready status + Settings & Models -->
+            <div class="cv-side-settings-anchor">
                 <div class="cv-status" id="status-indicator" aria-live="polite" aria-label="Backend connection status">
                     <span class="pulse status-dot offline" aria-hidden="true"></span>
                     <span class="status-text">Offline</span>
                 </div>
-
-                <!-- Settings pinned to the very bottom (Claude-style) -->
-                <div class="cv-side-settings-anchor">
-                    <button class="cv-util cv-util-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
-                        <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-                        <span>Settings &amp; Models</span>
-                    </button>
-                    <div class="cv-util-hint" id="settings-current-model-hint" aria-live="polite" aria-label="Active models"></div>
-                </div>
+                <button class="cv-util cv-util-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
+                    <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                    <span>Settings &amp; Models</span>
+                </button>
+                <div class="cv-util-hint" id="settings-current-model-hint" aria-live="polite" aria-label="Active models"></div>
             </div>
         </aside>
 
@@ -509,7 +509,7 @@
                                     <span class="cv-ask-history-search-ic" aria-hidden="true">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                     </span>
-                                    <input type="text" id="cv-ask-history-search" placeholder="Filter chats…" autocomplete="off" spellcheck="false" />
+                                    <input type="text" id="cv-ask-history-search" placeholder="Filter chats…" aria-label="Filter chat history" autocomplete="off" spellcheck="false" />
                                 </div>
                                 <div class="cv-ask-history-list" id="cv-ask-history-list">
                                     <div class="cv-ask-history-empty">
@@ -727,26 +727,7 @@
 
             <!-- Context Detail View -->
             <div class="view cv-main" id="view-detail" style="display:none;" role="region" aria-labelledby="detail-title-heading">
-                <div class="view-header">
-                    <button class="btn btn-ghost" id="back-to-library" aria-label="Back to library">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>
-                        Back
-                    </button>
-                    <div class="detail-actions">
-                        <button class="btn btn-secondary" id="edit-btn" aria-label="Edit this context">Edit</button>
-                        <div class="export-dropdown" id="export-dropdown">
-                            <button class="btn btn-secondary" id="export-btn"
-                                    aria-haspopup="menu" aria-expanded="false"
-                                    aria-controls="export-menu">Export</button>
-                            <div class="export-menu" id="export-menu" role="menu" aria-label="Export options" hidden>
-                                <button class="export-option" role="menuitem" data-format="markdown">Markdown (.md)</button>
-                                <button class="export-option" role="menuitem" data-format="json">Copy as JSON</button>
-                                <button class="export-option" role="menuitem" data-format="text">Copy as Plain Text</button>
-                            </div>
-                        </div>
-                        <button class="btn btn-danger" id="delete-btn" aria-label="Delete this context">Delete</button>
-                    </div>
-                </div>
+                <!-- The rail (back / edit / export / delete) is rendered inline by renderDetail(). -->
                 <div class="detail-content" id="detail-content" aria-live="polite">
                     <!-- Detail will be rendered here (includes inline prompt output) -->
                 </div>
@@ -896,7 +877,7 @@
                     </p>
                     <div class="cloud-key-input-row">
                         <div class="cloud-key-input-wrap">
-                            <input type="password" id="cloud-key-input" class="cloud-key-input" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+                            <input type="password" id="cloud-key-input" class="cloud-key-input" placeholder="sk-..." aria-label="API key" autocomplete="off" spellcheck="false" />
                             <button class="cloud-key-toggle" id="cloud-key-toggle" type="button" aria-label="Show/hide API key">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                             </button>
@@ -967,6 +948,7 @@
                         <div class="settings-mcp-row">
                             <div class="settings-mcp-input-row">
                                 <input type="text" class="settings-mcp-input" id="tunnel-url-input" readonly
+                                    aria-label="Public tunnel URL"
                                     placeholder="https://xxx.trycloudflare.com/mcp">
                                 <button type="button" class="settings-mcp-btn" data-copy-target="tunnel-url-input"
                                     id="tunnel-copy-btn" disabled>Copy</button>
@@ -1001,7 +983,7 @@
                         <div class="settings-mcp-row">
                             <label class="settings-mcp-label">URL</label>
                             <div class="settings-mcp-input-row">
-                                <input type="text" class="settings-mcp-input" id="settings-mcp-http-url" readonly>
+                                <input type="text" class="settings-mcp-input" id="settings-mcp-http-url" readonly aria-label="MCP server URL">
                                 <button type="button" class="settings-mcp-btn" data-copy-target="settings-mcp-http-url">Copy</button>
                             </div>
                         </div>
@@ -1009,7 +991,7 @@
                         <div class="settings-mcp-row">
                             <label class="settings-mcp-label">Bearer token</label>
                             <div class="settings-mcp-input-row">
-                                <input type="password" class="settings-mcp-input" id="settings-mcp-http-token" readonly>
+                                <input type="password" class="settings-mcp-input" id="settings-mcp-http-token" readonly aria-label="MCP bearer token">
                                 <button type="button" class="settings-mcp-btn" id="settings-mcp-token-toggle" aria-pressed="false">Show</button>
                                 <button type="button" class="settings-mcp-btn" data-copy-target="settings-mcp-http-token">Copy</button>
                                 <button type="button" class="settings-mcp-btn settings-mcp-btn-danger" id="settings-mcp-token-regen">Regenerate</button>
@@ -1223,7 +1205,7 @@
             <!-- Logs tab -->
             <div class="system-tab-panel" id="panel-logs" style="display:none;">
                 <div class="logs-toolbar">
-                    <select class="logs-lines-select" id="logs-lines-select">
+                    <select class="logs-lines-select" id="logs-lines-select" aria-label="Number of log lines to show">
                         <option value="50">Last 50 lines</option>
                         <option value="100" selected>Last 100 lines</option>
                         <option value="200">Last 200 lines</option>
@@ -1281,7 +1263,7 @@
         <div id="sidebar-tooltip-content"></div>
     </div>
 
-    <script src="/static/js/app.js?v=SIDEBAR-COLLAPSE-V19"></script>
+    <script src="/static/js/app.js?v=detail-ui-v23"></script>
 </body>
 
 </html>

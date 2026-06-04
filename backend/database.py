@@ -503,11 +503,13 @@ def get_contexts_paginated(
     total = conn.execute(f"SELECT COUNT(*) FROM contexts {where}", params_count).fetchone()[0]
     offset = (page - 1) * per_page
 
+    # id is a deterministic tie-breaker: created_at is a TEXT timestamp that can
+    # collide for rows created in the same instant, leaving the order undefined.
     order_clause = {
-        "newest": "starred DESC, created_at DESC",
-        "oldest": "starred DESC, created_at ASC",
-        "alpha":  "starred DESC, title COLLATE NOCASE ASC",
-    }.get(sort, "starred DESC, created_at DESC")
+        "newest": "starred DESC, created_at DESC, id DESC",
+        "oldest": "starred DESC, created_at ASC, id ASC",
+        "alpha":  "starred DESC, title COLLATE NOCASE ASC, id ASC",
+    }.get(sort, "starred DESC, created_at DESC, id DESC")
 
     params = (*params_count, per_page, offset)
     rows = conn.execute(

@@ -7,6 +7,7 @@ window via pywebview.
 
 import sys
 import os
+import socket
 import threading
 import time
 import traceback
@@ -97,11 +98,76 @@ if sys.platform == "win32":
 _current_server: uvicorn.Server | None = None
 _server_lock = threading.Lock()
 
+# The port we actually bound, decided once at startup by _select_port().
+_chosen_port: int | None = None
+
+
+def _port_is_free(host: str, port: int) -> bool:
+    """True if we can bind host:port right now (i.e. nothing else holds it)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _select_port() -> int | None:
+    """Pick the port to bind, or None if every candidate is taken.
+
+    - CONVX_PORT set  -> use only that port (no fallback).
+    - otherwise       -> first free port in PORT_CANDIDATES, preferring the one
+                         used last so the port stays stable across launches.
+    """
+    host = _paths.SERVER_HOST
+
+    if _paths.EXPLICIT_PORT is not None:
+        return _paths.EXPLICIT_PORT if _port_is_free(host, _paths.EXPLICIT_PORT) else None
+
+    last = _paths.read_last_port()
+    candidates = _paths.PORT_CANDIDATES
+    if last is not None:
+        candidates = [last] + [p for p in candidates if p != last]
+
+    for port in candidates:
+        if _port_is_free(host, port):
+            return port
+    return None
+
+
+def _fatal(message: str) -> None:
+    """Surface a fatal startup error to the user, then exit.
+
+    pythonw.exe has no console, so we use a native dialog where possible and
+    always record the reason in the crash log.
+    """
+    logging.error(message)
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            # MB_OK | MB_ICONERROR
+            ctypes.windll.user32.MessageBoxW(0, message, "ContextVolt", 0x10)
+        else:
+            webview.create_window(
+                "ContextVolt — Cannot Start",
+                html=(
+                    "<body style='font-family:-apple-system,sans-serif;background:#0a0a0f;"
+                    "color:#e5e7eb;padding:24px;line-height:1.5'>"
+                    f"<h2 style='color:#ef4444'>ContextVolt couldn't start</h2><p>{message}</p></body>"
+                ),
+            )
+            webview.start()
+    except Exception:
+        pass
+    sys.exit(1)
+
 
 def _launch_server() -> None:
     """Create and run a fresh uvicorn server instance. Blocks until server exits."""
     global _current_server
-    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="warning")
+    config = uvicorn.Config(
+        app, host=_paths.SERVER_HOST, port=_chosen_port, log_level="warning"
+    )
     srv = uvicorn.Server(config)
 
     with _server_lock:
@@ -142,6 +208,29 @@ def main():
         # Another instance is already running — just exit silently
         sys.exit(0)
 
+    # Decide which port to bind BEFORE opening the window, so we never point the
+    # webview at a port some other app is holding.
+    global _chosen_port
+    _chosen_port = _select_port()
+    if _chosen_port is None:
+        if _paths.EXPLICIT_PORT is not None:
+            _fatal(
+                f"Port {_paths.EXPLICIT_PORT} (set via CONVX_PORT) is already in use.\n\n"
+                "Free that port or choose a different one, then relaunch ContextVolt."
+            )
+        else:
+            lo, hi = _paths.PORT_CANDIDATES[0], _paths.PORT_CANDIDATES[-1]
+            _fatal(
+                f"All ports from {lo} to {hi} are in use, so ContextVolt has nowhere to run.\n\n"
+                "Close one of the apps using those ports, or set CONVX_PORT to a free "
+                "port (and set the same port in the browser extension's options), then relaunch."
+            )
+        return  # _fatal exits, but keep control flow explicit
+
+    # Publish the live port so the backend (tunnel, MCP URL) and next launch agree.
+    _main_module._active_port = _chosen_port
+    _paths.write_last_port(_chosen_port)
+
     # Start the first server instance
     server_thread = threading.Thread(target=_launch_server, daemon=True)
     server_thread.start()
@@ -160,7 +249,7 @@ def main():
     # Open native window — blocks until the window is closed
     webview.create_window(
         title="ContextVolt",
-        url="http://127.0.0.1:8000",
+        url=_paths.server_origin(port=_chosen_port),
         width=1200,
         height=800,
         min_size=(800, 600),
@@ -222,7 +311,10 @@ def main():
             pass
 
     threading.Thread(target=_set_large_taskbar_icon, daemon=True).start()
-    webview.start(debug=True, private_mode=True)  # private_mode forces a clean cache — bust WebView2's stale index.html
+    # debug opens DevTools — keep it off for normal users, enable with CONVX_DEBUG=1.
+    # private_mode forces a clean cache — bust WebView2's stale index.html.
+    _debug = os.environ.get("CONVX_DEBUG") == "1"
+    webview.start(debug=_debug, private_mode=True)
     sys.exit(0)
 
 

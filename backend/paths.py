@@ -23,6 +23,63 @@ from pathlib import Path
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 
+# ---------------------------------------------------------------------------
+# Server bind config — single source of truth for host/port.
+#
+# The app binds the first free port in PORT_CANDIDATES (preferring the one it
+# used last, for stickiness). That bounded range is the contract: the browser
+# extension probes the SAME range to discover the live backend, so the port
+# can move without anyone editing files.
+#
+# CONVX_PORT pins the port explicitly (power users / scripted setups). When set,
+# the app uses ONLY that port and errors if it's taken — no auto-fallback.
+# ---------------------------------------------------------------------------
+SERVER_HOST: str = os.environ.get("CONVX_HOST", "127.0.0.1")
+
+# Candidate ports for auto-selection. Keep this small and in sync with the
+# extension's PORT_CANDIDATES (extension/background.js).
+PORT_CANDIDATES: list[int] = list(range(8000, 8010))  # 8000..8009
+
+DEFAULT_PORT: int = PORT_CANDIDATES[0]
+
+# Explicit pin via env, or None to enable auto-selection.
+try:
+    _env_port = os.environ.get("CONVX_PORT")
+    EXPLICIT_PORT: int | None = int(_env_port) if _env_port else None
+except ValueError:
+    EXPLICIT_PORT = None
+
+# Best-effort default used by import-time consumers before run.py has actually
+# chosen a port. The authoritative runtime value lives in backend.main._active_port.
+SERVER_PORT: int = EXPLICIT_PORT or DEFAULT_PORT
+
+
+def server_origin(host: str | None = None, port: int | None = None) -> str:
+    """Return the backend's own origin, e.g. 'http://127.0.0.1:8000'."""
+    return f"http://{host or SERVER_HOST}:{port or SERVER_PORT}"
+
+
+def last_port_path() -> Path:
+    """Small file remembering the last successfully-bound port (stickiness)."""
+    return user_data_dir() / ".last_port"
+
+
+def read_last_port() -> int | None:
+    """Return the last-bound port if recorded and within the candidate range."""
+    try:
+        port = int(last_port_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return port if port in PORT_CANDIDATES else None
+
+
+def write_last_port(port: int) -> None:
+    try:
+        last_port_path().write_text(str(port), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def user_data_dir() -> Path:
     """Return the directory for writable per-user state.
 

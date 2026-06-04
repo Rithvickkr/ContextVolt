@@ -1,10 +1,12 @@
+# Lower bounds are the tested floors; major caps guard against breaking releases
+# (pydantic v2→v3 and numpy 1→2-style transitions; sqlite-vec is still pre-1.0).
 fastapi>=0.116
-uvicorn[standard]
-requests
-pydantic
+uvicorn[standard]>=0.30
+requests>=2.31
+pydantic>=2.7,<3
 pywebview==6.2.1
-numpy
-sqlite-vec
+numpy>=1.26,<3
+sqlite-vec>=0.1.6,<0.2
 mcp>=1.0.0
 
 # macOS-only: pywebview's WebKit backend needs PyObjC bindings.

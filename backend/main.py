@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -65,7 +66,7 @@ from backend.models import (
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
     CloudKeySet, ProviderSelect, CloudKeyValidate, UserProfileUpdate,
 )
-from backend.mcp_http import mount_mcp_http
+from backend.mcp_http import mount_mcp_http, mcp_http_lifespan
 from backend.ollama_client import (
     summarize_conversation as _ollama_summarize,
     summarize_conversation_streaming as _ollama_summarize_streaming,
@@ -100,8 +101,14 @@ from backend.cloud_client import (
 # Rate limiting (in-memory, per-IP, sliding window)
 # ---------------------------------------------------------------------------
 
-_rate_limit_store: dict[str, list[float]] = {}
+_rate_limit_store: dict[str, deque[float]] = {}
 _rate_limit_lock = threading.Lock()
+
+# Periodic stale-key sweep. Buckets that have fully expired leave behind empty
+# deques (and keys for IPs that never return); we drop them every so often so
+# the store can't grow without bound.
+_rate_limit_last_cleanup = 0.0
+_RATE_LIMIT_CLEANUP_INTERVAL = 300.0  # seconds between sweeps
 
 # Serialises background LLM work (capture summarize, resummarize) so multiple
 # captures don't contend on the local GPU. Synchronous endpoints don't acquire
@@ -118,21 +125,42 @@ _RATE_LIMITS: list[tuple[str, int, int]] = [
 ]
 
 
+# Longest window across all rules — used by the sweep to age out abandoned keys.
+_RATE_LIMIT_MAX_WINDOW = max(window for _, _, window in _RATE_LIMITS)
+
+
+def _maybe_cleanup_rate_limit_store(now: float) -> None:
+    """Drop stale keys. Caller must hold _rate_limit_lock."""
+    global _rate_limit_last_cleanup
+    if now - _rate_limit_last_cleanup < _RATE_LIMIT_CLEANUP_INTERVAL:
+        return
+    _rate_limit_last_cleanup = now
+    stale = [
+        key
+        for key, bucket in _rate_limit_store.items()
+        if not bucket or now - bucket[-1] >= _RATE_LIMIT_MAX_WINDOW
+    ]
+    for key in stale:
+        del _rate_limit_store[key]
+
+
 def _check_rate_limit(client: str, path: str) -> None:
     now = time.monotonic()
     for prefix, limit, window in _RATE_LIMITS:
         if path.startswith(prefix):
             key = f"{client}:{prefix}"
             with _rate_limit_lock:
-                timestamps = _rate_limit_store.get(key, [])
-                timestamps = [t for t in timestamps if now - t < window]
-                if len(timestamps) >= limit:
+                _maybe_cleanup_rate_limit_store(now)
+                bucket = _rate_limit_store.setdefault(key, deque())
+                # Evict expired timestamps from the front (oldest first).
+                while bucket and now - bucket[0] >= window:
+                    bucket.popleft()
+                if len(bucket) >= limit:
                     raise HTTPException(
                         status_code=429,
                         detail=f"Rate limit exceeded. Max {limit} requests per {window}s.",
                     )
-                timestamps.append(now)
-                _rate_limit_store[key] = timestamps
+                bucket.append(now)
             break
 
 
@@ -140,7 +168,17 @@ def _check_rate_limit(client: str, path: str) -> None:
 # App setup
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="ContextVolt", version="2.2.0")
+from contextlib import asynccontextmanager as _asynccontextmanager  # noqa: E402
+
+
+@_asynccontextmanager
+async def _lifespan(_app: "FastAPI"):
+    # Drives the MCP HTTP session manager (replaces deprecated on_event hooks).
+    async with mcp_http_lifespan():
+        yield
+
+
+app = FastAPI(title="ContextVolt", version="2.2.0", lifespan=_lifespan)
 
 
 @app.middleware("http")
@@ -150,12 +188,18 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# The actual port is chosen at runtime (run.py picks the first free candidate
+# and overwrites this). Import-time default keeps direct `uvicorn backend.main`
+# runs working. Consumers needing the live value (tunnel, MCP URL) read this.
+from backend.paths import SERVER_PORT as _SERVER_PORT  # noqa: E402
+_active_port: int = _SERVER_PORT
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
+    # Allow any loopback origin regardless of the chosen port — the frontend is
+    # same-origin anyway, and sensitive endpoints are separately gated to
+    # loopback via _is_loopback().
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Accept", "Authorization"],
@@ -228,7 +272,15 @@ _server_token: dict = {"started_at": time.time()}  # mutable — run.py updates 
 @app.get("/api/health")
 def health():
     from backend.updater import APP_VERSION
-    return {"status": "ok", "started_at": _server_token["started_at"], "version": APP_VERSION}
+    # "app" marker lets the extension's port probe confirm it found ContextVolt
+    # and not some unrelated service occupying a candidate port.
+    return {
+        "status": "ok",
+        "app": "contextvolt",
+        "port": _active_port,
+        "started_at": _server_token["started_at"],
+        "version": APP_VERSION,
+    }
 
 
 @app.get("/api/setup/status")
@@ -2405,7 +2457,7 @@ def _mcp_server_info_payload(request: Request) -> dict:
 
     # Compose the URL the host should use. We keep the path consistent with
     # mount_mcp_http() above.
-    host = (request.headers.get("host") or "127.0.0.1:8000").strip()
+    host = (request.headers.get("host") or f"127.0.0.1:{_active_port}").strip()
     http_url = f"http://{host}/mcp"
 
     # Detect the venv python actually running the app — that's exactly what
@@ -2499,7 +2551,7 @@ def mcp_tunnel_start(request: Request):
     if not _is_loopback(request):
         raise HTTPException(status_code=403, detail="loopback only")
     from backend import cloudflare_tunnel
-    cloudflare_tunnel.start(port=8000)
+    cloudflare_tunnel.start(port=_active_port)
     return {"ok": True, "status": cloudflare_tunnel.get_status()["status"]}
 
 

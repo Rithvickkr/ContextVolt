@@ -100,53 +100,66 @@ def _auth_required() -> bool:
 # Mount
 # ----------------------------------------------------------------------
 
+# Shared between mount_mcp_http() (registers the route) and mcp_http_lifespan()
+# (runs the session manager). Module-level so the ASGI handler and the lifespan
+# see the same manager/ready flag without closing over locals.
+_mcp: dict[str, Any] = {"manager": None, "ready": False, "path": "/mcp"}
+
+
+@contextlib.asynccontextmanager
+async def mcp_http_lifespan():
+    """Run the MCP session manager for the app's lifetime.
+
+    Wire this into FastAPI via `FastAPI(lifespan=...)`. A no-op if
+    mount_mcp_http() was never called (e.g. stdio-only deployments).
+    """
+    manager = _mcp.get("manager")
+    if manager is None:
+        yield
+        return
+
+    token, generated = _resolve_token()
+    if generated:
+        _log.warning(
+            "MCP HTTP token auto-generated. Copy this into your client config:\n"
+            "  Authorization: Bearer %s",
+            token,
+        )
+    else:
+        _log.info("MCP HTTP transport enabled at %s (token configured)", _mcp["path"])
+
+    stack = contextlib.AsyncExitStack()
+    await stack.enter_async_context(manager.run())
+    _mcp["ready"] = True
+    try:
+        yield
+    finally:
+        _mcp["ready"] = False
+        try:
+            await stack.aclose()
+        except Exception as e:
+            _log.warning("MCP HTTP shutdown error: %s", e)
+
+
 def mount_mcp_http(app: FastAPI, path: str = "/mcp") -> None:
     """Attach the MCP Streamable HTTP transport to a FastAPI app.
 
-    Adds startup/shutdown hooks to manage the session manager lifecycle and
-    registers a single ASGI route at `path` that handles all MCP traffic
-    (POST for client→server, GET for the SSE stream, DELETE to terminate).
+    Registers a single ASGI route at `path` that handles all MCP traffic (POST
+    for client→server, GET for the SSE stream, DELETE to terminate). The session
+    manager lifecycle is driven separately by mcp_http_lifespan(), which the app
+    must install via FastAPI(lifespan=...).
     """
     # Lazy import — keep the SDK out of the import graph until the user asks
     # for HTTP transport. Stdio-only deployments won't pay this cost.
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-    manager = StreamableHTTPSessionManager(
+    _mcp["manager"] = StreamableHTTPSessionManager(
         app=mcp_server_instance,
         stateless=True,                # remote clients (Grok, ChatGPT, Claude.ai) send each
                                        # request independently — no session ID between calls
         json_response=False,           # use SSE streams (matches Anthropic remote-MCP spec)
     )
-
-    # Keep manager.run() entered for the lifetime of the FastAPI app.
-    state: dict[str, Any] = {"stack": None, "ready": False}
-
-    @app.on_event("startup")
-    async def _mcp_http_startup() -> None:
-        token, generated = _resolve_token()
-        if generated:
-            _log.warning(
-                "MCP HTTP token auto-generated. Copy this into your client config:\n"
-                "  Authorization: Bearer %s",
-                token,
-            )
-        else:
-            _log.info("MCP HTTP transport enabled at %s (token configured)", path)
-
-        stack = contextlib.AsyncExitStack()
-        await stack.enter_async_context(manager.run())
-        state["stack"] = stack
-        state["ready"] = True
-
-    @app.on_event("shutdown")
-    async def _mcp_http_shutdown() -> None:
-        stack = state.get("stack")
-        if stack is not None:
-            try:
-                await stack.aclose()
-            except Exception as e:
-                _log.warning("MCP HTTP shutdown error: %s", e)
-        state["ready"] = False
+    _mcp["path"] = path
 
     async def _asgi_handler(scope, receive, send) -> None:
         # Method gate (DELETE used by clients to terminate sessions).
@@ -165,11 +178,11 @@ def mount_mcp_http(app: FastAPI, path: str = "/mcp") -> None:
                 await _send_json(send, 401, {"error": "missing or invalid bearer token"})
                 return
 
-        if not state.get("ready"):
+        if not _mcp.get("ready"):
             await _send_json(send, 503, {"error": "MCP transport not ready"})
             return
 
-        await manager.handle_request(scope, receive, send)
+        await _mcp["manager"].handle_request(scope, receive, send)
 
     # Register the ASGI route. Starlette's add_route doesn't support raw ASGI
     # callables, so we hand-roll a Mount-equivalent via the lower-level router.
@@ -188,7 +201,7 @@ def mount_mcp_http(app: FastAPI, path: str = "/mcp") -> None:
             # so the user can sanity-check which token is active without
             # exposing it to anyone who happens to load this URL.
             "token_hint": (token[:8] + "…" + token[-4:]) if len(token) >= 14 else "",
-            "ready": state.get("ready", False),
+            "ready": _mcp.get("ready", False),
         }
 
 

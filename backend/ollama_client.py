@@ -87,6 +87,44 @@ def _get_embed_model() -> str:
     return "nomic-embed-text"
 
 
+def _embed_prefix(model: str, is_query: bool) -> str:
+    """Return the task-instruction prefix this embed model expects.
+
+    Modern retrieval embedders are trained with ASYMMETRIC prefixes: the search
+    query and the stored document must be encoded with different instructions or
+    recall drops measurably. Each family uses its own scheme:
+      - nomic-embed-text (v1/v1.5): literal "search_query:" / "search_document:"
+      - qwen3-embedding: an instruct line on the QUERY only; documents stay raw.
+      - mxbai-embed-large: an instruct line on the QUERY only; documents raw.
+    Unknown models get no prefix — sending raw text is safer than guessing a
+    scheme the model wasn't trained on.
+
+    NOTE: changing this scheme (or the embed model) invalidates existing vectors.
+    Queries and documents must be embedded with the SAME scheme, so a full
+    re-embed is required after any change here. See _embedding_scheme_id().
+    """
+    base = model.split(":")[0].lower()
+    if base.startswith("nomic-embed-text"):
+        return "search_query: " if is_query else "search_document: "
+    if base.startswith("qwen3-embedding"):
+        return (
+            "Instruct: Given a search query, retrieve relevant passages that "
+            "answer the query\nQuery: "
+        ) if is_query else ""
+    if base.startswith("mxbai-embed-large"):
+        return "Represent this sentence for searching relevant passages: " if is_query else ""
+    return ""
+
+
+def _embedding_scheme_id(model: str) -> str:
+    """Stable identifier for the (model, prefix-scheme) pair currently in effect.
+
+    Stored alongside vectors so we can detect when a config change has made the
+    on-disk embeddings incompatible with freshly-embedded queries (fix #6).
+    """
+    return f"{model}|q={_embed_prefix(model, True)!r}|d={_embed_prefix(model, False)!r}"
+
+
 # Cache: model name → max chars (avoids repeated /api/show calls)
 _embed_ctx_cache: dict[str, int] = {}
 
@@ -404,33 +442,54 @@ def _parse_messages(text: str) -> list[str]:
 
 ## ── Chunk + Embed for retrieval ───────────────────────────────────────
 
-def _split_to_fit(text: str, max_chars: int) -> list[str]:
-    """Split text into segments that each fit within max_chars.
+def _split_to_fit(text: str, max_chars: int, overlap_chars: int | None = None) -> list[str]:
+    """Split text into segments that each fit within max_chars, with overlap.
 
     Splits on newlines first (preserving structure), then falls back to
-    hard-splitting on the char limit. Returns a list of non-empty strings.
+    hard-splitting on the char limit. Adjacent segments share an `overlap_chars`
+    tail from the previous segment so a fact straddling a boundary isn't lost to
+    retrieval (it appears, in full, in at least one chunk). Returns a list of
+    non-empty strings, each <= max_chars including the prepended overlap.
     """
     if len(text) <= max_chars:
         return [text]
-    parts = []
-    current = []
+    if overlap_chars is None:
+        overlap_chars = max(0, int(max_chars * 0.12))
+    # Cap overlap so the effective segment size stays sane even for small limits.
+    overlap_chars = max(0, min(overlap_chars, max_chars // 4))
+    # Reserve room for the overlap tail AND the joining newline so that
+    # segment + overlap + "\n" still fits within max_chars.
+    eff = max(64, max_chars - overlap_chars - 1)
+
+    base: list[str] = []
+    current: list[str] = []
     current_len = 0
     for line in text.split("\n"):
         line_len = len(line) + 1  # +1 for newline
-        if current_len + line_len > max_chars and current:
-            parts.append("\n".join(current))
+        if current_len + line_len > eff and current:
+            base.append("\n".join(current))
             current = []
             current_len = 0
-        # Single line longer than max_chars — hard split
-        if line_len > max_chars:
-            for start in range(0, len(line), max_chars):
-                parts.append(line[start:start + max_chars])
+        # Single line longer than the effective limit — hard split
+        if line_len > eff:
+            for start in range(0, len(line), eff):
+                base.append(line[start:start + eff])
         else:
             current.append(line)
             current_len += line_len
     if current:
-        parts.append("\n".join(current))
-    return [p for p in parts if p.strip()]
+        base.append("\n".join(current))
+    base = [p for p in base if p.strip()]
+
+    if overlap_chars <= 0 or len(base) <= 1:
+        return base
+
+    # Prepend an overlap tail from the previous segment to each subsequent one.
+    out = [base[0]]
+    for i in range(1, len(base)):
+        tail = base[i - 1][-overlap_chars:]
+        out.append(f"{tail}\n{base[i]}" if tail.strip() else base[i])
+    return out
 
 
 def chunk_conversation(
@@ -489,11 +548,19 @@ def chunk_conversation(
     return chunks
 
 
-def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
-    """Embed all chunks in a single batch API call (much faster than per-chunk).
+# Max chunks per /api/embed request. A whole large conversation sent as one
+# request can exceed the read timeout (a 125-chunk context did, in testing),
+# stalling the embed and forcing a slow per-chunk fallback. Sub-batching keeps
+# each request bounded while still being far faster than one-call-per-chunk.
+_EMBED_BATCH_SIZE = 32
 
-    Ollama's /api/embed accepts an array of strings as 'input'.
-    One HTTP request for N chunks instead of N requests.
+
+def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
+    """Embed all chunks via batched /api/embed calls (much faster than per-chunk).
+
+    Chunks are embedded in sub-batches of _EMBED_BATCH_SIZE so a single large
+    context can't time out the whole request. If a sub-batch request fails, only
+    that sub-batch falls back to sequential single-chunk embedding.
     Mutates each dict in-place to add 'embedding' key. Returns same list.
     """
     if not chunks:
@@ -503,21 +570,29 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     _model = model or _get_embed_model()
 
     max_chars = _get_embed_max_chars(_model)
-    texts = [ch["text"][:max_chars] for ch in chunks]
-    try:
-        r = _ollama_post(
-            f"{OLLAMA_BASE}/api/embed",
-            json={"model": _model, "input": texts},
-            timeout=60,
-        )
-        r.raise_for_status()
-        embeddings = r.json().get("embeddings", [])
-        for i, ch in enumerate(chunks):
-            ch["embedding"] = embeddings[i] if i < len(embeddings) else None
-    except Exception as e:
-        _log.warning("Batch embed failed (%d chunks): %s — falling back to sequential", len(chunks), e)
-        for ch in chunks:
-            ch["embedding"] = embed_text(ch["text"])
+    # Chunks are stored documents → document-side prefix (is_query=False).
+    doc_prefix = _embed_prefix(_model, is_query=False)
+
+    for start in range(0, len(chunks), _EMBED_BATCH_SIZE):
+        batch = chunks[start:start + _EMBED_BATCH_SIZE]
+        texts = [doc_prefix + ch["text"][:max_chars] for ch in batch]
+        try:
+            r = _ollama_post(
+                f"{OLLAMA_BASE}/api/embed",
+                json={"model": _model, "input": texts},
+                timeout=60,
+            )
+            r.raise_for_status()
+            embeddings = r.json().get("embeddings", [])
+            for i, ch in enumerate(batch):
+                ch["embedding"] = embeddings[i] if i < len(embeddings) else None
+        except Exception as e:
+            _log.warning(
+                "Batch embed failed (chunks %d–%d): %s — falling back to sequential",
+                start, start + len(batch) - 1, e,
+            )
+            for ch in batch:
+                ch["embedding"] = embed_text(ch["text"], is_query=False)
     return chunks
 
 
@@ -1573,7 +1648,84 @@ _SOURCE_STYLE_HINTS: dict[str, str] = {
 }
 
 
-def _build_cold_start_brief(summary: dict, source_llm: str, msg_count: int) -> str:
+# Words that follow "I'm …" / "… here" but are NOT persona names — guards the
+# heuristic against false positives like "I'm sorry" or "Look here".
+_PERSONA_STOPWORDS = frozenset({
+    "sorry", "here", "right", "just", "back", "ready", "happy", "glad", "sure",
+    "going", "looking", "afraid", "certain", "confident", "talking", "thinking",
+    "listen", "look", "stop", "wait", "okay", "alright", "come", "over", "down",
+    "still", "really", "also", "well", "here.", "done", "good",
+})
+# Capitalized name group is case-SENSITIVE on purpose; only the surrounding
+# keywords are allowed in either case. (No re.IGNORECASE — it would let the name
+# group match lowercase words and flood false positives.)
+_PERSONA_RE = re.compile(
+    r"([A-Z][a-z]{2,11})\s+here\b"               # "Cody here"
+    r"|[Ii]'?m\s+([A-Z][a-z]{2,11})\b"           # "I'm Cody"
+    r"|[Tt]his\s+is\s+([A-Z][a-z]{2,11})\b"      # "This is Cody"
+)
+
+
+def _detect_persona(text: str) -> str:
+    """Detect a recurring assistant self-name (persona) such as 'Cody'.
+
+    Continuation quality drops when the receiving model loses an established
+    persona/voice, so we surface it explicitly in the brief + instructions
+    instead of leaving it buried in the replayed transcript. Pure heuristic —
+    returns "" when nothing matches with confidence. Picks the most frequently
+    self-referenced name so a one-off "I'm happy" can't win.
+    """
+    counts: dict[str, int] = {}
+    for m in _PERSONA_RE.finditer(text or ""):
+        name = m.group(1) or m.group(2) or m.group(3)
+        if not name or name.lower() in _PERSONA_STOPWORDS:
+            continue
+        key = name[0].upper() + name[1:].lower()
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return ""
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
+def _forward_target(summary: dict) -> str:
+    """The NEXT step to advance to.
+
+    Prefers open questions / remaining next-steps over the end-state snapshot so
+    the receiving model moves the conversation FORWARD rather than re-describing
+    what was just done. Returns "" when neither is available.
+    """
+    for q in (summary.get("unresolved_questions", []) or []):
+        q = (q or "").strip()
+        if q and q.lower() not in ("none", "n/a"):
+            return q
+    snap = (summary.get("snapshot", "") or "").strip()
+    if snap and snap.lower() not in ("none", "n/a", ""):
+        return snap
+    return ""
+
+
+def _render_replay_index(selected: list[tuple[int, str]], msg_count: int) -> str:
+    """Render selected turns as a one-line-per-turn INDEX (label + first ~100 chars).
+
+    Used when the verbatim lattice (<key_facts>) is already present: the full
+    transcript would just duplicate it, so replay collapses to a navigational
+    index that preserves turn numbering and the OPENING/LATEST markers without
+    re-emitting the same text wholesale.
+    """
+    lines: list[str] = []
+    for orig_idx, text in selected:
+        role = _role_label(text)
+        label = _message_turn_label(orig_idx, msg_count, role)
+        snippet = " ".join(_strip_capture_noise(text).split())
+        if len(snippet) > 100:
+            snippet = snippet[:100].rstrip() + "…"
+        lines.append(f"[{label}]: {snippet}")
+    return "\n".join(lines)
+
+
+def _build_cold_start_brief(
+    summary: dict, source_llm: str, msg_count: int, persona: str = "",
+) -> str:
     """2-3 sentence plain-prose orientation for the receiving LLM.
 
     Uses only existing summary fields (no arc/next). Sits at the top of the
@@ -1595,6 +1747,8 @@ def _build_cold_start_brief(summary: dict, source_llm: str, msg_count: int) -> s
         first = (conclusions[0] or "").strip()
         if first and first.lower() not in ("none", "n/a"):
             parts.append(f"Most recent decision: {first}.")
+    if persona:
+        parts.append(f'The assistant went by "{persona}" — keep that persona and voice.')
     style = _SOURCE_STYLE_HINTS.get((source_llm or "").lower().strip())
     if style:
         parts.append(f"The prior assistant tended to use {style}; match that style for visual continuity.")
@@ -1640,13 +1794,21 @@ def generate_continuation_prompt(
     # ── Smart-select key messages ─────────────────────────────────
     selected = _select_key_messages(messages, char_budget=budget["replay"], chunks=chunks)
 
-    replay_lines: list[str] = []
-    for orig_idx, text in selected:
-        role = _role_label(text)
-        clean_text = _strip_capture_noise(text)
-        label = _message_turn_label(orig_idx, msg_count, role)
-        replay_lines.append(f"[{label}]:\n{clean_text}")
-    replay_block = "\n\n".join(replay_lines)
+    if lattice_block:
+        # <key_facts> already carries the verbatim regions across the whole
+        # conversation, so a full replay would duplicate it. Collapse replay to a
+        # compact turn index — keeps turn numbering + OPENING/LATEST markers
+        # without re-emitting the same text two more times.
+        replay_block = _render_replay_index(selected, msg_count)
+    else:
+        # No lattice → replay is the only verbatim source, so keep it in full.
+        replay_lines: list[str] = []
+        for orig_idx, text in selected:
+            role = _role_label(text)
+            clean_text = _strip_capture_noise(text)
+            label = _message_turn_label(orig_idx, msg_count, role)
+            replay_lines.append(f"[{label}]:\n{clean_text}")
+        replay_block = "\n\n".join(replay_lines)
 
     # ── Extract code blocks ───────────────────────────────────────
     max_blocks = budget["max_blocks"]
@@ -1661,6 +1823,9 @@ def generate_continuation_prompt(
         code_section = "\n\n".join(parts)
 
     # ── Starred content (verbatim) ────────────────────────────────
+    # These are user-starred snippets from the extension: an explicit "keep this
+    # exactly as-is" signal. We intentionally do NOT dedupe them against the
+    # lattice — if the user pinned it, it stays verbatim even when it overlaps.
     starred_section = ""
     if important_snippets:
         cleaned = [_strip_capture_noise(s) for s in important_snippets]
@@ -1695,14 +1860,15 @@ def generate_continuation_prompt(
     meta_line = " | ".join(meta_parts)
 
     # ── Assemble XML prompt ───────────────────────────────────────
-    snapshot = (summary.get("snapshot", "") or "").strip()
-    has_snapshot = bool(snapshot and snapshot.lower() not in ("n/a", "none", ""))
-
     sections: list[str] = []
+
+    # Detect an established assistant persona (e.g. "Cody") so we can hoist it
+    # into the brief + instructions instead of leaving it buried in the replay.
+    persona = _detect_persona(original_chat)
 
     # Cold-start brief: 1-3 sentence plain-prose orientation so the receiving
     # LLM gets the situation before parsing the structured blocks below.
-    cold_brief = _build_cold_start_brief(summary, source_llm, msg_count)
+    cold_brief = _build_cold_start_brief(summary, source_llm, msg_count, persona=persona)
     sections.append(f"<context_brief>\n<cold_start>\n{cold_brief}\n</cold_start>")
 
     sections.append(f"\n<meta>\n{meta_line}\n</meta>")
@@ -1726,14 +1892,21 @@ def generate_continuation_prompt(
 
     # Instructions — stance-aware + explicit acknowledgment + clarifying-question fallback.
     stance = _detect_stance(summary)
-    continuation_target = snapshot if has_snapshot else "where the conversation left off"
+    # Point at the NEXT step (open question / remaining work), not the end-state
+    # snapshot, so the model advances the conversation instead of re-summarizing.
+    forward = _forward_target(summary)
+    if forward:
+        advance = f"then advance the conversation by addressing the next open step: {forward}."
+    else:
+        advance = "then continue naturally from where the conversation left off."
+    persona_clause = f' Stay in the established persona ("{persona}") and its voice.' if persona else ""
     instructions = (
         f"{stance} "
         f"You are now continuing this conversation. "
         f"Begin by briefly acknowledging where the prior session left off (1-2 sentences), "
-        f"then continue from: {continuation_target}. "
+        f"{advance} "
         f"If the current state is ambiguous, ask one focused clarifying question before proceeding. "
-        f"Maintain the same tone and technical depth as the prior session. "
+        f"Maintain the same tone and technical depth as the prior session.{persona_clause} "
         f"{_FIDELITY_DIRECTIVE}"
     )
     sections.append(f"\n<instructions>\n{instructions}\n</instructions>")
@@ -1747,17 +1920,25 @@ def generate_continuation_prompt(
     return "\n".join(sections)
 
 
-def embed_text(text: str, model: str | None = None) -> list[float] | None:
+def embed_text(text: str, model: str | None = None, is_query: bool = True) -> list[float] | None:
     """Generate an embedding vector via Ollama's /api/embed endpoint.
+
+    `is_query` selects the task prefix (see _embed_prefix). Search queries must
+    pass is_query=True (default); stored documents/contexts pass is_query=False
+    so the asymmetric retrieval models encode them correctly.
 
     Returns None if the embed model is not installed or any error occurs —
     callers must handle None gracefully (fall back to keyword search).
     """
     _model = model or _get_embed_model()
+    # Truncate content first, then prepend the prefix so the instruction is never
+    # the part that gets cut off.
+    content = text[:_get_embed_max_chars(_model)]
+    payload = _embed_prefix(_model, is_query) + content
     try:
         r = _ollama_post(
             f"{OLLAMA_BASE}/api/embed",
-            json={"model": _model, "input": text[:_get_embed_max_chars(_model)]},
+            json={"model": _model, "input": payload},
             timeout=30,
         )
         r.raise_for_status()

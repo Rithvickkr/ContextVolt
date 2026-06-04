@@ -45,6 +45,7 @@ from backend.database import (
     update_collection,
     delete_collection,
     set_context_collection,
+    get_context_ids_by_collection,
     increment_stat,
     create_ask_session,
     list_ask_sessions,
@@ -59,6 +60,8 @@ from backend.database import (
     create_entities_for_context,
     delete_entities_by_context,
     find_entity_chunks_for_query,
+    get_meta,
+    set_meta,
 )
 from backend.models import (
     SummarizeRequest, ContextCreate, ContextUpdate, CaptureRequest,
@@ -77,6 +80,8 @@ from backend.ollama_client import (
     build_retrieval_prompt,
     build_cross_context_prompt,
     embed_text,
+    _embedding_scheme_id,
+    _get_embed_model,
     _truncate_at_sentence,
     check_ollama_running,
     check_model_available,
@@ -221,7 +226,7 @@ def _try_embed_context(context_id: int | None, summary: dict) -> None:
     try:
         topic = summary.get("main_topic", "")
         ideas = " ".join(summary.get("key_ideas", []))
-        vec = embed_text(f"{topic} {ideas}".strip())
+        vec = embed_text(f"{topic} {ideas}".strip(), is_query=False)
         if vec:
             set_context_embedding(context_id, vec)
     except Exception:
@@ -378,12 +383,24 @@ def embed_setup_status():
     for m in available:
         m["recommended"] = (m["id"] == rec["embed"])
 
+    # Re-embed guard (fix #6): if the existing document vectors were built with a
+    # different embed model/prefix scheme than the active one, freshly-embedded
+    # queries won't match them — retrieval silently degrades. Surface this so the
+    # UI can prompt a full re-embed (chunk-all?force=true).
+    current_scheme = _embedding_scheme_id(current)
+    stored_scheme = get_meta("embed_scheme")
+    chunk_count = get_db_stats().get("chunks", 0)
+    reembed_needed = bool(stored_scheme and stored_scheme != current_scheme and chunk_count)
+
     return {
         "current_embed_model": current,
         "embed_model_ready": ready,
         "available_models": available,
         "gpu": gpu,
         "recommendation": rec,
+        "reembed_needed": reembed_needed,
+        "embedded_scheme": stored_scheme,
+        "current_scheme": current_scheme,
     }
 
 
@@ -844,6 +861,11 @@ def api_capture(req: CaptureRequest):
             delete_chunks_by_context(cid)
             if chunks:
                 create_chunks(cid, chunks)
+                # Record which embed scheme the stored vectors use (fix #6).
+                # Only set on first write; a model switch is detected by comparing
+                # this to the active scheme and is cleared by a full re-embed.
+                if get_meta("embed_scheme") is None:
+                    set_meta("embed_scheme", _embedding_scheme_id(_get_embed_model()))
 
             sl = summarize_with_lattice(text, important_snippets=snippets or None)
             real_summary = sl["summary"]
@@ -1103,11 +1125,21 @@ def api_bulk_delete(body: dict):
     if not ids or not isinstance(ids, list):
         raise HTTPException(status_code=400, detail="ids list required")
     deleted = 0
+    failed: list[int] = []
     for cid in ids:
-        delete_chunks_by_context(cid)
-        if delete_context(cid):
-            deleted += 1
-    return {"deleted": deleted, "requested": len(ids)}
+        # Isolate each context so one bad row (e.g. a transient lock) can't abort
+        # the whole batch and 500 the request — delete what we can, report the rest.
+        try:
+            delete_chunks_by_context(cid)
+            if delete_context(cid):
+                deleted += 1
+        except Exception:
+            import logging
+            logging.getLogger("contextvolt").exception(
+                "bulk-delete: failed to delete context %s", cid
+            )
+            failed.append(cid)
+    return {"deleted": deleted, "requested": len(ids), "failed": failed}
 
 
 @app.get("/api/contexts/{context_id}")
@@ -1294,6 +1326,10 @@ def api_chunk_all(force: bool = Query(default=False, description="Delete and re-
                 "title": ctx.get("title", ""),
             }
             yield _json.dumps(payload) + "\n"
+        # A force re-embed rebuilds every vector with the active model, so the
+        # stored scheme now matches the active one (clears the re-embed guard, #6).
+        if force:
+            set_meta("embed_scheme", _embedding_scheme_id(_get_embed_model()))
         yield _json.dumps({"done": total, "total": total, "updated": updated,
                             "skipped": skipped, "finished": True}) + "\n"
 
@@ -1327,12 +1363,14 @@ def _is_whole_word_match(text_lower: str, term: str) -> bool:
     return bool(re.search(r'(?<![a-zA-Z])' + re.escape(term) + r'(?![a-zA-Z])', text_lower))
 
 
-def _keyword_search_hybrid(question: str) -> list[dict]:
+def _keyword_search_hybrid(question: str, context_ids: list[int] | None = None) -> list[dict]:
     """Run keyword search with key-term extraction, whole-word filtering, and phrase boosting.
 
     1. Search for the combined key phrase first (most specific).
     2. Search for individual terms, filtering to whole-word matches only.
     3. Chunks matching more terms rank higher.
+
+    `context_ids`, when given, restricts results to that set of contexts.
     """
     key_terms = _extract_key_terms(question)
     if not key_terms:
@@ -1343,7 +1381,7 @@ def _keyword_search_hybrid(question: str) -> list[dict]:
 
     # Phase 1: Search for the full phrase (all key terms together) — most specific
     phrase = " ".join(key_terms)
-    for kch in search_chunks_keyword(phrase, top_k=10):
+    for kch in search_chunks_keyword(phrase, top_k=10, context_ids=context_ids):
         cid = kch.get("id")
         if cid not in seen_ids:
             kch["_score"] = 0.75  # phrase match = highest signal
@@ -1353,7 +1391,7 @@ def _keyword_search_hybrid(question: str) -> list[dict]:
     # Phase 2: Search individual terms, require whole-word match, count term hits
     term_hits: dict[int, int] = {}  # chunk_id -> number of terms matched
     for term in key_terms:
-        for kch in search_chunks_keyword(term, top_k=10):
+        for kch in search_chunks_keyword(term, top_k=10, context_ids=context_ids):
             cid = kch.get("id")
             # Only keep if the term is a whole word (not "goa" inside "goal")
             if not _is_whole_word_match(kch.get("text", "").lower(), term):
@@ -1504,22 +1542,56 @@ def _mmr_select(
     return selected
 
 
-def _hybrid_retrieve(question: str, query_vec: list[float] | None, top_k: int = 8) -> list[dict]:
+# Per-embed-model retrieval score calibration. sqlite-vec returns
+# score = 1 - cosine_distance; different embed models produce different score
+# distributions, so a single hardcoded floor mis-gates the "I don't know"
+# short-circuit when the user switches models. Values are (weak_floor, relative_drop):
+#   weak_floor    — below this top semantic score, treat the result as no-match
+#   relative_drop — discard semantic hits more than this far below the leader
+_EMBED_SCORE_PARAMS: dict[str, tuple[float, float]] = {
+    "nomic-embed-text":  (0.18, 0.15),
+    "mxbai-embed-large": (0.18, 0.15),
+    "qwen3-embedding":   (0.30, 0.18),
+}
+_EMBED_SCORE_DEFAULT: tuple[float, float] = (0.18, 0.15)
+
+
+def _embed_score_params() -> tuple[float, float]:
+    """Return (weak_floor, relative_drop) calibrated for the active embed model."""
+    from backend.ollama_client import _get_embed_model
+    base = _get_embed_model().split(":")[0].lower()
+    for key, val in _EMBED_SCORE_PARAMS.items():
+        if base.startswith(key):
+            return val
+    return _EMBED_SCORE_DEFAULT
+
+
+def _hybrid_retrieve(
+    question: str,
+    query_vec: list[float] | None,
+    top_k: int = 8,
+    context_ids: list[int] | None = None,
+) -> list[dict]:
     """Hybrid retrieval: RRF-fuse semantic + keyword, then MMR-diversify.
 
     Returns up to top_k chunks. Drops semantic hits whose score is far below the top
     semantic match (relative threshold replaces the old hardcoded 0.35 short-query gate).
+    `context_ids`, when given, restricts retrieval to that set of contexts (scoping).
     """
     semantic_chunks: list[dict] = []
     if query_vec:
-        semantic_chunks = search_chunks_semantic(query_vec, context_id=None, top_k=30)
+        semantic_chunks = search_chunks_semantic(
+            query_vec, context_id=None, top_k=30, context_ids=context_ids
+        )
         if semantic_chunks:
+            weak_floor, relative_drop = _embed_score_params()
             top_score = semantic_chunks[0].get("_score", 0)
-            # Relative drop: discard hits more than 0.15 below the leader
-            cutoff = max(0.15, top_score - 0.15)
+            # Relative drop: discard hits more than `relative_drop` below the leader,
+            # with an absolute pre-filter floor just under the weak-result floor.
+            cutoff = max(weak_floor - 0.03, top_score - relative_drop)
             semantic_chunks = [ch for ch in semantic_chunks if ch.get("_score", 0) >= cutoff]
 
-    kw_chunks = _keyword_search_hybrid(question)[:30]
+    kw_chunks = _keyword_search_hybrid(question, context_ids=context_ids)[:30]
 
     fused = _rrf_fuse(semantic_chunks, kw_chunks)
     if not fused:
@@ -1529,9 +1601,114 @@ def _hybrid_retrieve(question: str, query_vec: list[float] | None, top_k: int = 
     return _mmr_select(fused[:20], query_vec, k=top_k, lambda_=0.7)
 
 
+def _rerank_chunks(
+    question: str,
+    chunks: list[dict],
+    top_n: int = 8,
+    candidate_cap: int = 15,
+) -> list[dict]:
+    """Listwise LLM rerank of retrieved chunks for final-stage precision.
+
+    RRF+MMR order by fusion/diversity, not true relevance to the question. A
+    single cheap listwise pass through the active LLM (local or cloud) reorders
+    the candidate pool by actual relevance before it's fed to the answer model.
+
+    Provider-agnostic via the router. Gated by config "rag_rerank" (default on).
+    Falls back to the input order (truncated to top_n) on any failure, so a bad
+    or slow rerank can never drop a result that retrieval already found.
+    """
+    if not chunks:
+        return chunks
+    if not _read_config().get("rag_rerank", True):
+        return chunks[:top_n]
+
+    pool = chunks[:candidate_cap]
+    if len(pool) <= 1:
+        return pool[:top_n]
+
+    lines = []
+    for i, ch in enumerate(pool):
+        snippet = (ch.get("text") or "").strip().replace("\n", " ")[:300]
+        lines.append(f"[{i}] {snippet}")
+    listing = "\n".join(lines)
+
+    prompt = (
+        "You are a search reranker. Given a user question and numbered passages, "
+        "return the passage numbers most relevant to answering the question, "
+        "most relevant first.\n"
+        "Rules:\n"
+        "- Output ONLY comma-separated numbers, e.g. 3,0,7\n"
+        f"- Return at most {top_n} numbers.\n"
+        "- Omit clearly irrelevant passages.\n\n"
+        f"Question: {question}\n\n"
+        f"Passages:\n{listing}\n\n"
+        "Most relevant passage numbers:"
+    )
+    try:
+        result = router_generate(prompt, temperature=0.0, max_tokens=60, timeout=30)
+        raw = (result.get("response") or "").strip()
+        nums = [int(n) for n in re.findall(r"\d+", raw)]
+        seen: set[int] = set()
+        ordered: list[dict] = []
+        for n in nums:
+            if 0 <= n < len(pool) and n not in seen:
+                seen.add(n)
+                ordered.append(pool[n])
+        if ordered:
+            # Keep retrieval recall: append any pool chunks the reranker omitted,
+            # in their original order, so they fill remaining slots up to top_n.
+            for i, ch in enumerate(pool):
+                if i not in seen:
+                    ordered.append(ch)
+            return ordered[:top_n]
+    except Exception:
+        pass
+    return chunks[:top_n]
+
+
 # ---------------------------------------------------------------------------
 # Ask Your Vault — RAG Chat
 # ---------------------------------------------------------------------------
+
+def _dedup_near_duplicate_chunks(chunks: list[dict], threshold: float = 0.9) -> list[dict]:
+    """Drop chunks whose text is near-identical to one already kept (token Jaccard).
+
+    Overlapping chunks and repeated boilerplate across captures can surface the
+    same passage multiple times, wasting prompt budget and skewing the model
+    toward repetition. Keeps the first occurrence (already the higher-ranked one).
+    """
+    kept: list[dict] = []
+    kept_sets: list[set] = []
+    for ch in chunks:
+        toks = set(re.findall(r"[a-z0-9]+", (ch.get("text") or "").lower()))
+        if not toks:
+            kept.append(ch)
+            kept_sets.append(toks)
+            continue
+        is_dup = False
+        for ks in kept_sets:
+            if not ks:
+                continue
+            union = len(toks | ks)
+            if union and len(toks & ks) / union >= threshold:
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append(ch)
+            kept_sets.append(toks)
+    return kept
+
+
+def _rag_context_budget(active: dict) -> dict:
+    """Per-provider budget for the retrieved-context block fed to the answer model.
+
+    Cloud models have large context windows, so we feed more chunks and longer
+    bodies; local Ollama models are capped to avoid overflowing num_ctx (the
+    streaming path limits ctx to 16k).
+    """
+    if active.get("is_cloud"):
+        return {"max_chunks": 12, "per_chunk_chars": 4000}
+    return {"max_chunks": 8, "per_chunk_chars": 1500}
 
 def _rewrite_query_with_history(question: str, history: list[dict]) -> str:
     """Rewrite a follow-up question into a standalone search query using history.
@@ -1624,6 +1801,17 @@ def api_vault_ask(body: dict):
 
     history = body.get("history") or []
 
+    # Optional scope: restrict retrieval to a single collection (#10). An empty
+    # collection (or unknown id) yields no context_ids → retrieval finds nothing,
+    # which the weak-result gate reports cleanly.
+    scope_context_ids: list[int] | None = None
+    collection_id = body.get("collection_id")
+    if collection_id is not None:
+        try:
+            scope_context_ids = get_context_ids_by_collection(int(collection_id))
+        except Exception:
+            scope_context_ids = None
+
     # Persistence: resolve or create the Ask Vault session.
     session_id = body.get("session_id")
     new_session_title: str | None = None
@@ -1662,14 +1850,19 @@ def api_vault_ask(body: dict):
     primary_vec = embed_text(question)
     rewritten_vec = embed_text(rewritten) if rewritten and rewritten != question else None
 
-    # 3. Hybrid retrieval — fuse results from primary + rewritten queries
-    primary_chunks = _hybrid_retrieve(question, primary_vec, top_k=12)
+    # 3. Hybrid retrieval — fuse results from primary + rewritten queries.
+    #    Retrieve a WIDER candidate pool here; the reranker (step 3b) narrows it
+    #    to the final 8 by true relevance rather than fusion rank.
+    primary_chunks = _hybrid_retrieve(question, primary_vec, top_k=15, context_ids=scope_context_ids)
     if rewritten_vec is not None:
-        secondary_chunks = _hybrid_retrieve(rewritten, rewritten_vec, top_k=12)
+        secondary_chunks = _hybrid_retrieve(rewritten, rewritten_vec, top_k=15, context_ids=scope_context_ids)
         # Fuse the two ranked lists with RRF (treat each as a single ranking)
-        top_chunks = _rrf_fuse(primary_chunks, secondary_chunks)[:8]
+        candidate_chunks = _rrf_fuse(primary_chunks, secondary_chunks)[:15]
     else:
-        top_chunks = primary_chunks[:8]
+        candidate_chunks = primary_chunks[:15]
+
+    # 3b. Listwise LLM rerank → final top 8 by relevance (no-op if disabled/fails).
+    top_chunks = _rerank_chunks(question, candidate_chunks, top_n=8)
 
     # 4. Neighbor expansion — pull adjacent chunks (chunk_index ± 1) for local coherence.
     #    Replaces the old "first 2 chunks of any matching context" fallback.
@@ -1695,6 +1888,8 @@ def api_vault_ask(body: dict):
     #    return a deterministic "I don't know" without invoking the LLM.
     #    Threshold is intentionally permissive — we'd rather feed weak context to
     #    the LLM (which can still say "I don't know") than miss a valid hit.
+    weak_floor, _ = _embed_score_params()
+
     def _is_weak_result(chunks: list[dict]) -> bool:
         if not chunks:
             return True
@@ -1702,7 +1897,7 @@ def api_vault_ask(body: dict):
         if any(ch.get("_keyword_match") for ch in chunks):
             return False
         top_sem = max((ch.get("_score") or 0.0) for ch in chunks)
-        return top_sem < 0.18
+        return top_sem < weak_floor
 
     if _is_weak_result(top_chunks):
         empty_msg = "I don't have information about that in your vault."
@@ -1717,14 +1912,20 @@ def api_vault_ask(body: dict):
             yield json.dumps(final) + "\n"
         return StreamingResponse(_empty_stream(), media_type="application/x-ndjson")
 
-    # 6. Build context blocks + chunk-level source citations
+    # 6. Build context blocks + chunk-level source citations.
+    #    Each block is prefixed with a [n] marker the model cites inline (#9);
+    #    the matching number is stored on each source so the UI can link them.
+    #    The number of blocks + their length is provider-aware (#8).
+    top_chunks = _dedup_near_duplicate_chunks(top_chunks)
+    budget = _rag_context_budget(active)
+    top_chunks = top_chunks[: budget["max_chunks"]]
+
     sources = []
     context_text_parts = []
 
     unique_cids = list({ch.get("context_id") for ch in top_chunks if ch.get("context_id")})
     ctx_map = get_contexts_by_ids(unique_cids)
 
-    seen_chunk_ids: set = set()
     for ch in top_chunks:
         cid = ch.get("context_id")
         ctx = ctx_map.get(cid, {})
@@ -1736,34 +1937,35 @@ def api_vault_ask(body: dict):
         created_at = ctx.get("created_at", "")[:10]
         score = round(ch.get("_score") or 0.0, 2)
 
-        body_text = _truncate_at_sentence(ch.get("text", ""), 1500)
+        cite_num = len(context_text_parts) + 1
+        body_text = _truncate_at_sentence(ch.get("text", ""), budget["per_chunk_chars"])
 
-        header = f'[From "{title}"'
+        header = f'[{cite_num}] From "{title}"'
         if source_llm:
             header += f" ({source_llm})"
         header += f" — {created_at}, relevance {score}]"
         context_text_parts.append(f"{header}:\n{body_text}")
 
-        chunk_id = ch.get("id")
-        if chunk_id and chunk_id not in seen_chunk_ids:
-            seen_chunk_ids.add(chunk_id)
-            snippet_raw = (ch.get("text") or "").strip().replace("\n", " ")
-            snippet = _truncate_at_sentence(snippet_raw, 220) if snippet_raw else ""
-            sources.append({
-                "context_id": cid,
-                "chunk_id": chunk_id,
-                "chunk_index": ch.get("chunk_index"),
-                "title": title,
-                "score": score,
-                "created_at": created_at,
-                "source": source_llm,
-                "snippet": snippet,
-                "neighbor": bool(ch.get("_neighbor")),
-            })
+        snippet_raw = (ch.get("text") or "").strip().replace("\n", " ")
+        snippet = _truncate_at_sentence(snippet_raw, 220) if snippet_raw else ""
+        sources.append({
+            "n": cite_num,
+            "context_id": cid,
+            "chunk_id": ch.get("id"),
+            "chunk_index": ch.get("chunk_index"),
+            "title": title,
+            "score": score,
+            "created_at": created_at,
+            "source": source_llm,
+            "snippet": snippet,
+            "neighbor": bool(ch.get("_neighbor")),
+        })
 
     retrieved_context = "\n\n".join(context_text_parts) if context_text_parts else "No relevant context found in your vault."
 
-    # 4. Build the RAG prompt
+    # 7. Build the RAG prompt. The instructions + retrieved context + history go
+    #    into a system prompt (role separation + Anthropic prompt caching, #7);
+    #    the user's question is the user turn.
     history_text = ""
     if history:
         turns = []
@@ -1777,7 +1979,7 @@ def api_vault_ask(body: dict):
 RULES:
 - Answer using ONLY the retrieved context below. Do not make up information.
 - If the context doesn't have relevant information, say: "I don't have information about that in your vault."
-- When citing information, mention which conversation it came from (use the title in quotes).
+- Cite sources inline using the bracketed numbers from the context blocks, e.g. [1] or [2][3], placed right after the claim they support.
 - Be concise but thorough. Use markdown formatting for code blocks, lists, etc.
 - If multiple conversations discuss the same topic, synthesize the information.
 
@@ -1793,14 +1995,14 @@ RULES:
 </conversation_history>
 """
 
-    full_prompt = f"{system_prompt}\n\nUSER: {question}\nASSISTANT:"
-
     # Stream the response via the LLM router (Ollama or cloud).
     def _stream():
         accumulated: list[str] = []
         persisted = False
         try:
-            for event in router_generate_stream(full_prompt, temperature=0.3, max_tokens=4000):
+            for event in router_generate_stream(
+                question, temperature=0.2, max_tokens=4000, system=system_prompt
+            ):
                 if event.get("token"):
                     accumulated.append(event["token"])
                     yield json.dumps({"token": event["token"]}) + "\n"

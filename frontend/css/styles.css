@@ -6507,6 +6507,19 @@ kbd {
     margin-bottom: 2px;
 }
 
+.ask-cite {
+    font-size: 0.7em;
+    line-height: 0;
+    vertical-align: super;
+}
+.ask-cite a {
+    color: var(--cv-volt);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 0 1px;
+}
+.ask-cite a:hover { text-decoration: underline; }
+
 .ask-source-chip {
     display: inline-flex;
     align-items: center;
@@ -10105,6 +10118,22 @@ kbd {
 .cv-ask-hint-left {
     display: inline-flex; align-items: center; gap: 8px;
 }
+.cv-ask-hint-right {
+    display: inline-flex; align-items: center; gap: 8px;
+}
+.ask-scope-select {
+    background: var(--cv-surface-2, rgba(255,255,255,0.04));
+    color: var(--cv-text-2, inherit);
+    border: 1px solid var(--cv-border, rgba(255,255,255,0.12));
+    border-radius: 100px;
+    font: 500 11px/1 var(--cv-mono);
+    letter-spacing: 0.02em;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: all 0.18s var(--cv-ease);
+}
+.ask-scope-select:hover { border-color: var(--cv-volt); color: var(--cv-volt); }
+.ask-scope-select:focus { outline: none; border-color: var(--cv-volt); }
 .cv-ask-hint-dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--cv-volt);

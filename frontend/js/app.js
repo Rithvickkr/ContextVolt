@@ -895,6 +895,7 @@ async function loadCollections() {
         const res = await fetch(`${API}/api/collections`);
         state.collections = await res.json();
         renderCollections();
+        _askPopulateScopeSelect();
     } catch { /* non-fatal */ }
 }
 
@@ -1955,6 +1956,7 @@ function renderDetail(ctx) {
         vitals: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
         bolt:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
         chunks: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+        redo:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>',
     };
 
     // Eyebrow stays a glance (source + when); the full metrics live once, in the aside.
@@ -2010,6 +2012,9 @@ function renderDetail(ctx) {
                     ${starred ? icon.pin : icon.pinO}
                 </button>
                 <button class="cv-ibtn" onclick="openEditModal()" title="Edit" aria-label="Edit context">${icon.edit}</button>
+                <button class="cv-ibtn" id="cv-btn-resummarize"${ctx.status === 'summarizing' ? ' disabled' : ''}
+                        onclick="resummarizeContext()"
+                        title="Re-summarize with current model" aria-label="Re-summarize context with current model">${icon.redo}</button>
                 <div style="position:relative;">
                     <button class="cv-ibtn" id="cv-export-trigger" onclick="cvToggleExportMenu(event)" title="Export" aria-label="Export context" aria-haspopup="menu" aria-expanded="false">${icon.export}</button>
                     <div class="cv-export-menu" id="cv-export-menu" role="menu">
@@ -4703,12 +4708,43 @@ state.askStreaming = false; // true while streaming response
 state.askSessionId = null;  // current persisted session id (null = new chat)
 state.askSessions = [];     // cached list of {id, title, pinned, message_count, updated_at}
 state.askSessionFilter = ''; // filter typed in the past-chats search
+state.askScopeCollectionId = null; // null = whole vault; else a collection id (#10)
+
+// Fill the Ask scope dropdown from the loaded collections, preserving selection.
+function _askPopulateScopeSelect() {
+    const sel = document.getElementById('ask-scope');
+    if (!sel) return;
+    const cols = Array.isArray(state.collections) ? state.collections : [];
+    const prev = state.askScopeCollectionId;
+    let html = '<option value="">All contexts</option>';
+    for (const c of cols) {
+        html += `<option value="${c.id}">${escapeHtml(c.name)} (${c.count ?? 0})</option>`;
+    }
+    sel.innerHTML = html;
+    // Restore prior selection if that collection still exists; else fall back to All.
+    if (prev != null && cols.some(c => c.id === prev)) {
+        sel.value = String(prev);
+    } else {
+        sel.value = '';
+        state.askScopeCollectionId = null;
+    }
+}
 
 function _initAskVault() {
     const input = $('#ask-input');
     const sendBtn = $('#ask-send-btn');
     const clearBtn = $('#ask-clear-btn');
     if (!input || !sendBtn) return;
+
+    // Search-scope selector (#10): null = whole vault, else restrict to a collection.
+    const scopeSel = document.getElementById('ask-scope');
+    if (scopeSel) {
+        scopeSel.addEventListener('change', () => {
+            const v = scopeSel.value;
+            state.askScopeCollectionId = v ? Number(v) : null;
+        });
+    }
+    _askPopulateScopeSelect();
 
     // Enable/disable send
     input.addEventListener('input', () => {
@@ -5081,7 +5117,7 @@ function _askRenderHistoricalAssistantMsg(text, citations) {
     const safeText = String(text || '');
     let html;
     try {
-        html = _askSimpleMarkdown(safeText);
+        html = _askLinkifyCitations(_askSimpleMarkdown(safeText), citations);
     } catch (err) {
         console.warn('Markdown render failed, falling back to plain text', err);
         html = `<p>${escapeHtml(safeText).replace(/\n/g, '<br>')}</p>`;
@@ -5510,6 +5546,26 @@ function _askEscapeHtml(s) {
 }
 
 
+// Turn inline [n] markers the model emits into clickable citation links that
+// open the matching source context. `sources` carries the n → context_id map
+// (backend assigns each context block a number). Numbers without a matching
+// source are left as plain text.
+function _askLinkifyCitations(html, sources) {
+    if (!html || !Array.isArray(sources) || sources.length === 0) return html;
+    const byNum = new Map();
+    for (const s of sources) {
+        if (s && s.n != null && s.context_id != null) byNum.set(Number(s.n), s);
+    }
+    if (byNum.size === 0) return html;
+    return html.replace(/\[(\d{1,3})\]/g, (m, numStr) => {
+        const s = byNum.get(Number(numStr));
+        if (!s) return m;
+        const title = escapeHtml(String(s.title || 'source'));
+        return `<sup class="ask-cite"><a href="#" title="${title}" ` +
+               `onclick="showDetail(${Number(s.context_id)});return false;">[${Number(numStr)}]</a></sup>`;
+    });
+}
+
 function _askFinalizeMsg(sources) {
     const content = $('#ask-streaming-content');
     if (!content) return;
@@ -5518,9 +5574,9 @@ function _askFinalizeMsg(sources) {
     const cursor = content.querySelector('.ask-cursor');
     if (cursor) cursor.remove();
 
-    // Convert the accumulated raw text to markdown HTML.
+    // Convert the accumulated raw text to markdown HTML, then linkify [n] citations.
     const raw = content.getAttribute('data-raw') || content.textContent || '';
-    content.innerHTML = _askSimpleMarkdown(raw);
+    content.innerHTML = _askLinkifyCitations(_askSimpleMarkdown(raw), sources);
 
     // Drop streaming IDs now that this message is finalized.
     const msg = $('#ask-streaming-msg');
@@ -5621,6 +5677,9 @@ async function askVault(question) {
                 question,
                 history: state.askHistory.slice(-6),
                 session_id: state.askSessionId,
+                // Scope retrieval to a collection when one is selected (#10);
+                // null/undefined means search the whole vault.
+                collection_id: state.askScopeCollectionId ?? null,
             }),
         });
 
@@ -6333,12 +6392,40 @@ async function retrySummarize() {
     }
 }
 
+// Re-summarize an already-completed context — e.g. after switching the LLM
+// model in Settings, so the summary is regenerated with the new model. The
+// backend reads the active model from config at call time, so no model arg
+// is needed here. Confirms first since it overwrites the existing summary.
+async function resummarizeContext() {
+    const ctx = state.currentContext;
+    if (!ctx || ctx.status === 'summarizing') return;
+
+    // Best-effort: name the model the new summary will use, for clarity.
+    let modelName = '';
+    try {
+        const r = await fetch(`${API}/api/setup/status`);
+        if (r.ok) modelName = (await r.json()).model_name || '';
+    } catch { /* fall back to a generic message */ }
+
+    const ok = await showConfirm({
+        title: 'Re-summarize this context?',
+        message: modelName
+            ? `The whole conversation will be summarized again using the current model (${modelName}). This replaces the existing summary.`
+            : 'The whole conversation will be summarized again using the current model. This replaces the existing summary.',
+        confirmLabel: 'Re-summarize',
+    });
+    if (!ok) return;
+
+    await retrySummarize();
+}
+
 // Expose to global for inline onclick handlers
 window.showDetail = showDetail;
 window.deleteFromLibrary = deleteFromLibrary;
 window.toggleOriginalChat = toggleOriginalChat;
 window.generatePrompt = generatePrompt;
 window.retrySummarize = retrySummarize;
+window.resummarizeContext = resummarizeContext;
 window.copyCodeSnippet = copyCodeSnippet;
 
 // â”€â”€â”€ Feature 1: Collapsible Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'"
         onerror="this.remove()">
-    <link rel="stylesheet" href="/static/css/styles.css?v=detail-ui-v23">
+    <link rel="stylesheet" href="/static/css/styles.css?v=detail-ui-v31">
     <style>
         /* Screen-reader only utility */
         .sr-only {
@@ -31,6 +31,38 @@
 </head>
 
 <body>
+    <!-- Custom window title bar (frameless pywebview) — drag + window controls -->
+    <div class="cv-titlebar" id="cv-titlebar">
+        <div class="cv-titlebar-drag pywebview-drag-region" id="cv-titlebar-drag">
+            <img class="cv-titlebar-logo" src="/static/CVsvg.svg" width="18" height="18" alt="" aria-hidden="true">
+            <span class="cv-titlebar-brand">ContextVolt</span>
+        </div>
+        <div class="cv-winctl" role="group" aria-label="Window controls">
+            <button class="cv-winbtn" id="cv-win-min" type="button" aria-label="Minimize" title="Minimize">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="1" fill="currentColor"/></svg>
+            </button>
+            <button class="cv-winbtn" id="cv-win-max" type="button" aria-label="Maximize" title="Maximize">
+                <svg class="cv-ic-max" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+                <svg class="cv-ic-restore" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="3.5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M4.5 3.5V2h6v6h-1.5" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
+            </button>
+            <button class="cv-winbtn cv-winbtn-close" id="cv-win-close" type="button" aria-label="Close" title="Close">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Frameless window resize handles (hand off to the OS resize loop) -->
+    <div class="cv-resize-handles" aria-hidden="true">
+        <div class="cv-rz cv-rz-t"    data-edge="top"></div>
+        <div class="cv-rz cv-rz-b"    data-edge="bottom"></div>
+        <div class="cv-rz cv-rz-l"    data-edge="left"></div>
+        <div class="cv-rz cv-rz-r"    data-edge="right"></div>
+        <div class="cv-rz cv-rz-tl"   data-edge="topleft"></div>
+        <div class="cv-rz cv-rz-tr"   data-edge="topright"></div>
+        <div class="cv-rz cv-rz-bl"   data-edge="bottomleft"></div>
+        <div class="cv-rz cv-rz-br"   data-edge="bottomright"></div>
+    </div>
+
     <!-- Cinematic ambient layers (z-index below app) -->
     <div class="cv-ambient" aria-hidden="true"></div>
     <div class="cv-stars" aria-hidden="true"></div>
@@ -131,7 +163,7 @@
                 </div>
                 <div class="cv-brand-text">
                     <span class="n">ContextVolt</span>
-                    <span class="v">v2 · local</span>
+                    <span class="v">v2.2.0</span>
                 </div>
                 <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" aria-label="Toggle sidebar">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -172,60 +204,28 @@
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                     </button>
                 </div>
-                <div id="collection-create-row" style="display:none;" class="collection-create-row">
-                    <div class="collection-color-picker" id="collection-color-picker">
-                        <button class="color-swatch active" data-color="#6366f1" style="background:#6366f1" title="Indigo"></button>
-                        <button class="color-swatch" data-color="#ec4899" style="background:#ec4899" title="Pink"></button>
-                        <button class="color-swatch" data-color="#f59e0b" style="background:#f59e0b" title="Amber"></button>
-                        <button class="color-swatch" data-color="#10b981" style="background:#10b981" title="Emerald"></button>
-                        <button class="color-swatch" data-color="#3b82f6" style="background:#3b82f6" title="Blue"></button>
-                        <button class="color-swatch" data-color="#8b5cf6" style="background:#8b5cf6" title="Violet"></button>
-                        <button class="color-swatch" data-color="#ef4444" style="background:#ef4444" title="Red"></button>
-                        <button class="color-swatch" data-color="#06b6d4" style="background:#06b6d4" title="Cyan"></button>
-                    </div>
-                    <input class="collection-name-input" id="collection-name-input" type="text" placeholder="Collection name…" aria-label="Collection name" maxlength="40" />
-                </div>
                 <div class="collections-list" id="collections-list"><!-- rendered by JS --></div>
             </div>
 
-            <!-- Footer: Tools / System -->
-            <div class="cv-side-foot">
-                <div class="cv-side-label">Tools</div>
-                <button class="cv-util" id="btn-rebuild-embeddings" aria-label="Rebuild embeddings">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
-                    <span>Rebuild Embeddings</span>
-                </button>
-                <button class="cv-util" id="btn-onboard-replay" aria-label="Replay onboarding tour">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
-                    <span>Take the Tour</span>
-                </button>
-                <button class="cv-util" id="btn-shortcuts" aria-label="Keyboard shortcuts">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
-                    <span>Shortcuts</span>
-                    <kbd class="cv-nav-kbd">?</kbd>
-                </button>
-
-                <div class="cv-side-label">System</div>
-                <button class="cv-util" id="btn-system" aria-haspopup="dialog" aria-label="System status and logs">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
-                    <span>System</span>
-                </button>
-                <button class="cv-util" id="btn-backup" aria-label="Download a backup of your vault">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-                    <span>Backup Vault</span>
-                </button>
-                <button class="cv-util cv-util-danger" id="btn-restart" aria-label="Restart the backend server">
-                    <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
-                    <span>Restart Backend</span>
-                </button>
-
-            </div>
-
-            <!-- Pinned to the very bottom (Claude-style): LLM ready status + Settings & Models -->
+            <!-- Pinned to the very bottom (Claude-style): status menu + Settings & Models -->
             <div class="cv-side-settings-anchor">
-                <div class="cv-status" id="status-indicator" aria-live="polite" aria-label="Backend connection status">
-                    <span class="pulse status-dot offline" aria-hidden="true"></span>
-                    <span class="status-text">Offline</span>
+                <div class="cv-status-wrap" id="cv-status-wrap">
+                    <div class="cv-status cv-status-btn" id="status-indicator" role="button" tabindex="0"
+                         aria-haspopup="menu" aria-expanded="false" aria-label="Backend status — open system menu">
+                        <span class="pulse status-dot offline" aria-hidden="true"></span>
+                        <span class="status-text" aria-live="polite">Offline</span>
+                        <svg class="cv-status-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
+                    </div>
+                    <div class="cv-status-menu" id="cv-status-menu" role="menu" aria-label="System" hidden>
+                        <button class="cv-util" id="btn-system" role="menuitem" aria-haspopup="dialog" aria-label="System status and logs">
+                            <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+                            <span>System</span>
+                        </button>
+                        <button class="cv-util cv-util-danger" id="btn-restart" role="menuitem" aria-label="Restart the backend server">
+                            <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
+                            <span>Restart Backend</span>
+                        </button>
+                    </div>
                 </div>
                 <button class="cv-util cv-util-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
                     <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
@@ -480,9 +480,9 @@
                         <div class="cv-ask-rail">
                             <div class="cv-ask-rail-meta">
                                 <span>Workspace</span>
-                                <span class="cv-rail-sep">·</span>
+                                <span class="cv-rail-sep">/</span>
                                 <b>Ask Vault</b>
-                                <span class="cv-rail-sep">·</span>
+                                <span class="cv-rail-sep">/</span>
                                 <span id="cv-ask-status-text">Ready</span>
                                 <span class="cv-rail-sep cv-ask-current-session-sep" id="cv-ask-current-session-sep" hidden>·</span>
                                 <span class="cv-ask-current-session" id="cv-ask-current-session" hidden></span>
@@ -528,74 +528,108 @@
 
                                 <!-- Empty state hero -->
                                 <div class="ask-empty cv-ask-empty" id="ask-empty">
-                                    <div class="cv-ask-orb" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
-                                    </div>
-                                    <div class="cv-ask-eyebrow">
-                                        <span class="cv-ebadge">Vault</span>
-                                        <span class="cv-dot"></span>
-                                        <span>Local RAG · streaming</span>
-                                    </div>
-                                    <h1 id="view-ask-heading" class="cv-ask-title">Ask your <span class="voltword">vault</span>.</h1>
-                                    <p class="cv-ask-desc">Answers streamed from your saved conversations — every claim traceable back to a context in your library.</p>
+                                  <div class="cv-ask-welcome">
 
+                                    <!-- Header: intro (left) + orb (right) -->
+                                    <div class="cv-ask-whead">
+                                        <div class="cv-ask-wintro">
+                                            <div class="cv-ask-eyebrow">
+                                                <span class="cv-ebadge">
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                                    Ask Vault
+                                                </span>
+                                                <span>Local RAG · Streaming · Cited</span>
+                                            </div>
+                                            <h1 id="view-ask-heading" class="cv-ask-title">Ask your<br><span class="voltword">vault.</span></h1>
+                                            <p class="cv-ask-desc">Answers streamed from your saved conversations — every claim traceable back to a context in your library.</p>
+                                        </div>
+                                        <div class="cv-ask-orb" aria-hidden="true">
+                                            <span class="cv-ask-orb-core">
+                                                <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Composer is relocated into this slot in the welcome state -->
+                                    <div class="cv-ask-seclabel"><span class="cv-ask-seclabel-dot" aria-hidden="true"></span>Ask anything</div>
+                                    <div id="ask-composer-slot"></div>
+
+                                    <!-- Starters -->
+                                    <div class="cv-ask-seclabel cv-ask-seclabel-plain">Starters</div>
                                     <div class="cv-ask-starters" role="list">
                                         <button class="ask-suggestion cv-ask-starter" data-q="What topics have I discussed most?" role="listitem" style="--mx:50%;--my:50%;">
-                                            <span class="cv-ask-starter-ic">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-6"/></svg>
+                                            <span class="cv-ask-starter-top">
+                                                <span class="cv-ask-starter-ic">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 4 4 5-6"/></svg>
+                                                </span>
+                                                <span class="cv-ask-starter-badge">Trends</span>
                                             </span>
-                                            <span class="cv-ask-starter-body">
-                                                <span class="cv-ask-starter-t">What topics have I discussed most?</span>
-                                                <span class="cv-ask-starter-meta">Trends</span>
+                                            <span class="cv-ask-starter-t">What topics have I discussed most?</span>
+                                            <span class="cv-ask-starter-run">Run query
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                             </span>
                                         </button>
                                         <button class="ask-suggestion cv-ask-starter" data-q="Summarize my recent conversations" role="listitem" style="--mx:50%;--my:50%;">
-                                            <span class="cv-ask-starter-ic">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+                                            <span class="cv-ask-starter-top">
+                                                <span class="cv-ask-starter-ic">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+                                                </span>
+                                                <span class="cv-ask-starter-badge">Overview</span>
                                             </span>
-                                            <span class="cv-ask-starter-body">
-                                                <span class="cv-ask-starter-t">Summarize my recent conversations</span>
-                                                <span class="cv-ask-starter-meta">Overview</span>
+                                            <span class="cv-ask-starter-t">Summarize my recent conversations</span>
+                                            <span class="cv-ask-starter-run">Run query
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                             </span>
                                         </button>
                                         <button class="ask-suggestion cv-ask-starter" data-q="What code patterns have I explored?" role="listitem" style="--mx:50%;--my:50%;">
-                                            <span class="cv-ask-starter-ic">
-                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                            <span class="cv-ask-starter-top">
+                                                <span class="cv-ask-starter-ic">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                                </span>
+                                                <span class="cv-ask-starter-badge">Code</span>
                                             </span>
-                                            <span class="cv-ask-starter-body">
-                                                <span class="cv-ask-starter-t">What code patterns have I explored?</span>
-                                                <span class="cv-ask-starter-meta">Code</span>
+                                            <span class="cv-ask-starter-t">What code patterns have I explored?</span>
+                                            <span class="cv-ask-starter-run">Run query
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
                                             </span>
                                         </button>
                                     </div>
+                                  </div>
                                 </div>
                                 <!-- Messages rendered by JS -->
                             </div>
                         </div>
 
-                        <!-- Composer -->
+                        <!-- Composer (relocated into the welcome slot when empty) -->
                         <div class="ask-input-bar cv-ask-composer" id="ask-input-bar">
                             <div class="cv-ask-pill">
                                 <span class="cv-ask-pill-ic" aria-hidden="true">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                                 </span>
                                 <label for="ask-input" class="sr-only">Ask a question</label>
-                                <input type="text" id="ask-input" class="ask-input" placeholder="Ask anything about your saved conversations…" autocomplete="off" spellcheck="false" />
-                                <kbd class="cv-ask-pill-kbd" aria-hidden="true">↵</kbd>
+                                <textarea id="ask-input" class="ask-input" rows="1" placeholder="Ask anything about your saved conversations…" autocomplete="off" spellcheck="false"></textarea>
+                                <div class="cv-ask-scope" id="ask-scope-dd">
+                                    <button type="button" class="cv-ask-scope-btn" id="ask-scope-btn" aria-haspopup="listbox" aria-expanded="false" title="Limit the search to a collection">
+                                        <span class="cv-ask-scope-ic" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+                                        </span>
+                                        <span class="cv-ask-scope-label" id="ask-scope-label">All contexts</span>
+                                        <svg class="cv-ask-scope-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                    </button>
+                                    <div class="cv-ask-scope-menu" id="ask-scope-menu" role="listbox" aria-label="Search scope" hidden></div>
+                                </div>
                                 <button class="ask-send-btn cv-ask-send" id="ask-send-btn" aria-label="Send question" disabled>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                                 </button>
                             </div>
                             <div class="cv-ask-hint">
                                 <span class="cv-ask-hint-left">
-                                    <span class="cv-ask-hint-dot" aria-hidden="true"></span>
-                                    Streaming answers grounded in your vault
+                                    <span id="cv-ask-indexed">Grounded in your vault</span>
                                 </span>
                                 <span class="cv-ask-hint-right">
-                                    <label for="ask-scope" class="sr-only">Search scope</label>
-                                    <select id="ask-scope" class="ask-scope-select" title="Limit the search to a collection">
-                                        <option value="">All contexts</option>
-                                    </select>
+                                    <kbd class="cv-ask-kbd">↵</kbd> to send
+                                    <span class="cv-rail-sep">·</span>
+                                    <kbd class="cv-ask-kbd">⇧ ↵</kbd> newline
                                     <button class="ask-clear-btn" id="ask-clear-btn" style="display:none;">Clear chat</button>
                                 </span>
                             </div>
@@ -826,6 +860,10 @@
                         <span>Updates</span>
                         <span class="update-nav-dot" id="update-nav-dot" style="display:none;"></span>
                     </button>
+                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="tools" aria-selected="false">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                        <span>Tools</span>
+                    </button>
                 </nav>
             <div class="settings-modal-body">
 
@@ -860,6 +898,31 @@
                         <button type="button" class="settings-theme-opt" data-theme="dark" id="theme-opt-dark" role="radio" aria-checked="true">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                             <span>Dark</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tools / maintenance (moved out of the sidebar) -->
+                <div class="settings-panel" data-settings-panel="tools">
+                    <div class="settings-section-label">Tools</div>
+                    <p class="settings-section-hint">Maintenance helpers and reference.</p>
+                    <div class="settings-tools">
+                        <button class="cv-util" id="btn-rebuild-embeddings" aria-label="Rebuild embeddings">
+                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
+                            <span>Rebuild Embeddings</span>
+                        </button>
+                        <button class="cv-util" id="btn-onboard-replay" aria-label="Replay onboarding tour">
+                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+                            <span>Take the Tour</span>
+                        </button>
+                        <button class="cv-util" id="btn-shortcuts" aria-label="Keyboard shortcuts">
+                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
+                            <span>Shortcuts</span>
+                            <kbd class="cv-nav-kbd">?</kbd>
+                        </button>
+                        <button class="cv-util" id="btn-backup" aria-label="Download a backup of your vault">
+                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                            <span>Backup Vault</span>
                         </button>
                     </div>
                 </div>

@@ -95,6 +95,19 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+    # Prevent the grey/blank surface after minimize→restore. Chromium (WebView2's
+    # engine) marks a minimized window "occluded" and suspends GPU compositing;
+    # on restore it sometimes fails to resume, leaving a blank client area until
+    # the window is clicked or resized. Disabling the occlusion calculation keeps
+    # it painting. Must be set before the WebView2 environment is created.
+    # See https://github.com/MicrosoftEdge/WebView2Feedback/issues/5171
+    _existing_args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+    _occlusion_flag = "--disable-features=CalculateNativeWinOcclusion"
+    if _occlusion_flag not in _existing_args:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+            f"{_existing_args} {_occlusion_flag}".strip()
+        )
+
 _current_server: uvicorn.Server | None = None
 _server_lock = threading.Lock()
 
@@ -203,6 +216,262 @@ def _restart_uvicorn() -> None:
     threading.Thread(target=_delayed_relaunch, daemon=True).start()
 
 
+# ─── Frameless window: resize + Aero Snap (Win32) ────────────────
+# pywebview frameless windows use FormBorderStyle.None, which strips the
+# native resize border and Aero Snap. We restore both by re-adding the sizing
+# window styles, eating the non-client frame in WM_NCCALCSIZE (so no visible
+# border returns), and reporting the window edges as resize handles in
+# WM_NCHITTEST. The WNDPROC callbacks must outlive this function or the GC
+# will free them and crash the app, so we stash them in a module global.
+_wndproc_keepalive: list = []
+
+# HWND of the main window, set once found, used by the JS-driven resize handles.
+_main_hwnd: int = 0
+
+# Private message handled inside the window's own WndProc (UI thread).
+_WM_CV_RESIZE = 0x0400 + 0x51  # begin a native resize, direction = wparam
+
+
+def _post_to_window(msg: int, wparam: int = 0) -> None:
+    """Post a private message to our window's WndProc (runs on the UI thread)."""
+    if sys.platform != "win32" or not _main_hwnd:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        post = ctypes.windll.user32.PostMessageW
+        post.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        post(_main_hwnd, msg, wparam, 0)
+    except Exception:
+        logging.exception("PostMessage failed")
+
+
+def _start_native_resize(edge: str) -> None:
+    """Hand off to the OS resize loop (smooth, DPI-correct, snap-aware).
+
+    The WebView2 control covers the client area and grabs the mouse on
+    mousedown, so native edge hit-testing never fires and the capture blocks
+    the OS resize loop. The JS edge handles call this on mousedown; we post a
+    private message that our WndProc handles on the UI thread, where it can
+    release the capture and enter the system SC_SIZE loop.
+    """
+    # WMSZ_* direction codes (added to SC_SIZE inside the WndProc).
+    directions = {
+        "left": 1, "right": 2, "top": 3, "topleft": 4, "topright": 5,
+        "bottom": 6, "bottomleft": 7, "bottomright": 8,
+    }
+    code = directions.get(edge)
+    if code:
+        _post_to_window(_WM_CV_RESIZE, code)
+
+
+def _find_own_hwnd(timeout: float = 3.0) -> int:
+    """Return the HWND of this process's visible window, or 0 if not found."""
+    if sys.platform != "win32":
+        return 0
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    pid = os.getpid()
+    found = ctypes.c_void_p(0)
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def _enum(hwnd, _):
+        lp_pid = ctypes.c_ulong(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lp_pid))
+        if lp_pid.value == pid and user32.IsWindowVisible(hwnd):
+            found.value = hwnd
+            return False  # stop enumeration
+        return True
+
+    cb = EnumWindowsProc(_enum)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(0.5)
+        user32.EnumWindows(cb, 0)
+        if found.value:
+            break
+    return found.value or 0
+
+
+def _enable_frameless_chrome(hwnd: int) -> None:
+    """Restore edge-resize and Aero Snap on a frameless (borderless) window."""
+    if sys.platform != "win32" or not hwnd:
+        return
+    global _main_hwnd
+    _main_hwnd = hwnd
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        LONG_PTR = ctypes.c_ssize_t
+
+        GWL_STYLE = -16
+        GWLP_WNDPROC = -4
+        WS_THICKFRAME = 0x00040000
+        WS_MAXIMIZEBOX = 0x00010000
+        WS_MINIMIZEBOX = 0x00020000
+        WS_CAPTION = 0x00C00000
+        WS_SYSMENU = 0x00080000
+
+        WM_NCCALCSIZE = 0x0083
+        WM_NCHITTEST = 0x0084
+        WM_GETMINMAXINFO = 0x0024
+        WM_SYSCOMMAND = 0x0112
+        SC_SIZE = 0xF000
+
+        HTLEFT, HTRIGHT = 10, 11
+        HTTOP, HTTOPLEFT, HTTOPRIGHT = 12, 13, 14
+        HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT = 15, 16, 17
+
+        SM_CXFRAME, SM_CXPADDEDBORDER = 32, 92
+        MONITOR_DEFAULTTONEAREST = 2
+
+        if ctypes.sizeof(ctypes.c_void_p) == 8:
+            get_long, set_long = user32.GetWindowLongPtrW, user32.SetWindowLongPtrW
+        else:
+            get_long, set_long = user32.GetWindowLongW, user32.SetWindowLongW
+        get_long.restype = LONG_PTR
+        get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+        set_long.restype = LONG_PTR
+        set_long.argtypes = [wintypes.HWND, ctypes.c_int, LONG_PTR]
+
+        # (1) Restore the full native window styles so Windows gives us back
+        #     resize, Aero Snap, and the maximize/restore/minimize animations.
+        #     WS_CAPTION/WS_SYSMENU would normally draw a title bar, but the
+        #     WM_NCCALCSIZE handler below eats the entire non-client area, so
+        #     nothing visible returns — only the native behaviour.
+        style = get_long(hwnd, GWL_STYLE)
+        set_long(
+            hwnd,
+            GWL_STYLE,
+            style | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX,
+        )
+
+        WNDPROC = ctypes.WINFUNCTYPE(
+            LONG_PTR, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+        )
+
+        call_wndproc = user32.CallWindowProcW
+        call_wndproc.restype = LONG_PTR
+        call_wndproc.argtypes = [
+            WNDPROC, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+        ]
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.IsZoomed.argtypes = [wintypes.HWND]
+        user32.MonitorFromWindow.restype = ctypes.c_void_p
+        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        class MINMAXINFO(ctypes.Structure):
+            _fields_ = [
+                ("ptReserved", wintypes.POINT),
+                ("ptMaxSize", wintypes.POINT),
+                ("ptMaxPosition", wintypes.POINT),
+                ("ptMinTrackSize", wintypes.POINT),
+                ("ptMaxTrackSize", wintypes.POINT),
+            ]
+
+        class NCCALCSIZE_PARAMS(ctypes.Structure):
+            _fields_ = [("rgrc", wintypes.RECT * 3), ("lppos", ctypes.c_void_p)]
+
+        user32.GetMonitorInfoW.restype = wintypes.BOOL
+        user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(MONITORINFO)]
+
+        border = (
+            user32.GetSystemMetrics(SM_CXFRAME) + user32.GetSystemMetrics(SM_CXPADDEDBORDER)
+        ) or 8
+
+        def _monitor_info(h):
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            mon = user32.MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST)
+            if mon and user32.GetMonitorInfoW(mon, ctypes.byref(mi)):
+                return mi
+            return None
+
+        old_proc = WNDPROC(get_long(hwnd, GWLP_WNDPROC))
+
+        def _wndproc(h, msg, wparam, lparam):
+            if msg == _WM_CV_RESIZE:
+                # Runs on the UI thread, so ReleaseCapture() now actually frees
+                # the capture WebView2 grabbed on mousedown, letting the OS
+                # resize loop take the mouse. wparam is the WMSZ_* direction.
+                user32.ReleaseCapture()
+                return call_wndproc(old_proc, h, WM_SYSCOMMAND, SC_SIZE + wparam, 0)
+            if msg == WM_NCCALCSIZE and wparam:
+                # Eat the non-client frame so the client fills the window. When
+                # maximized, a borderless window's rect overhangs the monitor by
+                # the frame width — clamp the client straight to the work area so
+                # nothing is pushed off-screen and the taskbar stays visible.
+                if user32.IsZoomed(h):
+                    mi = _monitor_info(h)
+                    if mi:
+                        p = ctypes.cast(
+                            ctypes.c_void_p(lparam), ctypes.POINTER(NCCALCSIZE_PARAMS)
+                        ).contents
+                        p.rgrc[0].left = mi.rcWork.left
+                        p.rgrc[0].top = mi.rcWork.top
+                        p.rgrc[0].right = mi.rcWork.right
+                        p.rgrc[0].bottom = mi.rcWork.bottom
+                return 0
+            if msg == WM_GETMINMAXINFO:
+                # Clamp the maximized size/position to the work area so a
+                # maximized window leaves the taskbar visible.
+                res = call_wndproc(old_proc, h, msg, wparam, lparam)
+                mi = _monitor_info(h)
+                if mi:
+                    mmi = ctypes.cast(
+                        ctypes.c_void_p(lparam), ctypes.POINTER(MINMAXINFO)
+                    ).contents
+                    work, full = mi.rcWork, mi.rcMonitor
+                    mmi.ptMaxPosition.x = work.left - full.left
+                    mmi.ptMaxPosition.y = work.top - full.top
+                    mmi.ptMaxSize.x = work.right - work.left
+                    mmi.ptMaxSize.y = work.bottom - work.top
+                    mmi.ptMaxTrackSize.x = work.right - work.left
+                    mmi.ptMaxTrackSize.y = work.bottom - work.top
+                return res
+            if msg == WM_NCHITTEST and not user32.IsZoomed(h):
+                rect = wintypes.RECT()
+                user32.GetWindowRect(h, ctypes.byref(rect))
+                x = ctypes.c_short(lparam & 0xFFFF).value
+                y = ctypes.c_short((lparam >> 16) & 0xFFFF).value
+                on_left = x < rect.left + border
+                on_right = x >= rect.right - border
+                on_top = y < rect.top + border
+                on_bottom = y >= rect.bottom - border
+                if on_top and on_left: return HTTOPLEFT
+                if on_top and on_right: return HTTOPRIGHT
+                if on_bottom and on_left: return HTBOTTOMLEFT
+                if on_bottom and on_right: return HTBOTTOMRIGHT
+                if on_left: return HTLEFT
+                if on_right: return HTRIGHT
+                if on_top: return HTTOP
+                if on_bottom: return HTBOTTOM
+                # not on an edge — fall through to the default handler
+            return call_wndproc(old_proc, h, msg, wparam, lparam)
+
+        new_proc = WNDPROC(_wndproc)
+        _wndproc_keepalive.extend((new_proc, old_proc))
+        set_long(hwnd, GWLP_WNDPROC, ctypes.cast(new_proc, ctypes.c_void_p).value)
+
+        # Force a frame recalc so WM_NCCALCSIZE runs right away.
+        SWP_FLAGS = 0x0002 | 0x0001 | 0x0004 | 0x0020  # NOMOVE|NOSIZE|NOZORDER|FRAMECHANGED
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_FLAGS)
+    except Exception:
+        logging.exception("Failed to enable frameless window chrome")
+
+
 def main():
     if not _acquire_lock():
         # Another instance is already running — just exit silently
@@ -246,8 +515,12 @@ def main():
     else:
         _icon_arg = None
 
-    # Open native window — blocks until the window is closed
-    webview.create_window(
+    # Open native window — blocks until the window is closed.
+    # frameless=True drops the white OS title bar; we draw our own dark one in
+    # the page and drive it through the exposed window-control callbacks below.
+    # easy_drag=False so only elements marked .pywebview-drag-region move the
+    # window (otherwise a click anywhere drags it).
+    window = webview.create_window(
         title="ContextVolt",
         url=_paths.server_origin(port=_chosen_port),
         width=1200,
@@ -255,14 +528,49 @@ def main():
         min_size=(800, 600),
         background_color="#0a0a0f",
         text_select=True,
+        frameless=True,
+        easy_drag=False,
     )
 
-    def _set_large_taskbar_icon():
-        if sys.platform != "win32" or not _icon_arg:
+    # ─── Custom title-bar window controls (exposed to JS) ─────────────
+    # JS calls these via window.pywebview.api.cv_minimize() etc.
+    _win_state = {"maximized": False}
+
+    def cv_minimize():
+        window.minimize()
+
+    def cv_toggle_maximize():
+        if _win_state["maximized"]:
+            window.restore()
+            _win_state["maximized"] = False
+        else:
+            window.maximize()
+            _win_state["maximized"] = True
+        return _win_state["maximized"]
+
+    def cv_close():
+        window.destroy()
+
+    def cv_start_resize(edge):
+        _start_native_resize(edge)
+
+    window.expose(cv_minimize, cv_toggle_maximize, cv_close, cv_start_resize)
+
+    def _setup_native_window():
+        if sys.platform != "win32":
+            return
+        hwnd = _find_own_hwnd()
+        if not hwnd:
+            return
+
+        # Restore edge-resize + Aero Snap lost to frameless mode.
+        _enable_frameless_chrome(hwnd)
+
+        # Set the large/small taskbar + Alt-Tab icons.
+        if not _icon_arg:
             return
         try:
             import ctypes
-            import ctypes.wintypes
 
             user32 = ctypes.windll.user32
             SM_CXICON, SM_CXSMICON = 11, 49
@@ -275,31 +583,6 @@ def main():
             big_sz = user32.GetSystemMetrics(SM_CXICON)    # typically 32 or 48
             small_sz = user32.GetSystemMetrics(SM_CXSMICON) # typically 16 or 20
 
-            # Find our window by process ID — more reliable than window title
-            pid = os.getpid()
-            hwnd_found = ctypes.c_void_p(0)
-
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-
-            def _enum(hwnd, _):
-                lp_pid = ctypes.c_ulong(0)
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lp_pid))
-                if lp_pid.value == pid and user32.IsWindowVisible(hwnd):
-                    hwnd_found.value = hwnd
-                    return False  # stop enumeration
-                return True
-
-            # Retry up to 3 seconds for the window to appear
-            for _ in range(6):
-                time.sleep(0.5)
-                user32.EnumWindows(EnumWindowsProc(_enum), 0)
-                if hwnd_found.value:
-                    break
-
-            hwnd = hwnd_found.value
-            if not hwnd:
-                return
-
             icon_path_w = ctypes.c_wchar_p(_icon_arg)
             hicon_big = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, big_sz, big_sz, LR_LOADFROMFILE)
             hicon_small = user32.LoadImageW(None, icon_path_w, IMAGE_ICON, small_sz, small_sz, LR_LOADFROMFILE)
@@ -310,7 +593,7 @@ def main():
         except Exception:
             pass
 
-    threading.Thread(target=_set_large_taskbar_icon, daemon=True).start()
+    threading.Thread(target=_setup_native_window, daemon=True).start()
     # debug opens DevTools — keep it off for normal users, enable with CONVX_DEBUG=1.
     # private_mode forces a clean cache — bust WebView2's stale index.html.
     _debug = os.environ.get("CONVX_DEBUG") == "1"

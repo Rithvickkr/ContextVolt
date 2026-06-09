@@ -12382,6 +12382,33 @@ kbd {
     background: rgba(0,0,0,0.04);
     color: rgba(0,0,0,0.85);
 }
+.cv-onboard-field {
+    margin: 4px 0 2px;
+}
+.cv-onboard-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 9px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cv-onboard-input::placeholder { color: rgba(255,255,255,0.4); }
+.cv-onboard-input:focus {
+    border-color: var(--accent, #6c8cff);
+    box-shadow: 0 0 0 3px rgba(108,140,255,0.18);
+}
+[data-theme="light"] .cv-onboard-input {
+    color: rgba(0,0,0,0.9);
+    background: rgba(0,0,0,0.03);
+    border-color: rgba(0,0,0,0.16);
+}
+[data-theme="light"] .cv-onboard-input::placeholder { color: rgba(0,0,0,0.4); }
 .cv-onboard-progress {
     height: 3px;
     background: rgba(255,255,255,0.08);

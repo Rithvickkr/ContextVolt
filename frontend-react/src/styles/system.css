@@ -1,0 +1,163 @@
+/* ================================================================
+   System modal — health & logs
+   ================================================================ */
+
+.sys-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+}
+
+.sys-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+.sys-tab:hover { color: var(--text-primary); }
+.sys-tab.on {
+    color: var(--cv-volt);
+    background: var(--cv-volt-dim);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--cv-volt) 28%, transparent);
+}
+
+.sys-tabs-spacer { flex: 1; }
+
+.sys-refresh { padding: 6px 12px; font-size: 12px; }
+.sys-refresh .spin { animation: spin 1s linear infinite; }
+
+.sys-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 260px;
+}
+
+.sys-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+}
+
+.sys-empty {
+    padding: 24px 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    text-align: center;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+}
+
+/* ── Health cards ───────────────────────────────────────────── */
+.sys-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.sys-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+}
+.sys-card-wide { grid-column: 1 / -1; }
+
+.sys-card-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+}
+.sys-card-head svg { color: var(--cv-volt); }
+
+.sys-card-value {
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sys-card-value.ok { color: var(--success); }
+.sys-card-value.bad { color: var(--danger); }
+
+.sys-card-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sys-db-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+}
+.sys-db-stats strong {
+    font-family: var(--font-display);
+    font-size: 15px;
+    color: var(--text-primary);
+    margin-right: 4px;
+}
+
+.sys-section-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+}
+
+.sys-models { display: flex; flex-wrap: wrap; gap: 6px; }
+.sys-models .chip { font-family: var(--font-mono); font-size: 11px; }
+
+.sys-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Logs ───────────────────────────────────────────────────── */
+.logs-view {
+    height: 380px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.65;
+}
+
+.log-line {
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+.log-line.log-err { color: var(--danger); }
+.log-line.log-warn { color: var(--warning); }

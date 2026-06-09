@@ -5136,42 +5136,82 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(3px);
+    background: rgba(4, 4, 8, 0.62);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity 0.18s var(--ease, ease);
 }
+[data-theme="light"] .cv-confirm-overlay { background: rgba(20, 20, 28, 0.32); }
 .cv-confirm-overlay.cv-confirm-in  { opacity: 1; }
 .cv-confirm-overlay.cv-confirm-out { opacity: 0; }
 
+/* Frosted-glass dialog — matches the app's noir/card surface treatment */
 .cv-confirm-dialog {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
-    padding: 22px 24px 20px;
-    min-width: 300px;
-    max-width: 380px;
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(420px 140px at 50% -30%, rgba(255,255,255,0.06), transparent 70%),
+        radial-gradient(320px 220px at 100% 120%, rgba(180,160,255,0.05), transparent 65%),
+        linear-gradient(180deg, rgba(30,30,38,0.92) 0%, rgba(18,18,24,0.94) 100%);
+    backdrop-filter: blur(20px) saturate(130%);
+    -webkit-backdrop-filter: blur(20px) saturate(130%);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: var(--radius-xl);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.07) inset,
+        0 2px 6px rgba(0,0,0,0.4),
+        0 32px 72px -20px rgba(0,0,0,0.8),
+        0 0 0 1px rgba(255,255,255,0.02);
+    padding: 24px 26px 22px;
+    min-width: 320px;
+    max-width: 400px;
     width: 90%;
-    transform: scale(0.96) translateY(8px);
-    transition: transform 0.15s ease;
+    transform: scale(0.95) translateY(10px);
+    transition: transform 0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+/* Top highlight hairline */
+.cv-confirm-dialog::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 16%;
+    right: 16%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
+    pointer-events: none;
+}
+[data-theme="light"] .cv-confirm-dialog {
+    background:
+        radial-gradient(420px 140px at 50% -30%, rgba(0,0,0,0.025), transparent 70%),
+        linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+    border-color: rgba(0,0,0,0.09);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.9) inset,
+        0 24px 60px -16px rgba(0,0,0,0.22),
+        0 0 0 1px rgba(0,0,0,0.04);
+}
+[data-theme="light"] .cv-confirm-dialog::before {
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent);
 }
 .cv-confirm-overlay.cv-confirm-in .cv-confirm-dialog {
     transform: scale(1) translateY(0);
 }
 
 .cv-confirm-title {
-    font-size: 14.5px;
+    font-family: var(--font-display, inherit);
+    font-size: 16px;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
     margin-bottom: 8px;
     line-height: 1.3;
 }
 .cv-confirm-message {
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--text-secondary);
-    line-height: 1.55;
-    margin-bottom: 18px;
+    line-height: 1.6;
+    margin-bottom: 20px;
 }
 .cv-confirm-input {
     width: 100%;
@@ -5201,44 +5241,53 @@ body {
 }
 .cv-confirm-actions {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     justify-content: flex-end;
 }
 .cv-confirm-cancel {
-    padding: 6px 14px;
+    padding: 8px 16px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
-    background: transparent;
+    background: rgba(255,255,255,0.03);
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: 13px;
     font-family: inherit;
+    font-weight: 500;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
 }
 .cv-confirm-cancel:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+    border-color: var(--border-accent);
+    transform: translateY(-1px);
 }
 .cv-confirm-ok {
-    padding: 6px 16px;
+    padding: 8px 18px;
     border-radius: var(--radius-sm);
-    border: 1px solid rgba(255,255,255,0.15);
-    background: var(--bg-active);
+    border: 1px solid rgba(255,255,255,0.16);
+    background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
     color: var(--text-primary);
-    font-size: 12.5px;
+    font-size: 13px;
     font-family: inherit;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.12s;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 12px -4px rgba(0,0,0,0.4);
+    transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
 }
-.cv-confirm-ok:hover { background: rgba(255,255,255,0.12); }
+.cv-confirm-ok:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08));
+    transform: translateY(-1px);
+}
 .cv-confirm-ok.danger {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.35);
-    color: #f87171;
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.22), rgba(239, 68, 68, 0.12));
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 14px -4px rgba(239,68,68,0.4);
 }
 .cv-confirm-ok.danger:hover {
-    background: rgba(239, 68, 68, 0.25);
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.32), rgba(239, 68, 68, 0.18));
+    transform: translateY(-1px);
 }
 
 /* ================================================================
@@ -9687,15 +9736,29 @@ kbd {
     overflow-y: auto;
     padding: 6px 6px 8px;
     flex: 1;
+    /* Subtle scrollbar that stays hidden until the list is hovered, themed to
+       match the app surface rather than the stark default white. */
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.25s var(--cv-ease, ease);
 }
+.cv-ask-history-list:hover { scrollbar-color: var(--cv-line-2, rgba(255,255,255,0.14)) transparent; }
 .cv-ask-history-list::-webkit-scrollbar { width: 8px; }
+.cv-ask-history-list::-webkit-scrollbar-track { background: transparent; }
 .cv-ask-history-list::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.08);
-    border-radius: 4px;
+    background: transparent;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 100px;
+    transition: background 0.25s var(--cv-ease, ease);
 }
-[data-theme="light"] .cv-ask-history-list::-webkit-scrollbar-thumb {
-    background: rgba(0,0,0,0.12);
+.cv-ask-history-list:hover::-webkit-scrollbar-thumb {
+    background: var(--cv-line-2, rgba(255,255,255,0.14));
+    background-clip: padding-box;
+}
+.cv-ask-history-list::-webkit-scrollbar-thumb:hover {
+    background: var(--cv-volt-glow, rgba(255,255,255,0.22));
+    background-clip: padding-box;
 }
 
 .cv-ask-history-group {
@@ -11569,6 +11632,122 @@ kbd {
 [data-vibe="noir"] .cv-recent-grid > .ctx-card:hover,
 [data-vibe="noir"] .cv-recent-grid > .cv-card:hover {
   box-shadow: var(--cv-shadow-card-hover);
+}
+
+/* ================================================================
+   Glass morphism for Volt & Space vibes
+   Brings the noir-grade frosted-glass surface treatment to the
+   other two dark vibes: translucent layered-gradient fills, a
+   top highlight hairline, layered depth shadows, and a frosted
+   blur so the ambient backdrop reads through the surface. Accent
+   washes use each vibe's own token (amber for volt, cyan for
+   space) instead of noir's violet/white so each keeps its identity.
+   Dark vibes only — light mode keeps its existing flat surfaces.
+   ================================================================ */
+
+/* Frosted topbar (mirrors noir's floating bar) */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar,
+[data-vibe="space"]:not([data-theme="light"]) .cv-topbar {
+  background: linear-gradient(180deg, rgba(22,22,30,0.78), rgba(12,12,18,0.78));
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 8px 32px -16px rgba(0,0,0,0.6);
+  position: relative;
+}
+[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar::after,
+[data-vibe="space"]:not([data-theme="light"]) .cv-topbar::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  pointer-events: none;
+}
+
+/* Glass surfaces — stat cards, recent cards, pipeline panel */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-pipeline,
+[data-vibe="space"]:not([data-theme="light"]) .cv-pipeline {
+  background:
+    radial-gradient(360px 120px at 0% 0%, var(--cv-volt-glow), transparent 60%),
+    radial-gradient(280px 200px at 100% 100%, color-mix(in oklab, var(--cv-plasma) 8%, transparent), transparent 65%),
+    linear-gradient(180deg, rgba(255,255,255,0.028) 0%, rgba(255,255,255,0.008) 100%);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 1px 2px rgba(0,0,0,0.35),
+    0 18px 44px -22px rgba(0,0,0,0.78),
+    0 0 0 1px rgba(255,255,255,0.02);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Top highlight hairline */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat::after,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat::after,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16%;
+  right: 16%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  pointer-events: none;
+  opacity: 0.65;
+  z-index: 1;
+}
+
+/* Hover lift + deepen */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover {
+  border-color: rgba(255,255,255,0.16);
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.07) inset,
+    0 26px 56px -22px rgba(0,0,0,0.9),
+    0 0 0 1px rgba(255,255,255,0.05);
+}
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before { opacity: 1; }
+
+/* Glass chips */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-chip,
+[data-vibe="space"]:not([data-theme="light"]) .cv-chip {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.012));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(255,255,255,0.07);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
 }
 
 /* ================================================================

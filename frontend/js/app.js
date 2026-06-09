@@ -2353,18 +2353,6 @@ function renderDetail(ctx) {
                 </div></div>
             </div>
 
-            <!-- Diagnostics: indexed chunks (collapsed, dev-facing) -->
-            <details class="cv-diag" id="chunksBlock">
-                <summary class="cv-diag-sum">
-                    <span class="cv-diag-ic">${icon.chunks}</span>
-                    <span class="cv-diag-label">Diagnostics · indexed chunks</span>
-                    <span class="cv-diag-hint" id="chunks-count-badge">view retrieval index</span>
-                </summary>
-                <div class="cv-diag-body">
-                    <div id="chunks-viewer-content" class="cv-chunks"></div>
-                </div>
-            </details>
-
           </div>
 
           <!-- Sticky aside: details + vitals -->
@@ -2409,16 +2397,6 @@ function renderDetail(ctx) {
         const s = document.getElementById('prompt-section');
         if (s) s.style.display = 'none';
     });
-
-    // Open chunks viewer when the <details> is toggled open (replaces old onclick)
-    const diag = document.getElementById('chunksBlock');
-    if (diag) {
-        diag.addEventListener('toggle', () => {
-            if (diag.open && !_chunksLoaded) {
-                toggleChunkViewer(ctx.id);
-            }
-        });
-    }
 
     // Segmented size control — toggle .on class + update live hint
     const hintEl = document.getElementById('cv-action-hint');
@@ -6478,7 +6456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => setTheme(btn.dataset.theme));
     });
 
-    // Vibe toggle (Volt / Space)
+    // Vibe toggle (Noir / Volt / Space) — Noir is the default
     const _vibeBtns = document.querySelectorAll('#vibeToggle button');
     _vibeBtns.forEach(b => b.addEventListener('click', () => {
         const v = b.dataset.vibe;
@@ -6490,14 +6468,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try { localStorage.setItem('cv-vibe', v); } catch(e) {}
     }));
     try {
-        const _savedVibe = localStorage.getItem('cv-vibe');
-        if (_savedVibe) {
-            document.documentElement.setAttribute('data-vibe', _savedVibe);
-            _vibeBtns.forEach(x => {
-                x.classList.toggle('on', x.dataset.vibe === _savedVibe);
-                x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
-            });
-        }
+        const _savedVibe = localStorage.getItem('cv-vibe') || 'noir';
+        document.documentElement.setAttribute('data-vibe', _savedVibe);
+        _vibeBtns.forEach(x => {
+            x.classList.toggle('on', x.dataset.vibe === _savedVibe);
+            x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
+        });
     } catch(e) {}
 
     // Sidebar collapse

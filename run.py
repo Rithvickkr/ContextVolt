@@ -228,8 +228,10 @@ _wndproc_keepalive: list = []
 # HWND of the main window, set once found, used by the JS-driven resize handles.
 _main_hwnd: int = 0
 
-# Private message handled inside the window's own WndProc (UI thread).
-_WM_CV_RESIZE = 0x0400 + 0x51  # begin a native resize, direction = wparam
+# Private messages handled inside the window's own WndProc (UI thread).
+_WM_CV_RESIZE = 0x0400 + 0x51    # begin a native resize, direction = wparam
+_WM_CV_REWINDOW = 0x0400 + 0x52  # restore phase 1: drop a maximized window to windowed
+_WM_CV_REMAX = 0x0400 + 0x53     # restore phase 2: re-maximize it (windowed→full)
 
 
 def _post_to_window(msg: int, wparam: int = 0) -> None:
@@ -264,6 +266,52 @@ def _start_native_resize(edge: str) -> None:
     code = directions.get(edge)
     if code:
         _post_to_window(_WM_CV_RESIZE, code)
+
+
+def _revive_webview() -> None:
+    """Wake WebView2's compositor after a restore by posting a synthetic click.
+
+    On some configs (seen on a 144 Hz laptop panel) WebView2's frame scheduler
+    stalls after the window is restored from minimized while maximized: the page
+    is rendered but never *presented*, so the client area stays blank-grey until a
+    real mouse click wakes Chromium. We replicate that click by posting a left
+    button down/up to Chromium's input window (Chrome_RenderWidgetHostHWND) at the
+    top-left title-bar drag area — no window controls live there and there's no
+    mouse movement, so the click has no visible effect beyond forcing the repaint.
+    """
+    if sys.platform != "win32" or not _main_hwnd:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        target = ctypes.c_void_p(0)
+        buf = ctypes.create_unicode_buffer(256)
+        EnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def _find(hwnd, _):
+            user32.GetClassNameW(hwnd, buf, 256)
+            if buf.value == "Chrome_RenderWidgetHostHWND":
+                target.value = hwnd
+                return False  # found it — stop
+            return True
+
+        # EnumChildWindows recurses through all descendants.
+        user32.EnumChildWindows(_main_hwnd, EnumProc(_find), 0)
+        h = target.value
+        if not h:
+            return
+
+        WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
+        x, y = 8, 8
+        lparam = (y << 16) | x
+        post = user32.PostMessageW
+        post.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        post(h, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
+        post(h, WM_LBUTTONUP, 0, lparam)
+    except Exception:
+        logging.exception("WebView2 revive click failed")
 
 
 def _find_own_hwnd(timeout: float = 3.0) -> int:
@@ -320,7 +368,11 @@ def _enable_frameless_chrome(hwnd: int) -> None:
         WM_NCHITTEST = 0x0084
         WM_GETMINMAXINFO = 0x0024
         WM_SYSCOMMAND = 0x0112
+        WM_SIZE = 0x0005
         SC_SIZE = 0xF000
+
+        SIZE_RESTORED, SIZE_MINIMIZED, SIZE_MAXIMIZED = 0, 1, 2
+        SW_MAXIMIZE, SW_RESTORE = 3, 9
 
         HTLEFT, HTRIGHT = 10, 11
         HTTOP, HTTOPLEFT, HTTOPRIGHT = 12, 13, 14
@@ -401,7 +453,41 @@ def _enable_frameless_chrome(hwnd: int) -> None:
 
         old_proc = WNDPROC(get_long(hwnd, GWLP_WNDPROC))
 
+        # Restore behaviour state. "min" tracks that we're minimized; "transition"
+        # suppresses the WM_SIZE messages our own ShowWindow calls generate.
+        _sz = {"min": False, "transition": False}
+
         def _wndproc(h, msg, wparam, lparam):
+            if msg == _WM_CV_REWINDOW:
+                # Phase 1 (posted, so it runs after the maximize finished): drop the
+                # just-restored maximized window down to windowed.
+                user32.ShowWindow(h, SW_RESTORE)
+                threading.Timer(0.5, lambda: _post_to_window(_WM_CV_REMAX)).start()
+                return 0
+            if msg == _WM_CV_REMAX:
+                # Phase 2: re-maximize, so the window arrives via the windowed→full
+                # transition (which presents correctly, unlike a direct restore).
+                user32.ShowWindow(h, SW_MAXIMIZE)
+                _sz["transition"] = False
+                # Belt-and-suspenders present nudge (cheap, harmless click on the
+                # empty drag region) in case the maximize alone doesn't repaint.
+                threading.Timer(0.10, _revive_webview).start()
+                return 0
+            if msg == WM_SIZE and not _sz["transition"]:
+                if wparam == SIZE_MINIMIZED:
+                    _sz["min"] = True
+                elif wparam == SIZE_MAXIMIZED and _sz["min"]:
+                    # Was maximized before minimizing → run the windowed→maximize
+                    # transition. Done async (posted) so this maximize message
+                    # finishes cleanly first; the flag suppresses the WM_SIZEs our
+                    # own ShowWindow calls then generate.
+                    _sz["min"] = False
+                    _sz["transition"] = True
+                    _post_to_window(_WM_CV_REWINDOW)
+                elif wparam == SIZE_RESTORED and _sz["min"]:
+                    # Was windowed before minimizing → leave it windowed as-is.
+                    _sz["min"] = False
+                # fall through to default sizing behaviour
             if msg == _WM_CV_RESIZE:
                 # Runs on the UI thread, so ReleaseCapture() now actually frees
                 # the capture WebView2 grabbed on mousedown, letting the OS
@@ -540,7 +626,16 @@ def main():
         window.minimize()
 
     def cv_toggle_maximize():
-        if _win_state["maximized"]:
+        # Read the live zoom state so the button stays correct no matter how the
+        # window got maximized/restored (button, OS gesture, or our restore
+        # transition) rather than trusting a tracked bool that can desync.
+        zoomed = False
+        if sys.platform == "win32" and _main_hwnd:
+            import ctypes
+            zoomed = bool(ctypes.windll.user32.IsZoomed(_main_hwnd))
+        else:
+            zoomed = _win_state["maximized"]
+        if zoomed:
             window.restore()
             _win_state["maximized"] = False
         else:
@@ -565,6 +660,24 @@ def main():
 
         # Restore edge-resize + Aero Snap lost to frameless mode.
         _enable_frameless_chrome(hwnd)
+
+        # Launch windowed, hold a beat so the small window is clearly visible,
+        # then maximize so the app opens with a smooth small→full-screen
+        # transition. Done after the WndProc is installed so the maximize clamps
+        # to the work area (taskbar stays visible).
+        try:
+            time.sleep(0.6)  # let the windowed state show before maximizing
+            window.maximize()
+            _win_state["maximized"] = True
+            # Keep the custom title-bar button in its "Restore" state.
+            window.evaluate_js(
+                "(function(){var m=document.getElementById('cv-win-max');"
+                "if(m){m.classList.add('is-maximized');"
+                "m.setAttribute('aria-label','Restore');"
+                "m.setAttribute('title','Restore');}})()"
+            )
+        except Exception:
+            logging.exception("Auto-maximize on startup failed")
 
         # Set the large/small taskbar + Alt-Tab icons.
         if not _icon_arg:

@@ -88,20 +88,26 @@ export default function Detail({ id }) {
   const [deleting, setDeleting] = useState(false);
 
   // ── Load ──────────────────────────────────────────────────
-  const load = useCallback(async () => {
-    try {
-      const data = await api.context(id);
-      setCtx(data);
-    } catch (e) {
-      showToast(e.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [id, showToast]);
-
   // App.jsx keys the view wrapper by detailId, so this component
   // remounts per context — initial state covers the per-id reset.
-  useEffect(() => { load(); }, [load]);
+  // `load()` bumps the tick to refetch (silently — no skeleton flash).
+  const [fetchTick, setFetchTick] = useState(0);
+  const load = useCallback(() => setFetchTick((t) => t + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.context(id);
+        if (!cancelled) setCtx(data);
+      } catch (e) {
+        if (!cancelled) showToast(e.message, 'error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, fetchTick, showToast]);
 
   // Poll while the summary is still cooking
   useEffect(() => {

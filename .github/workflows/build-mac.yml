@@ -25,13 +25,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install create-dmg
-        run: brew install create-dmg
+      # Build with Homebrew Python, NOT actions/setup-python: the latter's macOS
+      # build ships a sqlite3 module without loadable-extension support, and
+      # ContextVolt loads the sqlite-vec extension at runtime. Homebrew's Python
+      # enables loadable extensions and links a SQLite that allows them.
+      - name: Set up Homebrew Python (loadable SQLite extensions)
+        id: py
+        run: |
+          brew install python@3.12 create-dmg
+          PYBIN="$(brew --prefix python@3.12)/bin/python3.12"
+          "$PYBIN" --version
+          "$PYBIN" -c "import sqlite3; sqlite3.connect(':memory:').enable_load_extension(True); print('sqlite loadable extensions: OK')"
+          echo "PYTHON_BIN=$PYBIN" >> "$GITHUB_OUTPUT"
 
       - name: Determine version
         id: ver
@@ -45,6 +50,7 @@ jobs:
       - name: Build .app and .dmg
         env:
           CONTEXTVOLT_VERSION: ${{ steps.ver.outputs.value }}
+          PYTHON_BIN: ${{ steps.py.outputs.PYTHON_BIN }}
         run: bash installer/build_mac.sh
 
       # Launch the FROZEN bundle headlessly. This is the real test that py2app

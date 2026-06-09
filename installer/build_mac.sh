@@ -55,9 +55,20 @@ echo "         icon.icns created"
 echo "  [2/7] Setting up build venv…"
 BUILD_VENV="venv-build"
 rm -rf "$BUILD_VENV"
-python3 -m venv "$BUILD_VENV"
+# sqlite-vec is loaded via conn.enable_load_extension() at runtime. macOS's
+# system Python (and actions/setup-python's macOS build) ship a sqlite3 module
+# compiled WITHOUT loadable-extension support, so the bundle would crash on
+# first DB open. Build with a Python that supports it (Homebrew's does) — pass
+# it as PYTHON_BIN, default to python3 for local Homebrew-based builds.
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+echo "         using interpreter: $PYTHON_BIN"
+"$PYTHON_BIN" -m venv "$BUILD_VENV"
 # shellcheck disable=SC1090
 source "$BUILD_VENV/bin/activate"
+# Fail loudly at build time rather than shipping a bundle that dies at launch.
+python -c "import sqlite3; sqlite3.connect(':memory:').enable_load_extension(True)" \
+    || { echo "  ERROR: build Python lacks SQLite loadable-extension support (needed for sqlite-vec)."; \
+         echo "         Use Homebrew Python: brew install python@3.12 and set PYTHON_BIN to it."; exit 1; }
 pip install --upgrade pip --quiet --disable-pip-version-check
 pip install -r requirements.txt --quiet --disable-pip-version-check
 pip install py2app --quiet --disable-pip-version-check

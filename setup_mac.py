@@ -16,6 +16,7 @@ Notes:
 """
 from __future__ import annotations
 
+import os
 import sys
 
 if sys.platform != "darwin":
@@ -25,12 +26,16 @@ from setuptools import setup  # noqa: E402
 
 APP = ["installer.py"]
 
+# Keep the bundle version in lockstep with the release tag (build_mac.sh / CI
+# pass CONTEXTVOLT_VERSION); fall back to the current version for local builds.
+_VERSION = os.environ.get("CONTEXTVOLT_VERSION", "2.3.0")
+
 PLIST = {
     "CFBundleName": "ContextVolt",
     "CFBundleDisplayName": "ContextVolt",
     "CFBundleIdentifier": "com.contextvolt.app",
-    "CFBundleVersion": "2.2.0",
-    "CFBundleShortVersionString": "2.2.0",
+    "CFBundleVersion": _VERSION,
+    "CFBundleShortVersionString": _VERSION,
     "CFBundleExecutable": "ContextVolt",
     "LSMinimumSystemVersion": "11.0",
     "NSHighResolutionCapable": True,

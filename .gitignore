@@ -16,6 +16,7 @@ context_volt.db
 .env
 .cv_lock
 .cv_installer_lock
+.last_port
 
 # ─── Windows installer build artifacts ───────────
 installer/build/
@@ -61,3 +62,7 @@ landing/
 # ─── Eval harness reports (regeneration artifacts) ───────
 # Already-committed Phase 1 baselines stay tracked; new runs are ignored.
 backend/eval/baselines/*.json
+Test prompts/gemini3.1pro continuation propmpt.txt
+Test prompts/contextvolt continuation prompt.txt
+Test prompts/chat.txt
+backend/eval/blind_continuation_harness.py

@@ -6,7 +6,6 @@
  */
 
 const API = '';  // Use same-origin so fetches go to whatever host pywebview loaded (127.0.0.1 or localhost)
-console.log('%c[ConVX] app.js loaded — build SIDEBAR-COLLAPSE-V19', 'background:#22c55e;color:#000;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:13px', 'origin:', window.location.origin);
 
 // â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
 window.addEventListener('error', e => {
@@ -43,6 +42,52 @@ function toggleTheme() {
 (function() {
     const saved = localStorage.getItem('cv-theme') || 'dark';
     _applyTheme(saved);
+})();
+
+// ─── Custom title-bar window controls (frameless pywebview) ──────────
+// Buttons call into the Python callbacks exposed via window.expose() in run.py.
+// Guarded so the page still works in a plain browser (no pywebview bridge).
+(function() {
+    function api() { return window.pywebview && window.pywebview.api; }
+
+    function bind() {
+        const min = document.getElementById('cv-win-min');
+        const max = document.getElementById('cv-win-max');
+        const close = document.getElementById('cv-win-close');
+        const drag = document.getElementById('cv-titlebar-drag');
+        if (!min || !max || !close) return;
+
+        const setMaxIcon = (maximized) => {
+            max.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+            max.setAttribute('title', maximized ? 'Restore' : 'Maximize');
+            max.classList.toggle('is-maximized', !!maximized);
+        };
+
+        min.addEventListener('click', () => { api()?.cv_minimize?.(); });
+        close.addEventListener('click', () => { api()?.cv_close?.(); });
+        const toggleMax = () => {
+            const r = api()?.cv_toggle_maximize?.();
+            if (r && typeof r.then === 'function') r.then(setMaxIcon);
+        };
+        max.addEventListener('click', toggleMax);
+        // Double-click the drag area maximizes/restores, like a native title bar.
+        if (drag) drag.addEventListener('dblclick', toggleMax);
+
+        // Edge/corner grips → hand off to the native OS resize loop on mousedown.
+        document.querySelectorAll('.cv-rz').forEach(grip => {
+            grip.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                api()?.cv_start_resize?.(grip.dataset.edge);
+            });
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
 })();
 
 // â”€â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -348,9 +393,6 @@ async function _globalSummarizingPoll() {
         if (!res.ok) return;
         const { contexts } = await res.json();
         const currentIds = new Set(contexts.map(c => c.id));
-        if (currentIds.size > 0 || _globalPollPrevIds.size > 0) {
-            console.log('[ConVX poll] in-flight:', currentIds.size, '| prev:', _globalPollPrevIds.size);
-        }
 
         // IDs that were summarizing last tick but aren't now → just finished
         for (const id of _globalPollPrevIds) {
@@ -388,7 +430,6 @@ async function _globalSummarizingPoll() {
 
 function _startGlobalSummarizingPoll() {
     if (_globalPollTimer) return; // already running
-    console.log('%c[ConVX] global summarize poll STARTED', 'color:#facc15;font-weight:bold');
     _globalSummarizingPoll();
 }
 
@@ -432,6 +473,12 @@ function navigateTo(view) {
         loadContexts();
     } else if (view === 'input') {
         if (!_dashboardLoaded) loadDashboard();
+    } else if (view === 'ask') {
+        // Drop the cursor straight into the composer so users can type at once.
+        setTimeout(() => {
+            const ai = document.getElementById('ask-input');
+            if (ai && state.view === 'ask' && !ai.disabled) ai.focus();
+        }, 80);
     }
 
     // Start polling when entering library/detail; let it self-stop when done
@@ -705,12 +752,10 @@ function _pipelineAppendToken(token) {
 
 let _summarizing = false;
 async function summarizeAndSave() {
-    console.log('%c[ConVX] summarizeAndSave() called', 'color:#22c55e;font-weight:bold');
     if (_summarizing) { console.warn('[ConVX] already in flight — bailing'); return; }
     const textarea = $('#chat-textarea');
     const btn = $('#summarize-btn');
     const text = textarea.value.trim();
-    console.log('[ConVX] textarea:', !!textarea, 'btn:', !!btn, 'text length:', text.length);
     if (!text) { console.warn('[ConVX] empty text — bailing'); return; }
 
     _summarizing = true;
@@ -827,7 +872,6 @@ async function summarizeAndSave() {
         $('#char-count').textContent = '0 characters';
         btn.disabled = true;
 
-        console.log('[ConVX] summarize complete — calling showToast');
         showToast('Context summarized & saved', 'success');
 
         // Navigate to detail view
@@ -903,65 +947,181 @@ async function loadCollections() {
         const res = await fetch(`${API}/api/collections`);
         state.collections = await res.json();
         renderCollections();
+        _askPopulateScopeSelect();
     } catch { /* non-fatal */ }
 }
+
+// Markup for one collection row (reused by the sidebar and the "Show all" modal).
+// Pass null for the "All" row.
+function _collectionItemHtml(col) {
+    if (col === null) {
+        const active = state.activeCollection === null;
+        return `<div class="collection-item${active ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(null)" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(null)">
+            <span class="collection-dot" style="background:var(--text-faint)"></span>
+            <span class="collection-item-name">All</span>
+            <span class="collection-item-count">${state.totalContextCount}</span>
+        </div>`;
+    }
+    const active = state.activeCollection === col.id;
+    const safeName = escapeHtml(col.name).replace(/'/g, '&#39;');
+    return `<div class="collection-item${active ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(${col.id})" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(${col.id})" data-col-id="${col.id}">
+        <span class="collection-dot" style="background:${escapeHtml(col.color)}"></span>
+        <span class="collection-item-name">${escapeHtml(col.name)}</span>
+        <span class="collection-item-count">${col.count}</span>
+        <span class="collection-item-rename" onclick="event.stopPropagation(); startRenameCollection(${col.id})" title="Rename" aria-label="Rename ${escapeHtml(col.name)}" role="button" tabindex="0">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </span>
+        <span class="collection-item-delete" onclick="event.stopPropagation(); confirmDeleteCollection(${col.id}, '${safeName}')" title="Delete" aria-label="Delete ${escapeHtml(col.name)}" role="button" tabindex="0">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </span>
+    </div>`;
+}
+
+const _CV_SIDEBAR_COLLECTION_LIMIT = 5;
 
 function renderCollections() {
     const list = $('#collections-list');
     if (!list) return;
 
-    const allActive = state.activeCollection === null;
-    const totalAll = state.totalContextCount;
-
-    let html = `<div class="collection-item${allActive ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(null)" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(null)">
-        <span class="collection-dot" style="background:var(--text-faint)"></span>
-        <span class="collection-item-name">All</span>
-        <span class="collection-item-count">${totalAll}</span>
-    </div>`;
-
-    for (const col of state.collections) {
-        const active = state.activeCollection === col.id;
-        const safeName = escapeHtml(col.name).replace(/'/g, '&#39;');
-        html += `<div class="collection-item${active ? ' active' : ''}" role="button" tabindex="0" onclick="filterByCollection(${col.id})" onkeydown="if(event.key==='Enter'||event.key===' ')filterByCollection(${col.id})" data-col-id="${col.id}">
-            <span class="collection-dot" style="background:${escapeHtml(col.color)}"></span>
-            <span class="collection-item-name">${escapeHtml(col.name)}</span>
-            <span class="collection-item-count">${col.count}</span>
-            <span class="collection-item-rename" onclick="event.stopPropagation(); startRenameCollection(${col.id})" title="Rename" aria-label="Rename ${escapeHtml(col.name)}" role="button" tabindex="0">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </span>
-            <span class="collection-item-delete" onclick="event.stopPropagation(); confirmDeleteCollection(${col.id}, '${safeName}')" title="Delete" aria-label="Delete ${escapeHtml(col.name)}" role="button" tabindex="0">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </span>
-        </div>`;
+    let html = _collectionItemHtml(null);
+    const cols = state.collections;
+    for (const col of cols.slice(0, _CV_SIDEBAR_COLLECTION_LIMIT)) html += _collectionItemHtml(col);
+    if (cols.length > _CV_SIDEBAR_COLLECTION_LIMIT) {
+        html += `<button type="button" class="collection-showall" onclick="_openCollectionsModal()">
+            <span>Show all ${cols.length}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>`;
     }
     list.innerHTML = html;
+
+    // Keep the "Show all" modal in sync if it's open.
+    if (document.getElementById('cv-collections-modal-list')) {
+        const q = document.getElementById('cv-coll-search-input');
+        _renderCollectionsModalList(q ? q.value : '');
+    }
+}
+
+// ── "Show all collections" modal (searchable) ───────────────────
+function _openCollectionsModal() {
+    document.getElementById('cv-collections-modal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'cv-collections-modal';
+    overlay.innerHTML = `
+        <div class="modal cv-collections-modal" role="dialog" aria-modal="true" aria-labelledby="cv-coll-list-title">
+            <div class="cv-collections-modal-head">
+                <h2 id="cv-coll-list-title">Collections</h2>
+                <button type="button" class="cv-insight-modal-close" id="cv-coll-list-close" aria-label="Close">×</button>
+            </div>
+            <div class="cv-coll-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="cv-coll-search-input" placeholder="Search collections…" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="cv-collections-modal-list collections-list" id="cv-collections-modal-list"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    _renderCollectionsModalList('');
+    const search = overlay.querySelector('#cv-coll-search-input');
+    search.focus();
+    search.addEventListener('input', () => _renderCollectionsModalList(search.value));
+    const close = () => overlay.remove();
+    overlay.querySelector('#cv-coll-list-close').addEventListener('click', close);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+}
+window._openCollectionsModal = _openCollectionsModal;
+
+function _renderCollectionsModalList(q) {
+    const el = document.getElementById('cv-collections-modal-list');
+    if (!el) return;
+    const query = (q || '').trim().toLowerCase();
+    const cols = query
+        ? state.collections.filter(c => c.name.toLowerCase().includes(query))
+        : state.collections;
+    let html = query ? '' : _collectionItemHtml(null);
+    for (const col of cols) html += _collectionItemHtml(col);
+    if (query && !cols.length) {
+        html = `<div class="cv-coll-empty">No collections match “${escapeHtml(q.trim())}”</div>`;
+    }
+    el.innerHTML = html;
 }
 
 function filterByCollection(id) {
     state.activeCollection = id;
     state.activeTagFilter = null;
+    // Picking from the "Show all" modal closes it.
+    document.getElementById('cv-collections-modal')?.remove();
     renderCollections();
-    loadContexts('', false);
+    // Open the Library showing this collection's contexts (or refilter if already there).
+    if (state.view === 'library') loadContexts('', false);
+    else navigateTo('library');
 }
+
+const _CV_COLLECTION_COLORS = [
+    ['#6366f1', 'Indigo'], ['#ec4899', 'Pink'], ['#f59e0b', 'Amber'], ['#10b981', 'Emerald'],
+    ['#3b82f6', 'Blue'], ['#8b5cf6', 'Violet'], ['#ef4444', 'Red'], ['#06b6d4', 'Cyan'],
+];
 
 function openCollectionCreate() {
-    const row = $('#collection-create-row');
-    row.style.display = 'flex';
-    $('#collection-name-input').focus();
-}
+    document.getElementById('cv-collection-modal')?.remove();
+    if (!state.newCollectionColor) state.newCollectionColor = '#6366f1';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'cv-collection-modal';
+    overlay.innerHTML = `
+        <div class="modal cv-collection-modal" role="dialog" aria-modal="true" aria-labelledby="cv-coll-modal-title">
+            <h2 id="cv-coll-modal-title">New collection</h2>
+            <div class="form-group">
+                <label for="cv-coll-modal-input">Name</label>
+                <input type="text" id="cv-coll-modal-input" class="form-input" placeholder="Collection name…" maxlength="40" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label>Color</label>
+                <div class="cv-coll-modal-colors" id="cv-coll-modal-colors">
+                    ${_CV_COLLECTION_COLORS.map(([c, t]) =>
+                        `<button type="button" class="color-swatch${c === state.newCollectionColor ? ' active' : ''}" data-color="${c}" style="background:${c}" title="${t}" aria-label="${t}"></button>`
+                    ).join('')}
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="cv-coll-modal-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="cv-coll-modal-create">Create</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
 
-function closeCollectionCreate() {
-    $('#collection-create-row').style.display = 'none';
-    $('#collection-name-input').value = '';
-    state.newCollectionColor = '#6366f1';
-    document.querySelectorAll('.color-swatch').forEach(s => {
-        s.classList.toggle('active', s.dataset.color === '#6366f1');
+    const input = overlay.querySelector('#cv-coll-modal-input');
+    input.focus();
+    overlay.querySelector('#cv-coll-modal-colors').addEventListener('click', (e) => {
+        const sw = e.target.closest('.color-swatch');
+        if (!sw) return;
+        overlay.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+        sw.classList.add('active');
+        state.newCollectionColor = sw.dataset.color;
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitCollectionCreate(); }
+        if (e.key === 'Escape') closeCollectionCreate();
+    });
+    overlay.querySelector('#cv-coll-modal-cancel').addEventListener('click', closeCollectionCreate);
+    overlay.querySelector('#cv-coll-modal-create').addEventListener('click', submitCollectionCreate);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeCollectionCreate(); });
+    document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { closeCollectionCreate(); document.removeEventListener('keydown', esc); }
     });
 }
 
+function closeCollectionCreate() {
+    document.getElementById('cv-collection-modal')?.remove();
+    state.newCollectionColor = '#6366f1';
+}
+
 async function submitCollectionCreate() {
-    const name = $('#collection-name-input').value.trim();
-    if (!name) return;
+    const inp = document.getElementById('cv-coll-modal-input');
+    const name = inp ? inp.value.trim() : '';
+    if (!name) { if (inp) inp.focus(); return; }
     try {
         const res = await fetch(`${API}/api/collections`, {
             method: 'POST',
@@ -981,7 +1141,9 @@ function startRenameCollection(id) {
     const col = state.collections.find(c => c.id === id);
     if (!col) return;
 
-    const row = document.querySelector(`.collection-item[data-col-id="${id}"]`);
+    // Prefer the modal row if the "Show all" modal is open, else the sidebar row.
+    const row = document.querySelector(`#cv-collections-modal-list .collection-item[data-col-id="${id}"]`)
+        || document.querySelector(`.collection-item[data-col-id="${id}"]`);
     if (!row) return;
 
     const nameSpan = row.querySelector('.collection-item-name');
@@ -1712,13 +1874,31 @@ async function toggleStar(id) {
     }
 }
 
+const _PIN_SVG = {
+    on:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+    off: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+};
+
 async function toggleStarDetail(id) {
+    const btn = document.getElementById('cv-btn-pin');
     try {
         const res = await fetch(`${API}/api/contexts/${id}/star`, { method: 'POST' });
         if (!res.ok) throw new Error();
         const updated = await res.json();
         state.currentContext = updated;
-        renderDetail(updated);
+        // Keep the library grid's copy in sync for the next time it renders.
+        const idx = state.contexts.findIndex(c => c.id === id);
+        if (idx !== -1) state.contexts[idx] = updated;
+        // Patch just the pin button instead of re-rendering the whole page — a
+        // full renderDetail() would reset scroll, recollapse the conversation,
+        // close Diagnostics, and re-render every chat bubble for a 1-bit change.
+        if (btn) {
+            const on = !!updated.starred;
+            btn.classList.toggle('on', on);
+            btn.title = on ? 'Unpin' : 'Pin';
+            btn.setAttribute('aria-label', on ? 'Unpin context' : 'Pin context');
+            btn.innerHTML = on ? _PIN_SVG.on : _PIN_SVG.off;
+        }
     } catch {
         showToast('Failed to toggle pin', 'error');
     }
@@ -1839,9 +2019,10 @@ function _rerenderGrid(changedId) {
 
 // â”€â”€â”€ Context Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function showDetail(id) {
-    // Show detail view immediately with loading state
+    // Show detail view immediately with a layout-shaped skeleton (avoids the
+    // jarring spinner→full-page pop, gives the eye the final structure up front).
     navigateTo('detail');
-    $('#detail-content').innerHTML = '<div style="text-align:center;padding:60px 0;color:var(--text-muted)"><span class="spinner" style="display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;animation:spin 0.55s linear infinite"></span></div>';
+    $('#detail-content').innerHTML = _detailSkeleton();
     try {
         const res = await fetch(`${API}/api/contexts/${id}`);
         if (!res.ok) throw new Error('Not found');
@@ -1857,6 +2038,28 @@ async function showDetail(id) {
     } catch (err) {
         showToast('Failed to load context', 'error');
     }
+}
+
+function _detailSkeleton() {
+    // Reuses the shared .cv-skel card + .cv-skel-line primitives (lines shimmer
+    // via the card's ::before sweep). Mirrors the real detail layout.
+    return `
+        <section class="cv-dhero">
+            <div class="cv-skel" style="min-height:auto;padding:22px 24px">
+                <div class="cv-skel-line w40"></div>
+                <div class="cv-skel-line w80" style="height:26px;margin-top:14px"></div>
+                <div class="cv-skel-line w60" style="margin-top:14px"></div>
+            </div>
+        </section>
+        <section class="cv-dlayout">
+            <div class="cv-dmain">
+                <div class="cv-skel"></div>
+                <div class="cv-skel"></div>
+            </div>
+            <aside class="cv-daside">
+                <div class="cv-skel"></div>
+            </aside>
+        </section>`;
 }
 
 function renderDetail(ctx) {
@@ -1888,14 +2091,15 @@ function renderDetail(ctx) {
     const wordCount = chatText ? chatText.trim().split(/\s+/).length : 0;
     const turnCount = chatText ? (chatText.match(/^(User|Human|You|Assistant|AI|Agent|ChatGPT|Claude|Grok|Gemini|Copilot|DeepSeek|Llama|Mistral|Bot):/gmi) || []).length : 0;
     const tagCount  = (ctx.tags || []).length;
-    const currentColl = state.collections.find(c => c.id === ctx.collection_id);
 
-    // Try to italicize the last noun-ish word of the title for a "voltword" accent
+    // Accent the final word of the title — but only when it's a "real" word,
+    // so we don't italicize trailing punctuation, numbers, or 1–2 char fragments.
     const titleWords = (ctx.title || '').trim().split(/\s+/);
     const safeTitle = (() => {
-        if (titleWords.length >= 2) {
-            const last = titleWords.pop();
-            return `${escapeHtml(titleWords.join(' '))} <span class="voltword">${escapeHtml(last)}</span>`;
+        const last = titleWords[titleWords.length - 1] || '';
+        if (titleWords.length >= 2 && /^[A-Za-z][A-Za-z'-]{2,}$/.test(last)) {
+            const head = titleWords.slice(0, -1).join(' ');
+            return `${escapeHtml(head)} <span class="voltword">${escapeHtml(last)}</span>`;
         }
         return escapeHtml(ctx.title || 'Untitled');
     })();
@@ -1921,35 +2125,33 @@ function renderDetail(ctx) {
         vitals: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
         bolt:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
         chunks: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+        redo:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>',
     };
 
+    // Eyebrow stays a glance (source + when); the full metrics live once, in the aside.
     const eyebrowBits = [];
-    if (source)     eyebrowBits.push(`<span class="cv-ebadge">${escapeHtml(source)}</span>`);
-    eyebrowBits.push(`<span class="cv-dot"></span>`);
-    const statLine = [];
-    if (turnCount)  statLine.push(`${turnCount} turns`);
-    if (wordCount)  statLine.push(`${wordCount.toLocaleString()} words`);
-    if (tagCount)   statLine.push(`${tagCount} tag${tagCount === 1 ? '' : 's'}`);
-    eyebrowBits.push(`<span>${statLine.join(' · ') || 'No metrics yet'}</span>`);
+    if (source) {
+        eyebrowBits.push(`<span class="cv-ebadge">${escapeHtml(source)}</span>`);
+        eyebrowBits.push(`<span class="cv-dot"></span>`);
+    }
+    eyebrowBits.push(`<span>${escapeHtml(timeAgo)}</span>`);
 
     // Aside detail rows (rendered as a sleek key-value list on the right)
+    // Source lives in the eyebrow badge, Collection in the hero <select> — kept out
+    // of here so each fact appears exactly once.
     const detailRows = [
-        { k: 'Model',      v: aiModel,                  ic: 'cpu' },
-        { k: 'Source',     v: source || '—',            ic: 'globe' },
-        { k: 'Turns',      v: turnCount || '—',         ic: 'msg'  },
-        { k: 'Words',      v: wordCount ? wordCount.toLocaleString() : '—', ic: 'type' },
-        { k: 'Tags',       v: tagCount || '—',          ic: 'tag'  },
-        { k: 'Collection', v: currentColl ? currentColl.name : '—', ic: 'folder' },
-        { k: 'Created',    v: date,                     ic: 'cal'  },
-        { k: 'Updated',    v: timeAgo,                  ic: 'clk'  },
+        { k: 'Model',   v: aiModel,                  ic: 'cpu'  },
+        { k: 'Turns',   v: turnCount || '—',         ic: 'msg'  },
+        { k: 'Words',   v: wordCount ? wordCount.toLocaleString() : '—', ic: 'type' },
+        { k: 'Tags',    v: tagCount || '—',          ic: 'tag'  },
+        { k: 'Created', v: date,                     ic: 'cal'  },
+        { k: 'Updated', v: timeAgo,                  ic: 'clk'  },
     ];
     const asideIc = {
         cpu:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
-        globe:  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
         msg:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
         type:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
         tag:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
-        folder: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
         cal:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
         clk:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
     };
@@ -1979,8 +2181,11 @@ function renderDetail(ctx) {
                     ${starred ? icon.pin : icon.pinO}
                 </button>
                 <button class="cv-ibtn" onclick="openEditModal()" title="Edit" aria-label="Edit context">${icon.edit}</button>
+                <button class="cv-ibtn" id="cv-btn-resummarize"${ctx.status === 'summarizing' ? ' disabled' : ''}
+                        onclick="resummarizeContext()"
+                        title="Re-summarize with current model" aria-label="Re-summarize context with current model">${icon.redo}</button>
                 <div style="position:relative;">
-                    <button class="cv-ibtn" onclick="cvToggleExportMenu(event)" title="Export" aria-label="Export context" aria-haspopup="menu">${icon.export}</button>
+                    <button class="cv-ibtn" id="cv-export-trigger" onclick="cvToggleExportMenu(event)" title="Export" aria-label="Export context" aria-haspopup="menu" aria-expanded="false">${icon.export}</button>
                     <div class="cv-export-menu" id="cv-export-menu" role="menu">
                         <button class="cv-export-opt" role="menuitem" onclick="exportContext('markdown'); cvCloseExportMenu();">Markdown (.md)</button>
                         <button class="cv-export-opt" role="menuitem" onclick="exportContext('json'); cvCloseExportMenu();">Copy as JSON</button>
@@ -2010,61 +2215,23 @@ function renderDetail(ctx) {
             ${statusInfo ? `<div class="cv-dstatus${ctx.status === 'failed' ? ' err' : ''}">${statusInfo}</div>` : ''}
         </section>
 
-        <!-- ⚡ Continuation prompt — hero action -->
-        <section class="cv-action" id="cv-action-card">
-            <div class="cv-action-head">
-                <span class="cv-action-ic">${icon.bolt}</span>
-                <div>
-                    <h2 class="cv-action-title">Continuation prompt</h2>
-                    <p class="cv-action-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
-                </div>
-            </div>
-            <div class="cv-action-row">
-                <input type="text" id="retrieval-query" class="cv-action-input"
-                       placeholder="Focus the prompt on… (optional — e.g. 'auth flow', 'the migration plan')" />
-                <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
-                    ${icon.bolt}<span>Generate</span>
-                </button>
-            </div>
-            <div class="cv-action-foot">
-                <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
-                    <button class="prompt-size-btn" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
-                    <button class="prompt-size-btn on" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
-                    <button class="prompt-size-btn" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
-                </div>
-                <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
-                <span class="cv-action-kbd" aria-hidden="true"><kbd>⌘</kbd><kbd>↵</kbd></span>
-            </div>
-            <div class="cv-prompt-out" id="prompt-section" role="region" aria-labelledby="prompt-section-heading" style="display:none;">
-                <div class="cv-prompt-out-head">
-                    <h3 id="prompt-section-heading">Generated prompt</h3>
-                    <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
-                    <div class="cv-prompt-out-acts">
-                        <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                            <span>Copy</span>
-                        </button>
-                        <button class="cv-prompt-close" id="close-prompt-btn" type="button" aria-label="Close">×</button>
-                    </div>
-                </div>
-                <pre class="prompt-display" id="prompt-display" tabindex="0"></pre>
-            </div>
-        </section>
-
         <!-- Body: 2-column layout — main content + sleek sticky aside -->
         <section class="cv-dlayout">
           <div class="cv-dmain">
 
             ${importantNotes.length ? `
-            <div class="cv-block cv-block-pinned">
-                <div class="cv-block-head">
+            <div class="cv-block cv-block-pinned cv-collapse${_pinnedOpen() ? ' open' : ''}" id="pinnedBlock">
+                <button class="cv-block-head cv-collapse-head" onclick="cvTogglePinned(this)">
                     <span class="cv-block-ic cv-ic-volt">${icon.pinIc}</span>
                     <h3>Pinned notes</h3>
                     <span class="cv-count">${importantNotes.length}</span>
+                    <span class="cv-collapse-chev">${icon.chev}</span>
+                </button>
+                <div class="cv-collapse-body"><div class="cv-collapse-inner">
+                <div class="cv-pinned">
+                    ${importantNotes.map(n => `<div class="cv-note">${_askSimpleMarkdown(String(n))}</div>`).join('')}
                 </div>
-                <ul class="cv-notes">
-                    ${importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
-                </ul>
+                </div></div>
             </div>` : ''}
 
             ${(keyIdeas.length || conclusions.length || unresolved.length) ? `
@@ -2087,24 +2254,78 @@ function renderDetail(ctx) {
                     </div>
                     <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
                 </div>` : ''}
-                ${unresolved.length ? `
-                <div class="cv-block">
+                <div class="cv-block cv-block-open">
                     <div class="cv-block-head">
                         <span class="cv-block-ic cv-ic-open">${icon.open}</span>
                         <h3>Open questions</h3>
-                        <span class="cv-count">${unresolved.length}</span>
+                        ${unresolved.length ? `<span class="cv-count">${unresolved.length}</span>` : ''}
                     </div>
-                    <ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
-                </div>` : ''}
+                    ${unresolved.length
+                        ? `<ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>`
+                        : `<p class="cv-block-empty">No open questions</p>`}
+                </div>
             </div>` : ''}
 
+            ${(!keyIdeas.length && !conclusions.length && !unresolved.length && ctx.status !== 'summarizing' && ctx.status !== 'failed') ? `
+            <div class="cv-block cv-empty-insights">
+                <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
+                <div class="cv-empty-insights-text">
+                    <h3>No structured insights</h3>
+                    <p>No AI summary was extracted for this context. You can still generate a continuation prompt or read the original conversation below.</p>
+                </div>
+                <button class="cv-empty-insights-btn" onclick="retrySummarize()">Re-run summary</button>
+            </div>` : ''}
+
+            <!-- ⚡ Continuation prompt — primary action, placed below the read content -->
+            <section class="cv-action" id="cv-action-card">
+                <div class="cv-action-head">
+                    <span class="cv-action-ic">${icon.bolt}</span>
+                    <div>
+                        <h2 class="cv-action-title">Continuation prompt</h2>
+                        <p class="cv-action-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
+                    </div>
+                </div>
+                <div class="cv-action-row">
+                    <input type="text" id="retrieval-query" class="cv-action-input"
+                           placeholder="Focus the prompt on… (optional — e.g. 'auth flow', 'the migration plan')" />
+                    <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
+                        ${icon.bolt}<span>Generate</span>
+                    </button>
+                </div>
+                <div class="cv-action-foot">
+                    <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
+                        <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
+                        <button class="prompt-size-btn on" role="tab" aria-selected="true" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
+                        <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
+                    </div>
+                    <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
+                    <span class="cv-action-kbd" aria-hidden="true"><kbd>⌘</kbd><kbd>↵</kbd></span>
+                </div>
+                <div class="cv-prompt-out" id="prompt-section" role="region" aria-labelledby="prompt-section-heading" style="display:none;">
+                    <div class="cv-prompt-out-head">
+                        <h3 id="prompt-section-heading">Generated prompt</h3>
+                        <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
+                        <div class="cv-prompt-out-acts">
+                            <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                <span>Copy</span>
+                            </button>
+                            <button class="cv-prompt-close" id="close-prompt-btn" type="button" aria-label="Close">×</button>
+                        </div>
+                    </div>
+                    <pre class="prompt-display" id="prompt-display" tabindex="0"></pre>
+                </div>
+            </section>
+
             ${_currentSnippets.length ? `
-            <div class="cv-block">
-                <div class="cv-block-head">
+            <div class="cv-block cv-collapse open">
+                <button class="cv-block-head cv-collapse-head" onclick="cvToggleBlock(this)">
                     <span class="cv-block-ic">${icon.code}</span>
                     <h3>Code snippets</h3>
                     <span class="cv-count">${_currentSnippets.length}</span>
-                </div>
+                    <span class="cv-collapse-chev">${icon.chev}</span>
+                </button>
+                <div class="cv-collapse-body"><div class="cv-collapse-inner">
                 <div class="cv-snips">
                     ${_currentSnippets.map((s, i) => `
                     <div class="cv-snip">
@@ -2116,30 +2337,21 @@ function renderDetail(ctx) {
                         <pre class="cv-snip-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
                     </div>`).join('')}
                 </div>
+                </div></div>
             </div>` : ''}
 
             <!-- Original conversation (collapsible) -->
             <div class="cv-block cv-collapse" id="origConv">
-                <button class="cv-block-head cv-collapse-head" onclick="this.parentElement.classList.toggle('open')">
+                <button class="cv-block-head cv-collapse-head" onclick="cvToggleBlock(this)">
                     <span class="cv-block-ic">${icon.chat}</span>
                     <h3>Original conversation</h3>
                     <span class="cv-count">${turnCount || '—'} turns</span>
                     <span class="cv-collapse-chev">${icon.chev}</span>
                 </button>
+                <div class="cv-collapse-body"><div class="cv-collapse-inner">
                 <div class="cv-chat" id="original-chat-box">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
+                </div></div>
             </div>
-
-            <!-- Diagnostics: indexed chunks (collapsed, dev-facing) -->
-            <details class="cv-diag" id="chunksBlock">
-                <summary class="cv-diag-sum">
-                    <span class="cv-diag-ic">${icon.chunks}</span>
-                    <span class="cv-diag-label">Diagnostics · indexed chunks</span>
-                    <span class="cv-diag-hint" id="chunks-count-badge">view retrieval index</span>
-                </summary>
-                <div class="cv-diag-body">
-                    <div id="chunks-viewer-content" class="cv-chunks"></div>
-                </div>
-            </details>
 
           </div>
 
@@ -2186,16 +2398,6 @@ function renderDetail(ctx) {
         if (s) s.style.display = 'none';
     });
 
-    // Open chunks viewer when the <details> is toggled open (replaces old onclick)
-    const diag = document.getElementById('chunksBlock');
-    if (diag) {
-        diag.addEventListener('toggle', () => {
-            if (diag.open && !_chunksLoaded) {
-                toggleChunkViewer(ctx.id);
-            }
-        });
-    }
-
     // Segmented size control — toggle .on class + update live hint
     const hintEl = document.getElementById('cv-action-hint');
     document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(btn => {
@@ -2203,9 +2405,11 @@ function renderDetail(ctx) {
             document.querySelectorAll('#cv-size-seg .prompt-size-btn').forEach(b => {
                 b.classList.remove('on');
                 b.classList.remove('active');
+                b.setAttribute('aria-selected', 'false');
             });
             btn.classList.add('on');
             btn.classList.add('active');
+            btn.setAttribute('aria-selected', 'true');
             if (hintEl && btn.dataset.hint) hintEl.textContent = btn.dataset.hint;
         });
     });
@@ -2223,6 +2427,7 @@ function renderDetail(ctx) {
     }
 
     _initInsightExpand();
+    _bindInsightResize();
     $('#prompt-section').style.display = 'none';
 }
 
@@ -2231,6 +2436,14 @@ function _initInsightExpand() {
         document.querySelectorAll('.cv-insights .cv-block').forEach(block => {
             const list = block.querySelector('.cv-list');
             if (!list) return;
+            // Reset prior state so this is safe to re-run (e.g. after a resize
+            // flips the insights grid between 1/2/3 columns).
+            block.classList.remove('cv-expanded');
+            block.style.maxHeight = '';
+            list.classList.remove('cv-list--full');
+            const oldBtn = block.querySelector('.cv-expand-btn');
+            if (oldBtn) oldBtn.remove();
+
             const overflows = list.scrollHeight > list.clientHeight + 4;
             if (!overflows) {
                 list.classList.add('cv-list--full');
@@ -2241,11 +2454,93 @@ function _initInsightExpand() {
             btn.className = 'cv-expand-btn';
             btn.textContent = `Show all ${total}`;
             btn.onclick = () => {
-                const expanded = block.classList.toggle('cv-expanded');
-                btn.textContent = expanded ? 'Show less' : `Show all ${total}`;
+                // Open the full list in a popup so the card stays fixed/even and
+                // the page layout never distorts.
+                const title = block.querySelector('.cv-block-head h3')?.textContent || 'Details';
+                const iconHtml = block.querySelector('.cv-block-ic')?.outerHTML || '';
+                const itemsHtml = Array.from(list.querySelectorAll('li')).map(li => li.outerHTML).join('');
+                _openInsightModal(title, itemsHtml, block, iconHtml);
             };
             block.appendChild(btn);
         });
+    });
+}
+
+// "Show all" popup for an insights section — full list, scrolls inside the
+// modal so the underlying card and grid stay put.
+function _openInsightModal(title, itemsHtml, originEl, iconHtml = '') {
+    document.getElementById('cv-insight-modal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'cv-insight-modal';
+    const count = (itemsHtml.match(/<li/g) || []).length;
+    overlay.innerHTML = `
+        <div class="modal cv-insight-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+            <div class="cv-insight-modal-head cv-block-head">
+                ${iconHtml}
+                <h3>${escapeHtml(title)}</h3>
+                ${count ? `<span class="cv-count">${count}</span>` : ''}
+                <button class="cv-insight-modal-close" type="button" aria-label="Close">×</button>
+            </div>
+            <ul class="cv-list cv-insight-modal-list">${itemsHtml}</ul>
+        </div>`;
+    document.body.appendChild(overlay);
+    const modal = overlay.querySelector('.modal');
+
+    // Expand-from-card: grow the modal out of the clicked section's position/size,
+    // and collapse back into it on close. Falls back to the CSS spring if WAAPI
+    // or an origin element isn't available.
+    let dx = 0, dy = 0, s = 0.85;
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const animate = originEl && typeof modal.animate === 'function' && !reduceMotion;
+    if (animate) {
+        overlay.style.animation = 'none';
+        modal.style.animation = 'none';
+        const o = originEl.getBoundingClientRect();
+        const m = modal.getBoundingClientRect();
+        dx = (o.left + o.width / 2) - (m.left + m.width / 2);
+        dy = (o.top + o.height / 2) - (m.top + m.height / 2);
+        s = Math.min(1, Math.max(0.3, o.width / m.width));
+        overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out', fill: 'both' });
+        modal.animate([
+            { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0 },
+            { transform: 'translate(0, 0) scale(1)', opacity: 1 }
+        ], { duration: 340, easing: 'cubic-bezier(0.2, 0.85, 0.25, 1)', fill: 'both' });
+    }
+
+    let closing = false;
+    const close = () => {
+        if (closing) return;
+        closing = true;
+        if (animate) {
+            overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-in', fill: 'forwards' });
+            const a = modal.animate([
+                { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+                { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0 }
+            ], { duration: 240, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+            a.onfinish = a.oncancel = () => overlay.remove();
+        } else {
+            overlay.remove();
+        }
+    };
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.cv-insight-modal-close').addEventListener('click', close);
+    document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+}
+
+// The insights grid changes column count at breakpoints, so the clamp/overflow
+// decision has to be re-measured on resize. Bound once, debounced.
+let _insightResizeBound = false;
+function _bindInsightResize() {
+    if (_insightResizeBound) return;
+    _insightResizeBound = true;
+    let t;
+    window.addEventListener('resize', () => {
+        if (!document.querySelector('.cv-insights')) return;
+        clearTimeout(t);
+        t = setTimeout(_initInsightExpand, 150);
     });
 }
 
@@ -2253,18 +2548,65 @@ function _initInsightExpand() {
 function cvToggleExportMenu(e) {
     if (e) e.stopPropagation();
     const menu = document.getElementById('cv-export-menu');
+    const trigger = document.getElementById('cv-export-trigger');
     if (!menu) return;
-    menu.classList.toggle('open');
+    const open = menu.classList.toggle('open');
+    if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // Move focus into the menu so keyboard users can arrow through the options.
+    if (open) { const first = menu.querySelector('.cv-export-opt'); if (first) first.focus(); }
 }
-function cvCloseExportMenu() {
+function cvCloseExportMenu(refocus) {
     const menu = document.getElementById('cv-export-menu');
+    const trigger = document.getElementById('cv-export-trigger');
     if (menu) menu.classList.remove('open');
+    if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+        if (refocus) trigger.focus();
+    }
 }
 window.cvToggleExportMenu = cvToggleExportMenu;
 window.cvCloseExportMenu  = cvCloseExportMenu;
+
+// ─── Pinned notes collapse (detail page) ─────────────────────────
+// Persisted so the choice sticks across re-renders / contexts. Defaults collapsed.
+function _pinnedOpen() {
+    try { return localStorage.getItem('cv-pinned-open') === '1'; } catch (e) { return false; }
+}
+function cvTogglePinned(btn) {
+    const block = btn.closest('.cv-collapse');
+    if (!block) return;
+    const open = block.classList.toggle('open');
+    try { localStorage.setItem('cv-pinned-open', open ? '1' : '0'); } catch (e) {}
+}
+window.cvTogglePinned = cvTogglePinned;
+
+// Generic collapse toggle for grid-rows sections (code snippets, original chat).
+window.cvToggleBlock = function(btn) {
+    const block = btn.closest('.cv-collapse');
+    if (block) block.classList.toggle('open');
+};
 document.addEventListener('click', (e) => {
     if (!e.target.closest('#cv-export-menu') && !e.target.closest('[onclick*="cvToggleExportMenu"]')) {
         cvCloseExportMenu();
+    }
+});
+// Keyboard nav for the open export menu: Esc closes (refocusing the trigger),
+// Arrow Up/Down cycle through the options.
+document.addEventListener('keydown', (e) => {
+    const menu = document.getElementById('cv-export-menu');
+    if (!menu || !menu.classList.contains('open')) return;
+    const opts = [...menu.querySelectorAll('.cv-export-opt')];
+    if (!opts.length) return;
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        cvCloseExportMenu(true);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const i = opts.indexOf(document.activeElement);
+        const next = e.key === 'ArrowDown'
+            ? (i + 1) % opts.length
+            : (i - 1 + opts.length) % opts.length;
+        opts[next].focus();
     }
 });
 
@@ -2516,8 +2858,9 @@ function openEditModal() {
     $('#edit-topic').value = summary.main_topic || '';
     $('#edit-notes').value = (ctx.important_notes || []).join('\n');
     $('#edit-modal').style.display = 'flex';
-    
-    trapFocus($('#edit-modal').querySelector('.modal'), $('#edit-btn'));
+
+    // Return focus to whatever opened the modal (the rail's edit button).
+    trapFocus($('#edit-modal').querySelector('.modal'), document.activeElement);
 }
 
 function closeEditModal() {
@@ -2650,31 +2993,8 @@ function _performDeleteCurrentContext(ctx) {
 }
 
 // â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function toggleExportMenu() {
-    const menu = $('#export-menu');
-    const btn = $('#export-btn');
-    const isOpen = menu.classList.toggle('open');
-    if (isOpen) {
-        menu.removeAttribute('hidden');
-        btn.setAttribute('aria-expanded', 'true');
-    } else {
-        menu.setAttribute('hidden', '');
-        btn.setAttribute('aria-expanded', 'false');
-    }
-}
-
-function closeExportMenu() {
-    const menu = $('#export-menu');
-    const btn = $('#export-btn');
-    if (menu) {
-        menu.classList.remove('open');
-        menu.setAttribute('hidden', '');
-    }
-    if (btn) btn.setAttribute('aria-expanded', 'false');
-}
-
 async function exportContext(format) {
-    closeExportMenu();
+    cvCloseExportMenu();
     const ctx = state.currentContext;
     if (!ctx) return;
 
@@ -2822,7 +3142,6 @@ function showPrompt({ title, message, defaultValue = '', placeholder = '', confi
 }
 
 function showToast(message, type = 'success') {
-    console.log('%c[TOAST]', 'background:#facc15;color:#000;padding:2px 6px;border-radius:3px;font-weight:bold', type, message);
     let stack = document.getElementById('toast-stack');
     if (!stack) {
         // Fallback: create the stack on the fly if it was somehow removed
@@ -4632,6 +4951,91 @@ state.askStreaming = false; // true while streaming response
 state.askSessionId = null;  // current persisted session id (null = new chat)
 state.askSessions = [];     // cached list of {id, title, pinned, message_count, updated_at}
 state.askSessionFilter = ''; // filter typed in the past-chats search
+state.askScopeCollectionId = null; // null = whole vault; else a collection id (#10)
+
+// Build the custom Ask scope dropdown from the loaded collections + refresh label.
+function _askPopulateScopeSelect() {
+    const menu = document.getElementById('ask-scope-menu');
+    const label = document.getElementById('ask-scope-label');
+    if (!menu) return;
+    const cols = Array.isArray(state.collections) ? state.collections : [];
+    // Drop the selection if that collection no longer exists.
+    if (state.askScopeCollectionId != null && !cols.some(c => c.id === state.askScopeCollectionId)) {
+        state.askScopeCollectionId = null;
+    }
+    const check = '<svg class="cv-ask-scope-opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+    const opt = (val, name, count) => {
+        const selected = (val === '') ? state.askScopeCollectionId == null : state.askScopeCollectionId === Number(val);
+        return `<button type="button" class="cv-ask-scope-opt" role="option" data-val="${val}" aria-selected="${selected}">
+            <span class="cv-ask-scope-opt-name">${escapeHtml(name)}</span>
+            ${count != null ? `<span class="cv-ask-scope-opt-count">${count}</span>` : ''}
+            ${check}
+        </button>`;
+    };
+    let html = opt('', 'All contexts', null);
+    for (const c of cols) html += opt(String(c.id), c.name, c.count ?? 0);
+    menu.innerHTML = html;
+    if (label) {
+        const cur = state.askScopeCollectionId != null ? cols.find(c => c.id === state.askScopeCollectionId) : null;
+        label.textContent = cur ? cur.name : 'All contexts';
+    }
+}
+
+// Custom scope dropdown: open/close (position:fixed so the pill can't clip it),
+// click-outside / Escape to dismiss, selection drives state.askScopeCollectionId.
+function _initAskScopeDropdown() {
+    const dd = document.getElementById('ask-scope-dd');
+    const btn = document.getElementById('ask-scope-btn');
+    const menu = document.getElementById('ask-scope-menu');
+    if (!dd || !btn || !menu || dd._cvBound) return;
+    dd._cvBound = true;
+
+    const onOutside = (e) => { if (!dd.contains(e.target) && !menu.contains(e.target)) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
+    function close() {
+        if (menu.hidden) return;
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('mousedown', onOutside, true);
+        document.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('resize', close);
+    }
+    function open() {
+        _askPopulateScopeSelect();
+        // Portal to <body>: the composer pill has backdrop-filter, which makes
+        // position:fixed children clip to the pill's overflow. In <body> the
+        // menu is truly viewport-positioned and unclipped.
+        if (menu.parentElement !== document.body) document.body.appendChild(menu);
+        menu.hidden = false;
+        menu.style.visibility = 'hidden';
+        const r = btn.getBoundingClientRect();
+        const mh = menu.offsetHeight, mw = menu.offsetWidth;
+        let top = r.top - mh - 8;                 // prefer above (composer sits low)
+        if (top < 12) top = r.bottom + 8;         // flip below if no room
+        let left = r.right - mw;                  // right-align to the trigger
+        if (left < 12) left = 12;
+        menu.style.top = `${top}px`;
+        menu.style.left = `${left}px`;
+        menu.style.visibility = '';
+        btn.setAttribute('aria-expanded', 'true');
+        document.addEventListener('mousedown', onOutside, true);
+        document.addEventListener('keydown', onKey, true);
+        window.addEventListener('resize', close);
+    }
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        btn.getAttribute('aria-expanded') === 'true' ? close() : open();
+    });
+    menu.addEventListener('click', (e) => {
+        const opt = e.target.closest('.cv-ask-scope-opt');
+        if (!opt) return;
+        const v = opt.getAttribute('data-val');
+        state.askScopeCollectionId = v ? Number(v) : null;
+        _askPopulateScopeSelect();
+        close();
+    });
+}
 
 function _initAskVault() {
     const input = $('#ask-input');
@@ -4639,9 +5043,61 @@ function _initAskVault() {
     const clearBtn = $('#ask-clear-btn');
     if (!input || !sendBtn) return;
 
+    // Search-scope selector (#10): null = whole vault, else restrict to a collection.
+    _initAskScopeDropdown();
+    _askPopulateScopeSelect();
+
+    // Auto-grow the multiline composer (Enter sends, Shift+Enter inserts a newline).
+    const _askAutoGrow = () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+    };
+
+    // Welcome layout: keep the composer inline (in the hero flow) while the
+    // empty state is showing, and pin it to the bottom of the shell once a chat
+    // is active. The empty state toggles via #ask-empty's display, so we watch
+    // that and relocate the single composer element accordingly.
+    (function _askComposerPlacement() {
+        const bar = document.getElementById('ask-input-bar');
+        const empty = document.getElementById('ask-empty');
+        if (!bar || !empty) return;
+        const shell = bar.closest('.cv-ask-shell');
+        const scroll = shell ? shell.querySelector('.cv-ask-scroll') : null;
+        const place = () => {
+            const slot = document.getElementById('ask-composer-slot');
+            const isEmpty = empty.style.display !== 'none';
+            if (isEmpty && slot) {
+                if (bar.parentElement !== slot) slot.appendChild(bar);
+                bar.classList.add('cv-ask-composer-inline');
+            } else if (shell) {
+                if (bar.parentElement !== shell) shell.appendChild(bar);
+                bar.classList.remove('cv-ask-composer-inline');
+            }
+            // The sticky composer reserves 140px at the bottom of the scroll;
+            // in the welcome state the composer is inline, so drop that reserve.
+            if (scroll) scroll.classList.toggle('cv-ask-scroll-welcome', isEmpty);
+        };
+        if (!window._askComposerObs) {
+            window._askComposerObs = new MutationObserver(place);
+            window._askComposerObs.observe(empty, { attributes: true, attributeFilter: ['style'] });
+        }
+        place();
+    })();
+
+    // Composer hint: surface how many contexts are indexed.
+    const idxEl = document.getElementById('cv-ask-indexed');
+    if (idxEl) {
+        const cntEl = document.getElementById('stat-contexts-val');
+        const n = cntEl ? parseInt(cntEl.textContent.trim(), 10) : NaN;
+        idxEl.textContent = (Number.isFinite(n) && n > 0)
+            ? `${n} contexts indexed · Grounded in your vault`
+            : 'Grounded in your vault';
+    }
+
     // Enable/disable send
     input.addEventListener('input', () => {
         sendBtn.disabled = !input.value.trim() || state.askStreaming;
+        _askAutoGrow();
     });
 
     // Enter to send
@@ -4656,8 +5112,22 @@ function _initAskVault() {
     sendBtn.addEventListener('click', () => {
         if (input.value.trim() && !state.askStreaming) {
             askVault(input.value.trim());
+            input.focus(); // keep the cursor in the box for quick follow-ups
         }
     });
+
+    // "/" focuses the composer from anywhere in the Ask view (like Slack/Linear).
+    if (!window._askSlashBound) {
+        window._askSlashBound = true;
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+            if (state.view !== 'ask') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const ai = document.getElementById('ask-input');
+            if (ai) { e.preventDefault(); ai.focus(); }
+        });
+    }
 
     // Clear chat
     if (clearBtn) {
@@ -4832,7 +5302,7 @@ function _askResetChat() {
     if (container) container.querySelectorAll('.ask-msg, .ask-thinking').forEach(el => el.remove());
     if (empty) empty.style.display = '';
     if (clearBtn) clearBtn.style.display = 'none';
-    if (input) input.value = '';
+    if (input) { input.value = ''; input.style.height = ''; }
     _askScrollToBottom();
     _askUpdateRailSession();
     _askRenderSessionList();
@@ -5010,7 +5480,7 @@ function _askRenderHistoricalAssistantMsg(text, citations) {
     const safeText = String(text || '');
     let html;
     try {
-        html = _askSimpleMarkdown(safeText);
+        html = _askLinkifyCitations(_askSimpleMarkdown(safeText), citations);
     } catch (err) {
         console.warn('Markdown render failed, falling back to plain text', err);
         html = `<p>${escapeHtml(safeText).replace(/\n/g, '<br>')}</p>`;
@@ -5155,6 +5625,22 @@ function _askScrollToBottom() {
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
 }
 
+// Inner markup of a user bubble — extracted so cancel-edit can rebuild it.
+function _askUserMsgBodyHtml(text) {
+    return `
+        <div class="ask-msg-content">${escapeHtml(text)}</div>
+        <div class="ask-msg-actions">
+            <button class="ask-msg-action-btn" title="Edit this message" onclick="window._askEditMsg(this)">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-9 9H2v-3L11 2z"/></svg>
+                Edit
+            </button>
+            <button class="ask-msg-action-btn" title="Retry this message" onclick="window._askRetryMsg(this)">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v5h5"/><path d="M1.5 9A7 7 0 1 0 4 3.5"/></svg>
+                Retry
+            </button>
+        </div>`;
+}
+
 function _askRenderUserMsg(text) {
     const container = $('#ask-messages');
     const empty = $('#ask-empty');
@@ -5164,19 +5650,7 @@ function _askRenderUserMsg(text) {
     div.className = 'ask-msg ask-msg-user';
     div.innerHTML = `
         <div class="ask-msg-avatar">U</div>
-        <div class="ask-msg-body">
-            <div class="ask-msg-content">${escapeHtml(text)}</div>
-            <div class="ask-msg-actions">
-                <button class="ask-msg-action-btn" title="Edit this message" onclick="window._askEditMsg(this)">
-                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-9 9H2v-3L11 2z"/></svg>
-                    Edit
-                </button>
-                <button class="ask-msg-action-btn" title="Retry this message" onclick="window._askRetryMsg(this)">
-                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v5h5"/><path d="M1.5 9A7 7 0 1 0 4 3.5"/></svg>
-                    Retry
-                </button>
-            </div>
-        </div>
+        <div class="ask-msg-body">${_askUserMsgBodyHtml(text)}</div>
     `;
     container.appendChild(div);
     _askScrollToBottom();
@@ -5184,7 +5658,7 @@ function _askRenderUserMsg(text) {
 
 // Shared helper: truncate history + remove DOM messages from a user bubble onward.
 // Returns the question text, or null if already streaming.
-function _askTruncateFromMsg(btn) {
+function _askTruncateFromMsg(btn, keepChatView = false) {
     if (state.askStreaming) return null;
     const msgEl = btn.closest('.ask-msg-user');
     if (!msgEl) return null;
@@ -5211,27 +5685,76 @@ function _askTruncateFromMsg(btn) {
     state.askSessionId = null;
     _askUpdateRailSession();
 
-    // Show empty state if no messages remain.
+    // Show empty/welcome state if no messages remain — unless the caller wants
+    // to stay in the chat view (e.g. editing, where we load the text into the
+    // composer rather than bouncing the user back to the welcome screen).
     const remaining = container.querySelectorAll('.ask-msg');
     const empty = $('#ask-empty');
-    if (remaining.length === 0 && empty) empty.style.display = '';
+    if (!keepChatView && remaining.length === 0 && empty) empty.style.display = '';
 
     return text;
 }
 
+// Inline editing — the bubble turns into an editable box (Claude/ChatGPT style).
 window._askEditMsg = function(btn) {
-    const text = _askTruncateFromMsg(btn);
-    if (text === null) return;
+    if (state.askStreaming) return;
+    const msgEl = btn.closest('.ask-msg-user');
+    if (!msgEl) return;
+    const body = msgEl.querySelector('.ask-msg-body');
+    const contentEl = msgEl.querySelector('.ask-msg-content');
+    if (!body || !contentEl) return; // already editing (no content node)
 
-    const input = $('#ask-input');
-    const sendBtn = $('#ask-send-btn');
-    if (input) {
-        input.value = text;
-        input.classList.add('editing');
-        input.focus();
-        input.addEventListener('input', () => input.classList.remove('editing'), { once: true });
-        if (sendBtn) sendBtn.disabled = !text.trim();
-    }
+    const original = contentEl.textContent;
+    msgEl.classList.add('editing');
+    body.innerHTML = `
+        <div class="ask-msg-edit">
+            <textarea class="ask-msg-edit-input" spellcheck="false" rows="1"></textarea>
+            <div class="ask-msg-edit-actions">
+                <button type="button" class="ask-msg-edit-btn ask-msg-edit-cancel" onclick="window._askCancelEdit(this)">Cancel</button>
+                <button type="button" class="ask-msg-edit-btn ask-msg-edit-save" onclick="window._askSaveEdit(this)">Save &amp; submit</button>
+            </div>
+        </div>`;
+    const ta = body.querySelector('.ask-msg-edit-input');
+    ta.value = original;
+    ta._cvOriginal = original;
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 260) + 'px'; };
+    ta.addEventListener('input', grow);
+    ta.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window._askSaveEdit(ta); }
+        else if (e.key === 'Escape') { e.preventDefault(); window._askCancelEdit(ta); }
+    });
+    grow();
+    ta.focus();
+    try { ta.setSelectionRange(original.length, original.length); } catch (e) {}
+    msgEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+};
+
+// Restore the bubble to its original (non-editing) display.
+window._askCancelEdit = function(el) {
+    const msgEl = el.closest('.ask-msg-user');
+    if (!msgEl) return;
+    const body = msgEl.querySelector('.ask-msg-body');
+    const ta = msgEl.querySelector('.ask-msg-edit-input');
+    const original = ta ? (ta._cvOriginal || '') : '';
+    msgEl.classList.remove('editing');
+    if (body) body.innerHTML = _askUserMsgBodyHtml(original);
+};
+
+// Save the edit: truncate this turn onward, then resend the edited text.
+window._askSaveEdit = function(el) {
+    if (state.askStreaming) return;
+    const msgEl = el.closest('.ask-msg-user');
+    if (!msgEl) return;
+    const ta = msgEl.querySelector('.ask-msg-edit-input');
+    if (!ta) return;
+    const newText = ta.value.trim();
+    const original = (ta._cvOriginal || '').trim();
+    if (!newText) return;                                  // empty → ignore
+    if (newText === original) { window._askCancelEdit(el); return; } // unchanged → just close
+    // Truncate this user turn + everything after (el sits inside .ask-msg-user),
+    // then send the edited text so a fresh answer streams in.
+    _askTruncateFromMsg(el, true);
+    askVault(newText);
 };
 
 window._askRetryMsg = function(btn) {
@@ -5280,13 +5803,50 @@ function _askSimpleMarkdown(text) {
     html = html.replace(/^[-â€¢*]\s+(.+)$/gm, '<li>$1</li>');
     html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
 
-    // Wrap consecutive <li> lines into <ul> — done by line-walk, not regex,
-    // so it can't backtrack catastrophically on long output.
+    // Tables + lists — single line-walk (no catastrophic regex backtracking).
     {
         const lines = html.split('\n');
         const out = [];
         let inList = false;
-        for (const line of lines) {
+
+        const splitRow = (s) => {
+            let t = s.trim();
+            if (t.startsWith('|')) t = t.slice(1);
+            if (t.endsWith('|'))   t = t.slice(0, -1);
+            return t.split('|').map(c => c.trim());
+        };
+        const isRow = (s) => s.includes('|') && s.trim() !== '';
+        // A GFM separator row: every pipe-cell is dashes (with optional :align:)
+        const isSep = (s) => {
+            if (!s.includes('|')) return false;
+            const cells = splitRow(s);
+            return cells.length >= 1 && cells.every(c => /^:?-{2,}:?$/.test(c.replace(/\s+/g, '')));
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // GFM table: header row, then |---|---| separator, then 0+ body rows
+            if (isRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {
+                if (inList) { out.push('</ul>'); inList = false; }
+                const headers = splitRow(line);
+                i += 1; // consume the separator row
+                const rows = [];
+                while (i + 1 < lines.length && isRow(lines[i + 1]) && !isSep(lines[i + 1])) {
+                    rows.push(splitRow(lines[i + 1]));
+                    i += 1;
+                }
+                let tbl = '<table class="cv-md-table"><thead><tr>';
+                tbl += headers.map(h => `<th>${h}</th>`).join('');
+                tbl += '</tr></thead><tbody>';
+                for (const r of rows) {
+                    tbl += '<tr>' + headers.map((_, c) => `<td>${r[c] || ''}</td>`).join('') + '</tr>';
+                }
+                tbl += '</tbody></table>';
+                out.push(tbl);
+                continue;
+            }
+
             const isLi = line.startsWith('<li>') && line.endsWith('</li>');
             if (isLi && !inList) { out.push('<ul>'); inList = true; }
             else if (!isLi && inList) { out.push('</ul>'); inList = false; }
@@ -5307,6 +5867,10 @@ function _askSimpleMarkdown(text) {
     html = html.replace(/(<\/pre>)<\/p>/g, '$1');
     html = html.replace(/<p>(<ul>)/g, '$1');
     html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<table)/g, '$1');
+    html = html.replace(/(<\/table>)<\/p>/g, '$1');
+    html = html.replace(/<br>(<table)/g, '$1');
+    html = html.replace(/(<\/table>)<br>/g, '$1');
 
     return html;
 }
@@ -5398,6 +5962,26 @@ function _askEscapeHtml(s) {
 }
 
 
+// Turn inline [n] markers the model emits into clickable citation links that
+// open the matching source context. `sources` carries the n → context_id map
+// (backend assigns each context block a number). Numbers without a matching
+// source are left as plain text.
+function _askLinkifyCitations(html, sources) {
+    if (!html || !Array.isArray(sources) || sources.length === 0) return html;
+    const byNum = new Map();
+    for (const s of sources) {
+        if (s && s.n != null && s.context_id != null) byNum.set(Number(s.n), s);
+    }
+    if (byNum.size === 0) return html;
+    return html.replace(/\[(\d{1,3})\]/g, (m, numStr) => {
+        const s = byNum.get(Number(numStr));
+        if (!s) return m;
+        const title = escapeHtml(String(s.title || 'source'));
+        return `<sup class="ask-cite"><a href="#" title="${title}" ` +
+               `onclick="showDetail(${Number(s.context_id)});return false;">[${Number(numStr)}]</a></sup>`;
+    });
+}
+
 function _askFinalizeMsg(sources) {
     const content = $('#ask-streaming-content');
     if (!content) return;
@@ -5406,9 +5990,9 @@ function _askFinalizeMsg(sources) {
     const cursor = content.querySelector('.ask-cursor');
     if (cursor) cursor.remove();
 
-    // Convert the accumulated raw text to markdown HTML.
+    // Convert the accumulated raw text to markdown HTML, then linkify [n] citations.
     const raw = content.getAttribute('data-raw') || content.textContent || '';
-    content.innerHTML = _askSimpleMarkdown(raw);
+    content.innerHTML = _askLinkifyCitations(_askSimpleMarkdown(raw), sources);
 
     // Drop streaming IDs now that this message is finalized.
     const msg = $('#ask-streaming-msg');
@@ -5489,7 +6073,7 @@ async function askVault(question) {
     const input = $('#ask-input');
     const sendBtn = $('#ask-send-btn');
     const clearBtn = $('#ask-clear-btn');
-    if (input) input.value = '';
+    if (input) { input.value = ''; input.style.height = ''; }
     if (sendBtn) sendBtn.disabled = true;
     if (clearBtn) clearBtn.style.display = '';
     _askSetStatus('Thinking…');
@@ -5509,6 +6093,9 @@ async function askVault(question) {
                 question,
                 history: state.askHistory.slice(-6),
                 session_id: state.askSessionId,
+                // Scope retrieval to a collection when one is selected (#10);
+                // null/undefined means search the whole vault.
+                collection_id: state.askScopeCollectionId ?? null,
             }),
         });
 
@@ -5656,17 +6243,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Search
     initSearch();
 
-    // Detail view buttons
-    $('#back-to-library').addEventListener('click', () => navigateTo('library'));
-    $('#edit-btn').addEventListener('click', openEditModal);
-    $('#export-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleExportMenu(); });
-    $$('.export-option').forEach(opt => {
-        opt.addEventListener('click', () => exportContext(opt.dataset.format));
-    });
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('#export-dropdown')) closeExportMenu();
-    });
-    $('#delete-btn').addEventListener('click', deleteCurrentContext);
+    // Detail view actions (back / edit / export / delete) are rendered inline by
+    // renderDetail() in the cv-detail rail — wired via their own onclick + the
+    // cv*ExportMenu handlers, so no static bindings are needed here.
 
     // Prompt buttons are now rendered inline by renderDetail() per context view.
     // Handlers are bound there to avoid stale node references after re-renders.
@@ -5676,6 +6255,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
     if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
     if ($('#btn-backup')) $('#btn-backup').addEventListener('click', downloadBackup);
+
+    // Status row → System / Restart popover menu (replaces the old sidebar buttons)
+    const _statusBtn = $('#status-indicator');
+    const _statusMenu = $('#cv-status-menu');
+    if (_statusBtn && _statusMenu) {
+        const onOutside = (e) => {
+            if (!_statusMenu.contains(e.target) && !_statusBtn.contains(e.target)) closeStatusMenu();
+        };
+        const onEsc = (e) => { if (e.key === 'Escape') { closeStatusMenu(); _statusBtn.focus(); } };
+        function closeStatusMenu() {
+            if (_statusMenu.hidden) return;
+            _statusMenu.hidden = true;
+            _statusBtn.setAttribute('aria-expanded', 'false');
+            document.removeEventListener('mousedown', onOutside, true);
+            document.removeEventListener('keydown', onEsc, true);
+        }
+        function openStatusMenu() {
+            _statusMenu.hidden = false;
+            _statusBtn.setAttribute('aria-expanded', 'true');
+            document.addEventListener('mousedown', onOutside, true);
+            document.addEventListener('keydown', onEsc, true);
+        }
+        const toggle = () => (_statusMenu.hidden ? openStatusMenu() : closeStatusMenu());
+        _statusBtn.addEventListener('click', toggle);
+        _statusBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        });
+        // Close after choosing an item (the item's own handler still fires).
+        _statusMenu.addEventListener('click', (e) => { if (e.target.closest('.cv-util')) closeStatusMenu(); });
+    }
 
     // System modal
     if ($('#btn-system'))       $('#btn-system').addEventListener('click', openSystemModal);
@@ -5693,27 +6302,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Collections
+    // Collections — opens the create modal (wiring lives in openCollectionCreate).
     if ($('#btn-add-collection')) {
-        $('#btn-add-collection').addEventListener('click', () => {
-            const row = $('#collection-create-row');
-            if (row.style.display === 'none' || !row.style.display) openCollectionCreate();
-            else closeCollectionCreate();
-        });
+        $('#btn-add-collection').addEventListener('click', openCollectionCreate);
     }
-    if ($('#collection-name-input')) {
-        $('#collection-name-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') submitCollectionCreate();
-            if (e.key === 'Escape') closeCollectionCreate();
-        });
-    }
-    document.querySelectorAll('.color-swatch').forEach(swatch => {
-        swatch.addEventListener('click', () => {
-            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
-            swatch.classList.add('active');
-            state.newCollectionColor = swatch.dataset.color;
-        });
-    });
 
     // Sort control (custom popover)
     const _sortRoot = $('#cv-sort');
@@ -5864,7 +6456,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => setTheme(btn.dataset.theme));
     });
 
-    // Vibe toggle (Volt / Space)
+    // Vibe toggle (Noir / Volt / Space) — Noir is the default
     const _vibeBtns = document.querySelectorAll('#vibeToggle button');
     _vibeBtns.forEach(b => b.addEventListener('click', () => {
         const v = b.dataset.vibe;
@@ -5876,21 +6468,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try { localStorage.setItem('cv-vibe', v); } catch(e) {}
     }));
     try {
-        const _savedVibe = localStorage.getItem('cv-vibe');
-        if (_savedVibe) {
-            document.documentElement.setAttribute('data-vibe', _savedVibe);
-            _vibeBtns.forEach(x => {
-                x.classList.toggle('on', x.dataset.vibe === _savedVibe);
-                x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
-            });
-        }
+        const _savedVibe = localStorage.getItem('cv-vibe') || 'noir';
+        document.documentElement.setAttribute('data-vibe', _savedVibe);
+        _vibeBtns.forEach(x => {
+            x.classList.toggle('on', x.dataset.vibe === _savedVibe);
+            x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
+        });
     } catch(e) {}
 
     // Sidebar collapse
     if ($('#sidebar-collapse-btn')) $('#sidebar-collapse-btn').addEventListener('click', toggleSidebar);
-
-    // Sticky detail header
-    _initStickyDetailHeader();
 
     // Shortcuts modal
     if ($('#btn-shortcuts')) $('#btn-shortcuts').addEventListener('click', openShortcutsModal);
@@ -6232,12 +6819,40 @@ async function retrySummarize() {
     }
 }
 
+// Re-summarize an already-completed context — e.g. after switching the LLM
+// model in Settings, so the summary is regenerated with the new model. The
+// backend reads the active model from config at call time, so no model arg
+// is needed here. Confirms first since it overwrites the existing summary.
+async function resummarizeContext() {
+    const ctx = state.currentContext;
+    if (!ctx || ctx.status === 'summarizing') return;
+
+    // Best-effort: name the model the new summary will use, for clarity.
+    let modelName = '';
+    try {
+        const r = await fetch(`${API}/api/setup/status`);
+        if (r.ok) modelName = (await r.json()).model_name || '';
+    } catch { /* fall back to a generic message */ }
+
+    const ok = await showConfirm({
+        title: 'Re-summarize this context?',
+        message: modelName
+            ? `The whole conversation will be summarized again using the current model (${modelName}). This replaces the existing summary.`
+            : 'The whole conversation will be summarized again using the current model. This replaces the existing summary.',
+        confirmLabel: 'Re-summarize',
+    });
+    if (!ok) return;
+
+    await retrySummarize();
+}
+
 // Expose to global for inline onclick handlers
 window.showDetail = showDetail;
 window.deleteFromLibrary = deleteFromLibrary;
 window.toggleOriginalChat = toggleOriginalChat;
 window.generatePrompt = generatePrompt;
 window.retrySummarize = retrySummarize;
+window.resummarizeContext = resummarizeContext;
 window.copyCodeSnippet = copyCodeSnippet;
 
 // â”€â”€â”€ Feature 1: Collapsible Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6259,10 +6874,10 @@ function toggleSidebar() {
             clear();
         };
         sidebar.addEventListener('transitionend', onEnd);
-        // Safety fallback in case transitionend doesn't fire
-        setTimeout(clear, 200);
+        // Safety fallback in case transitionend doesn't fire (exceeds the 340ms CSS transition)
+        setTimeout(clear, 440);
     } else {
-        setTimeout(clear, 180);
+        setTimeout(clear, 420);
     }
 }
 
@@ -6277,94 +6892,144 @@ function _restoreSidebarState() {
 // Run immediately
 _restoreSidebarState();
 
-// â”€â”€â”€ Feature 4: Sticky Detail Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-let _stickyObserver = null;
-
-function _initStickyDetailHeader() {
-    const mainContent = document.getElementById('main-content');
-    if (!mainContent) return;
-
-    mainContent.addEventListener('scroll', () => {
-        const stickyEl = document.getElementById('detail-sticky-header');
-        const titleRow = document.querySelector('.detail-title-row');
-        if (!stickyEl || !titleRow) return;
-
-        const titleRect = titleRow.getBoundingClientRect();
-        const mainRect = mainContent.getBoundingClientRect();
-
-        if (titleRect.bottom < mainRect.top + 10) {
-            stickyEl.classList.add('visible');
-        } else {
-            stickyEl.classList.remove('visible');
-        }
-    });
-}
 
 // ─── Onboarding Tour ──────────────────────────────────────────────────
 const CV_ONBOARD_KEY = 'cv_onboarded_v1';
 
 const CV_ONBOARD_STEPS = [
     {
+        view: 'input',
         target: null,
         title: 'Welcome to ContextVolt ⚡',
-        body: 'Your local-first AI memory vault. Save AI conversations, summarize them with a local LLM, and query them later — all on your machine. This 90-second tour shows what each piece does.',
-        eyebrow: 'Tour'
+        body: 'Your local-first AI memory vault — save AI conversations, summarize them with a local LLM, and query them later, all on your machine.<br><br>First, what should we call you?'
+            + '<div class="cv-onboard-field">'
+            + '<input id="cv-onboard-name-input" class="cv-onboard-input" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Your name" aria-label="Your name">'
+            + '</div>',
+        nameCapture: true,
+        eyebrow: 'Hello'
     },
     {
+        view: 'input',
         target: '#sidebar',
         title: 'The sidebar — your control deck',
         body: 'Everything lives here: views (Dashboard, Library, Ask Vault), Collections, preferences, and system tools. Press the chevron at the top to collapse it.',
         eyebrow: 'Layout'
     },
     {
+        view: 'input',
         target: '#nav-input',
         title: 'Dashboard',
         body: 'The home view. See vault stats, recent contexts, and start a new capture. Press <kbd>D</kbd> to jump here from anywhere.',
         eyebrow: 'View'
     },
     {
+        view: 'input',
         target: '#quick-capture-toggle',
         title: 'Quick Capture — your starting point',
         body: 'Paste any AI conversation here. ContextVolt summarizes it with your local LLM, splits it semantically, and embeds it into the vault for later retrieval.',
         eyebrow: 'Action'
     },
+    // ── Library walkthrough ───────────────────────────────────────────────
     {
-        target: '#nav-library',
-        title: 'Library',
-        body: 'Browse every saved context as a grid or compact rows. Click any card to open the detail view with the full transcript and summary. Press <kbd>L</kbd>.',
+        view: 'library',
+        target: '.cv-lib-header',
+        title: 'Library — everything you’ve saved',
+        body: 'Every captured conversation lives here. Browse as a grid or compact rows, then click any card to dive in. Press <kbd>L</kbd> to jump here from anywhere.',
         eyebrow: 'View'
     },
     {
-        target: '#nav-ask',
-        title: 'Ask Vault — RAG over your captures',
-        body: 'Ask natural-language questions across all your saved contexts. Retrieval-augmented generation finds the most relevant chunks and answers with citations. Press <kbd>A</kbd>.',
-        eyebrow: 'View'
+        view: 'library',
+        target: '.cv-search-pill',
+        title: 'Search your vault',
+        body: 'Filter by title, tag, or content as you type. Flip on <b>Deep</b> to search across every chunk of every conversation, not just titles. <kbd>Ctrl K</kbd> focuses it instantly.',
+        eyebrow: 'Find'
     },
     {
+        view: 'library',
+        target: '.cv-lib-tools',
+        title: 'View, sort & select',
+        body: 'Toggle <b>Grid</b> / <b>Rows</b>, reorder by newest, oldest, or A–Z, and use <b>Select</b> to act on many contexts at once (assign to a collection or bulk-delete).',
+        eyebrow: 'Organize'
+    },
+    {
+        view: 'library',
+        target: '#contexts-grid .cv-card',
+        title: 'Open a context',
+        body: 'Each card previews a saved conversation — its topic, source AI, and date. Click one to open the full detail view. Let’s open this one.',
+        eyebrow: 'Tip',
+        needsData: true
+    },
+    // ── Context detail walkthrough (only when the vault has data) ──────────
+    {
+        view: 'detail',
+        target: '.cv-dhero',
+        title: 'The distilled summary',
+        body: 'Your local LLM turns a raw transcript into a clean title, one-line snapshot, key ideas, conclusions, and open questions — so you can recall a conversation in seconds.',
+        eyebrow: 'Detail',
+        needsData: true,
+        before: () => (_cvFirstCtxId != null ? showDetail(_cvFirstCtxId) : Promise.resolve())
+    },
+    {
+        view: 'detail',
+        target: '.cv-detail-rail',
+        title: 'Act on a context',
+        body: 'Pin it, edit the summary, re-run summarization with your current model, export to Markdown/JSON/text, or delete it. <b>← Library</b> takes you back to the grid.',
+        eyebrow: 'Detail',
+        needsData: true
+    },
+    // ── Ask Vault walkthrough ─────────────────────────────────────────────
+    {
+        view: 'ask',
+        target: '.cv-ask-pill',
+        title: 'Ask your vault',
+        body: 'Ask natural-language questions across everything you’ve saved. Retrieval-augmented generation pulls the most relevant chunks and answers with citations back to the source contexts. Press <kbd>A</kbd>.',
+        eyebrow: 'RAG'
+    },
+    {
+        view: 'ask',
+        target: '#ask-scope-dd',
+        title: 'Scope the search',
+        body: 'Answer across <b>All contexts</b>, or narrow the search to a single collection when you only want answers from one project or topic.',
+        eyebrow: 'RAG'
+    },
+    {
+        view: 'ask',
+        target: '#ask-send-btn',
+        title: 'Send & cite',
+        body: 'Hit send (or <kbd>Enter</kbd>) to get a grounded answer with inline citations you can click to open the exact context it came from.',
+        eyebrow: 'RAG'
+    },
+    // ── Sidebar tools ─────────────────────────────────────────────────────
+    {
+        view: 'input',
         target: '#collections-section',
         title: 'Collections',
         body: 'Group related contexts by topic, project, or client. Click <b>+</b> to create one — pick a color, give it a name, then assign contexts from the Library.',
         eyebrow: 'Organize'
     },
     {
+        view: 'input',
         target: '#vibeToggle',
         title: 'Visual vibes',
         body: 'Three moods: <b>Volt</b> (default), <b>Space</b> (deep cosmic), <b>Noir</b> (minimal). Pick whatever helps you focus.',
         eyebrow: 'Personalize'
     },
     {
+        view: 'input',
         target: '#btn-settings',
         title: 'Settings & Models',
         body: 'Pick which Ollama model handles summarization and which handles Q&A. Tweak chunk sizes, temperature, and retrieval depth here.',
         eyebrow: 'Configure'
     },
     {
-        target: '#btn-system',
+        view: 'input',
+        target: '#status-indicator',
         title: 'System & health',
-        body: 'Backend status, Ollama connection, live logs, and a one-click <b>Backup Vault</b>. The pulsing dot at the bottom always shows live status.',
+        body: 'The pulsing dot shows live backend status. Click it to open <b>System</b> (Ollama connection, live logs) or <b>Restart Backend</b>.',
         eyebrow: 'Health'
     },
     {
+        view: 'input',
         target: null,
         title: 'You are ready ⚡',
         body: 'Hit <b>Quick Capture</b> to save your first conversation, or jump to <b>Ask Vault</b> if you already have data. You can replay this tour any time from the sidebar → <i>Take the Tour</i>.',
@@ -6374,6 +7039,23 @@ const CV_ONBOARD_STEPS = [
 
 let _cvOnboardIdx = 0;
 let _cvOnboardActive = false;
+let _cvOnboardName = null; // typed name, preserved across step navigation
+let _cvSteps = CV_ONBOARD_STEPS;  // active steps for the current run (data-filtered)
+let _cvFirstCtxId = null;          // a real context id, for the detail-page walkthrough
+let _cvOnboardBusy = false;        // guards against navigating while a step is loading
+
+// Wait until `selector` exists in the DOM (views/data render async), or time out.
+function _cvWaitFor(selector, timeout = 1600) {
+    return new Promise(resolve => {
+        if (!selector || document.querySelector(selector)) return resolve(true);
+        const start = performance.now();
+        (function check() {
+            if (document.querySelector(selector)) return resolve(true);
+            if (performance.now() - start > timeout) return resolve(false);
+            requestAnimationFrame(check);
+        })();
+    });
+}
 
 function _cvOnboardEls() {
     return {
@@ -6421,10 +7103,14 @@ function _cvOnboardPosition(step) {
         return;
     }
     const r = targetEl.getBoundingClientRect();
+    // Clamp each edge independently to the viewport, then derive size from the
+    // clamped edges. Deriving w/h from r.width + pad*2 instead would push the
+    // cutout sideways whenever an edge clamps (e.g. the left-flush sidebar),
+    // leaving an asymmetric, slightly-off highlight.
     const x = Math.max(4, r.left - pad);
     const y = Math.max(4, r.top - pad);
-    const w = Math.min(vw - 8, r.width + pad * 2);
-    const h = Math.min(vh - 8, r.height + pad * 2);
+    const w = Math.min(vw - 4, r.right + pad) - x;
+    const h = Math.min(vh - 4, r.bottom + pad) - y;
     hole.setAttribute('x', x);
     hole.setAttribute('y', y);
     hole.setAttribute('width', w);
@@ -6464,8 +7150,8 @@ function _cvOnboardPosition(step) {
 
 function _cvOnboardRender() {
     const els = _cvOnboardEls();
-    const step = CV_ONBOARD_STEPS[_cvOnboardIdx];
-    const total = CV_ONBOARD_STEPS.length;
+    const step = _cvSteps[_cvOnboardIdx];
+    const total = _cvSteps.length;
     els.title.textContent = step.title;
     els.body.innerHTML = step.body;
     els.eyebrow.textContent = step.eyebrow || 'Tour';
@@ -6474,49 +7160,149 @@ function _cvOnboardRender() {
     els.back.disabled = _cvOnboardIdx === 0;
     els.next.textContent = _cvOnboardIdx === total - 1 ? 'Finish' : 'Next';
 
+    if (step.nameCapture) {
+        const input = document.getElementById('cv-onboard-name-input');
+        if (input) {
+            // Restore typed value, falling back to any name already on file.
+            const seed = (_cvOnboardName !== null)
+                ? _cvOnboardName
+                : ((_settingsConfig && _settingsConfig.user_name) || '');
+            input.value = seed;
+            input.addEventListener('input', () => { _cvOnboardName = input.value; });
+            input.addEventListener('keydown', (e) => {
+                // Enter advances; let the global handler do it, but stop arrow keys
+                // from being hijacked into step navigation while typing.
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
+            });
+            setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 60);
+        }
+    }
+
     if (step.target) {
         const t = document.querySelector(step.target);
         if (t && typeof t.scrollIntoView === 'function') {
             try { t.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); } catch (e) {}
         }
     }
-    requestAnimationFrame(() => _cvOnboardPosition(step));
+    // The target keeps moving for a beat after render — the view fades in with a
+    // translateY transition (~0.2s) and scrollIntoView animates. Track it every
+    // frame for a short window so the spotlight settles exactly on the element
+    // instead of snapping to where it started.
+    requestAnimationFrame(() => _cvOnboardSettle(step));
 }
 
-function startOnboarding() {
+// Re-position the spotlight each frame for ~0.5s so it follows the target
+// through the view's fade-in transform and any smooth-scroll before it rests.
+function _cvOnboardSettle(step) {
+    const start = performance.now();
+    (function tick() {
+        if (!_cvOnboardActive || _cvSteps[_cvOnboardIdx] !== step) return;
+        _cvOnboardPosition(step);
+        if (performance.now() - start < 520) requestAnimationFrame(tick);
+    })();
+}
+
+// Persist the onboarding name to config and refresh the dashboard greeting.
+async function _cvOnboardSaveName() {
+    const name = (_cvOnboardName || '').trim();
+    if (!name) return;
+    try {
+        await fetch(`${API}/api/setup/save-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                about: (_settingsConfig && _settingsConfig.user_about) || '',
+            }),
+        });
+        if (_settingsConfig) _settingsConfig.user_name = name;
+        const nameEl = document.getElementById('cv-greeting-name');
+        if (nameEl) nameEl.textContent = name + '.';
+    } catch (e) {
+        console.warn('Failed to save onboarding name', e);
+    }
+}
+
+// Navigate to a step: run its `before` hook, switch views, wait for the target
+// to render, then draw the spotlight. Async because views/data load lazily.
+async function _cvOnboardGoto(idx) {
+    if (idx < 0 || idx >= _cvSteps.length) return;
+    _cvOnboardBusy = true;
+    _cvOnboardIdx = idx;
+    const step = _cvSteps[idx];
+    try {
+        if (typeof step.before === 'function') { try { await step.before(); } catch (e) {} }
+        if (step.view && typeof navigateTo === 'function' && state.view !== step.view) {
+            try { navigateTo(step.view); } catch (e) {}
+        }
+        if (step.target) await _cvWaitFor(step.target);
+    } finally {
+        _cvOnboardBusy = false;
+    }
+    // Re-check we weren't dismissed while awaiting.
+    if (_cvOnboardActive) _cvOnboardRender();
+}
+
+async function startOnboarding() {
     const els = _cvOnboardEls();
     if (!els.root) return;
+
+    // Find out whether the vault has data — drives which steps are shown and
+    // which real context we open for the detail-page walkthrough.
+    _cvFirstCtxId = null;
+    try {
+        const res = await fetch(`${API}/api/contexts?page=1&per_page=1`);
+        if (res.ok) {
+            const data = await res.json();
+            const items = Array.isArray(data) ? data : (data.items || data.contexts || []);
+            if (items.length) _cvFirstCtxId = items[0].id;
+        }
+    } catch (e) {}
+    const hasData = _cvFirstCtxId != null;
+    _cvSteps = CV_ONBOARD_STEPS.filter(s => !s.needsData || hasData);
+
     _cvOnboardIdx = 0;
     _cvOnboardActive = true;
     els.root.classList.add('is-open');
     els.root.setAttribute('aria-hidden', 'false');
-    _cvOnboardRender();
+    _cvOnboardGoto(0);
 }
 
 function endOnboarding(markComplete) {
     if (markComplete === undefined) markComplete = true;
+    // Capture a name the user typed even if they skip before advancing.
+    if (_cvOnboardName && _cvOnboardName.trim()
+        && _cvOnboardName.trim() !== ((_settingsConfig && _settingsConfig.user_name) || '')) {
+        _cvOnboardSaveName();
+    }
     const els = _cvOnboardEls();
     if (!els.root) return;
     els.root.classList.remove('is-open');
     els.root.setAttribute('aria-hidden', 'true');
     _cvOnboardActive = false;
+    _cvOnboardBusy = false;
     if (markComplete) {
         try { localStorage.setItem(CV_ONBOARD_KEY, '1'); } catch (e) {}
+    }
+    // Leave the user back on the dashboard, not wherever the tour wandered.
+    if (typeof navigateTo === 'function' && state.view !== 'input') {
+        try { navigateTo('input'); } catch (e) {}
     }
 }
 
 function _cvOnboardNext() {
-    if (_cvOnboardIdx >= CV_ONBOARD_STEPS.length - 1) {
+    if (_cvOnboardBusy) return;
+    const cur = _cvSteps[_cvOnboardIdx];
+    if (cur && cur.nameCapture) _cvOnboardSaveName();
+    if (_cvOnboardIdx >= _cvSteps.length - 1) {
         endOnboarding(true);
         return;
     }
-    _cvOnboardIdx++;
-    _cvOnboardRender();
+    _cvOnboardGoto(_cvOnboardIdx + 1);
 }
 function _cvOnboardBack() {
-    if (_cvOnboardIdx === 0) return;
-    _cvOnboardIdx--;
-    _cvOnboardRender();
+    if (_cvOnboardBusy || _cvOnboardIdx === 0) return;
+    _cvOnboardGoto(_cvOnboardIdx - 1);
 }
 
 function _initOnboardingControls() {
@@ -6533,10 +7319,15 @@ function _initOnboardingControls() {
         else if (e.key === 'ArrowLeft') { e.preventDefault(); _cvOnboardBack(); }
     });
     window.addEventListener('resize', () => {
-        if (_cvOnboardActive) _cvOnboardPosition(CV_ONBOARD_STEPS[_cvOnboardIdx]);
+        if (_cvOnboardActive) _cvOnboardPosition(_cvSteps[_cvOnboardIdx]);
     });
     const replayBtn = document.getElementById('btn-onboard-replay');
-    if (replayBtn) replayBtn.addEventListener('click', () => startOnboarding());
+    if (replayBtn) replayBtn.addEventListener('click', () => {
+        // It now lives in the Settings modal — close that first so the tour can
+        // point at the sidebar/app elements behind it.
+        try { closeSettingsModal(); } catch (e) {}
+        startOnboarding();
+    });
 }
 
 async function maybeStartOnboarding() {

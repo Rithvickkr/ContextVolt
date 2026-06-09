@@ -17,6 +17,7 @@
 
 :root {
     --bg-primary: #09090b;
+    --cv-grid-bg: #0b0d13;   /* slightly cooler dark tone behind the blueprint grid */
     --bg-secondary: #0f0f12;
     --bg-tertiary: #17171c;
     --bg-elevated: #1e1e24;
@@ -80,6 +81,7 @@
 /* â”€â”€ Light Theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 [data-theme="light"] {
     --bg-primary:   #f5f5f7;
+    --cv-grid-bg:   #f3f4f8;
     --bg-secondary: #ffffff;
     --bg-tertiary:  #ededf0;
     --bg-elevated:  #e4e4e8;
@@ -941,7 +943,103 @@ body {
     display: flex;
     height: 100vh;
     background: var(--bg-primary);
+    /* Leave room for the custom title bar so content isn't hidden behind it. */
+    padding-top: var(--cv-titlebar-h, 34px);
+    box-sizing: border-box;
 }
+
+/* ================================================================
+   Custom title bar (frameless pywebview window chrome)
+   ================================================================ */
+:root { --cv-titlebar-h: 34px; }
+
+.cv-titlebar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--cv-titlebar-h);
+    display: flex;
+    align-items: stretch;
+    /* Sit above everything (modals, toasts, setup wizard) so the window can
+       always be dragged or closed. */
+    z-index: 2147483000;
+    background: var(--bg-primary, #0a0a0f);
+    border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.cv-titlebar-drag {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 14px;
+    min-width: 0;
+    /* .pywebview-drag-region makes this area move the window on mousedown. */
+}
+
+.cv-titlebar-logo {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.cv-titlebar-brand {
+    font-family: var(--cv-mono, monospace);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    color: var(--cv-text-2, #a1a1aa);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cv-winctl {
+    display: flex;
+    align-items: stretch;
+    flex-shrink: 0;
+}
+
+.cv-winbtn {
+    width: 46px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 0;
+    margin: 0; padding: 0;
+    color: var(--cv-text-3, #71717a);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    -webkit-app-region: no-drag;
+}
+.cv-winbtn svg { width: 12px; height: 12px; }
+/* Maximize button swaps to a restore (overlapping squares) glyph when maximized */
+.cv-winbtn .cv-ic-restore { display: none; }
+.cv-winbtn.is-maximized .cv-ic-max { display: none; }
+.cv-winbtn.is-maximized .cv-ic-restore { display: block; }
+.cv-winbtn:hover { background: rgba(255,255,255,0.07); color: var(--cv-text-1, #e4e4e7); }
+.cv-winbtn:active { background: rgba(255,255,255,0.12); }
+.cv-winbtn-close:hover { background: #e81123; color: #fff; }
+.cv-winbtn-close:active { background: #c50f1f; }
+
+/* Invisible window-edge grips. Corners sit above edges so they win the hit. */
+.cv-resize-handles { position: fixed; inset: 0; pointer-events: none; z-index: 2147483001; }
+.cv-rz { position: fixed; pointer-events: auto; }
+.cv-rz-t  { top: 0; left: 0; right: 0; height: 4px; cursor: ns-resize; }
+.cv-rz-b  { bottom: 0; left: 0; right: 0; height: 4px; cursor: ns-resize; }
+.cv-rz-l  { top: 0; bottom: 0; left: 0; width: 4px; cursor: ew-resize; }
+.cv-rz-r  { top: 0; bottom: 0; right: 0; width: 4px; cursor: ew-resize; }
+.cv-rz-tl { top: 0; left: 0; width: 8px; height: 8px; cursor: nwse-resize; z-index: 1; }
+.cv-rz-tr { top: 0; right: 0; width: 8px; height: 8px; cursor: nesw-resize; z-index: 1; }
+.cv-rz-bl { bottom: 0; left: 0; width: 8px; height: 8px; cursor: nesw-resize; z-index: 1; }
+.cv-rz-br { bottom: 0; right: 0; width: 8px; height: 8px; cursor: nwse-resize; z-index: 1; }
+
+[data-theme="light"] .cv-titlebar { background: #ffffff; border-bottom-color: rgba(0,0,0,0.09); }
+[data-theme="light"] .cv-titlebar-brand { color: #52525b; }
+[data-theme="light"] .cv-winbtn { color: #71717a; }
+[data-theme="light"] .cv-winbtn:hover { background: rgba(0,0,0,0.06); color: #18181b; }
+[data-theme="light"] .cv-winbtn-close:hover { background: #e81123; color: #fff; }
 
 /* ================================================================
    Sidebar — Premium Design
@@ -954,8 +1052,8 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
+    /* The sidebar itself never scrolls — only the collections list does. */
+    overflow: hidden;
     position: relative;
 }
 
@@ -1154,8 +1252,54 @@ body {
 .collections-list {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 4px;
 }
+
+/* New-collection modal */
+.cv-collection-modal { max-width: 420px; }
+.cv-coll-modal-colors { display: flex; gap: 10px; flex-wrap: wrap; }
+.cv-coll-modal-colors .color-swatch { width: 26px; height: 26px; }
+
+/* "Show all" affordance at the bottom of the sidebar collections list */
+.collection-showall {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    width: 100%; margin-top: 3px;
+    padding: 8px 10px; border-radius: var(--cv-r-sm);
+    background: transparent; border: 1px solid transparent;
+    color: var(--cv-text-3); font: 500 11.5px/1 var(--cv-mono);
+    letter-spacing: 0.04em; cursor: pointer;
+    transition: background 0.16s var(--cv-ease), color 0.16s var(--cv-ease), border-color 0.16s var(--cv-ease);
+}
+.collection-showall:hover { background: rgba(255,255,255,0.03); color: var(--cv-text-1); border-color: var(--cv-line-2); }
+[data-theme="light"] .collection-showall:hover { background: rgba(0,0,0,0.04); color: #2e2e33; }
+
+/* "Show all collections" modal (searchable) */
+.cv-collections-modal { max-width: 440px; }
+.cv-collections-modal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.cv-collections-modal-head h2 { flex: 1; margin: 0; }
+.cv-coll-search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; margin-bottom: 12px;
+    border-radius: 10px; border: 1px solid var(--cv-line);
+    background: rgba(255,255,255,0.03); color: var(--cv-text-3);
+    transition: border-color 0.16s var(--cv-ease);
+}
+[data-theme="light"] .cv-coll-search { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); }
+.cv-coll-search:focus-within { border-color: color-mix(in oklab, var(--cv-volt) 45%, transparent); }
+.cv-coll-search input,
+.cv-coll-search input:focus,
+.cv-coll-search input:focus-visible {
+    flex: 1; min-width: 0;
+    background: transparent !important; border: 0 !important;
+    outline: none !important; box-shadow: none !important;
+    color: var(--cv-text-0); font: 400 13px/1.4 var(--cv-body);
+}
+.cv-coll-search input::placeholder { color: var(--cv-text-3); }
+.cv-collections-modal-list { max-height: 52vh; overflow-y: auto; padding-right: 3px; }
+.cv-collections-modal-list::-webkit-scrollbar { width: 6px; }
+.cv-collections-modal-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
+[data-theme="light"] .cv-collections-modal-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); }
+.cv-coll-empty { padding: 24px 8px; text-align: center; color: var(--cv-text-3); font-size: 13px; }
 
 .collection-item {
     display: flex;
@@ -2358,10 +2502,10 @@ body {
 .card-star.popping { animation: starPop 0.3s var(--ease-out); }
 
 .context-card.starred {
-    border-color: rgba(250, 204, 21, 0.2);
+    border-color: color-mix(in oklab, var(--cv-volt) 30%, var(--cv-line));
 }
 .context-card.starred::before {
-    background: linear-gradient(90deg, #facc15, transparent);
+    background: linear-gradient(90deg, var(--cv-volt), transparent);
     opacity: 1;
 }
 
@@ -4555,9 +4699,6 @@ body {
     animation: spin 0.6s linear infinite;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
 
 /* ── Cloud Model Cost Badge ───────────────────────────────────── */
 
@@ -4995,42 +5136,82 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(3px);
+    background: rgba(4, 4, 8, 0.62);
+    backdrop-filter: blur(8px) saturate(120%);
+    -webkit-backdrop-filter: blur(8px) saturate(120%);
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity 0.18s var(--ease, ease);
 }
+[data-theme="light"] .cv-confirm-overlay { background: rgba(20, 20, 28, 0.32); }
 .cv-confirm-overlay.cv-confirm-in  { opacity: 1; }
 .cv-confirm-overlay.cv-confirm-out { opacity: 0; }
 
+/* Frosted-glass dialog — matches the app's noir/card surface treatment */
 .cv-confirm-dialog {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
-    padding: 22px 24px 20px;
-    min-width: 300px;
-    max-width: 380px;
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(420px 140px at 50% -30%, rgba(255,255,255,0.06), transparent 70%),
+        radial-gradient(320px 220px at 100% 120%, rgba(180,160,255,0.05), transparent 65%),
+        linear-gradient(180deg, rgba(30,30,38,0.92) 0%, rgba(18,18,24,0.94) 100%);
+    backdrop-filter: blur(20px) saturate(130%);
+    -webkit-backdrop-filter: blur(20px) saturate(130%);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: var(--radius-xl);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.07) inset,
+        0 2px 6px rgba(0,0,0,0.4),
+        0 32px 72px -20px rgba(0,0,0,0.8),
+        0 0 0 1px rgba(255,255,255,0.02);
+    padding: 24px 26px 22px;
+    min-width: 320px;
+    max-width: 400px;
     width: 90%;
-    transform: scale(0.96) translateY(8px);
-    transition: transform 0.15s ease;
+    transform: scale(0.95) translateY(10px);
+    transition: transform 0.22s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+/* Top highlight hairline */
+.cv-confirm-dialog::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 16%;
+    right: 16%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
+    pointer-events: none;
+}
+[data-theme="light"] .cv-confirm-dialog {
+    background:
+        radial-gradient(420px 140px at 50% -30%, rgba(0,0,0,0.025), transparent 70%),
+        linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%);
+    border-color: rgba(0,0,0,0.09);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.9) inset,
+        0 24px 60px -16px rgba(0,0,0,0.22),
+        0 0 0 1px rgba(0,0,0,0.04);
+}
+[data-theme="light"] .cv-confirm-dialog::before {
+    background: linear-gradient(90deg, transparent, rgba(0,0,0,0.08), transparent);
 }
 .cv-confirm-overlay.cv-confirm-in .cv-confirm-dialog {
     transform: scale(1) translateY(0);
 }
 
 .cv-confirm-title {
-    font-size: 14.5px;
+    font-family: var(--font-display, inherit);
+    font-size: 16px;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
     margin-bottom: 8px;
     line-height: 1.3;
 }
 .cv-confirm-message {
-    font-size: 12.5px;
+    font-size: 13px;
     color: var(--text-secondary);
-    line-height: 1.55;
-    margin-bottom: 18px;
+    line-height: 1.6;
+    margin-bottom: 20px;
 }
 .cv-confirm-input {
     width: 100%;
@@ -5060,44 +5241,53 @@ body {
 }
 .cv-confirm-actions {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     justify-content: flex-end;
 }
 .cv-confirm-cancel {
-    padding: 6px 14px;
+    padding: 8px 16px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
-    background: transparent;
+    background: rgba(255,255,255,0.03);
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: 13px;
     font-family: inherit;
+    font-weight: 500;
     cursor: pointer;
-    transition: background 0.12s, color 0.12s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
 }
 .cv-confirm-cancel:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+    border-color: var(--border-accent);
+    transform: translateY(-1px);
 }
 .cv-confirm-ok {
-    padding: 6px 16px;
+    padding: 8px 18px;
     border-radius: var(--radius-sm);
-    border: 1px solid rgba(255,255,255,0.15);
-    background: var(--bg-active);
+    border: 1px solid rgba(255,255,255,0.16);
+    background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
     color: var(--text-primary);
-    font-size: 12.5px;
+    font-size: 13px;
     font-family: inherit;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.12s;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 12px -4px rgba(0,0,0,0.4);
+    transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
 }
-.cv-confirm-ok:hover { background: rgba(255,255,255,0.12); }
+.cv-confirm-ok:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.08));
+    transform: translateY(-1px);
+}
 .cv-confirm-ok.danger {
-    background: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.35);
-    color: #f87171;
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.22), rgba(239, 68, 68, 0.12));
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 14px -4px rgba(239,68,68,0.4);
 }
 .cv-confirm-ok.danger:hover {
-    background: rgba(239, 68, 68, 0.25);
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.32), rgba(239, 68, 68, 0.18));
+    transform: translateY(-1px);
 }
 
 /* ================================================================
@@ -6510,6 +6700,19 @@ kbd {
     margin-bottom: 2px;
 }
 
+.ask-cite {
+    font-size: 0.7em;
+    line-height: 0;
+    vertical-align: super;
+}
+.ask-cite a {
+    color: var(--cv-volt);
+    text-decoration: none;
+    font-weight: 600;
+    padding: 0 1px;
+}
+.ask-cite a:hover { text-decoration: underline; }
+
 .ask-source-chip {
     display: inline-flex;
     align-items: center;
@@ -6788,6 +6991,7 @@ kbd {
   display: flex; align-items: center; gap: 10px;
   padding: 4px 4px 16px;
   border-bottom: 1px solid var(--cv-line);
+  flex-shrink: 0;
 }
 [data-theme="light"] .cv-brand { border-bottom-color: rgba(0,0,0,0.08); }
 .cv-logo {
@@ -6824,11 +7028,14 @@ kbd {
 [data-theme="light"] .cv-brand-text .v { color: #a1a1aa; }
 
 /* Sidebar section */
-.cv-side-section { display: flex; flex-direction: column; gap: 2px; }
+.cv-side-section { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+/* Breathing room between sections (Workspace / Collections / …) */
+.cv-side-section + .cv-side-section,
+#collections-section { margin-top: 14px; }
 .cv-side-label {
   font-family: var(--cv-mono); font-size: 10px; font-weight: 500;
   color: var(--cv-text-3); letter-spacing: 0.12em; text-transform: uppercase;
-  padding: 6px 10px 4px;
+  padding: 10px 10px 7px;
   display: flex; align-items: center; justify-content: space-between;
 }
 [data-theme="light"] .cv-side-label { color: #a1a1aa; }
@@ -6865,12 +7072,12 @@ kbd {
   padding: 2px 6px; border-radius: 5px; background: rgba(255,255,255,0.04); border: 1px solid var(--cv-line);
 }
 
-/* Collection items */
+/* Collection items — match the Workspace nav rhythm */
 .collections-list .collection-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: var(--cv-r-sm);
+  padding: 9px 10px; border-radius: var(--cv-r-sm);
   color: var(--cv-text-2); background: transparent; border: 1px solid transparent;
-  font: 500 13px/1 var(--cv-body); cursor: pointer; width: 100%; text-align: left;
+  font: 500 13px/1.1 var(--cv-body); cursor: pointer; width: 100%; text-align: left;
   transition: all 0.18s var(--cv-ease);
 }
 .collections-list .collection-item:hover { color: var(--cv-text-0); background: rgba(255,255,255,0.03); }
@@ -6892,17 +7099,21 @@ kbd {
   padding-top: 10px;
   margin-top: 6px;
   border-top: 1px solid var(--cv-line);
+  flex-shrink: 0;
 }
 
-/* Settings & Models pinned to very bottom (Claude-style) */
+/* LLM ready status + Settings & Models pinned to the very bottom (Claude-style) */
 .cv-side-settings-anchor {
-  margin-top: 12px;
+  margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--cv-line);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
+/* Ready indicator sits flush in the bottom group (its own top margin is redundant here) */
+.cv-side-settings-anchor .cv-status { margin-top: 0; }
 .cv-util.cv-util-settings {
   background: var(--bg-hover);
   border: 1px solid var(--border);
@@ -6983,6 +7194,32 @@ kbd {
 .cv-status .pulse.offline { background: oklch(0.6 0.18 25); box-shadow: none; animation: none; }
 @keyframes cv-pulse { 0%{box-shadow:0 0 0 0 oklch(0.78 0.18 145 / 0.6)} 70%{box-shadow:0 0 0 8px oklch(0.78 0.18 145 / 0)} 100%{box-shadow:0 0 0 0 oklch(0.78 0.18 145 / 0)} }
 
+/* Status row is now a button that opens the System/Restart menu */
+.cv-status-wrap { position: relative; }
+.cv-status-btn { width: 100%; cursor: pointer; font: inherit; text-align: left;
+  transition: background 0.16s var(--cv-ease), border-color 0.16s var(--cv-ease); }
+.cv-status-btn .status-text { flex: 1; min-width: 0; }
+.cv-status-btn:hover { border-color: var(--cv-line-2); background: rgba(255,255,255,0.04); }
+[data-theme="light"] .cv-status-btn:hover { background: rgba(0,0,0,0.05); }
+.cv-status-chev { color: var(--cv-text-3); flex-shrink: 0; transition: transform 0.2s var(--cv-ease); }
+.cv-status-btn[aria-expanded="true"] .cv-status-chev { transform: rotate(180deg); }
+
+/* Popover menu (opens upward, above the status row) */
+.cv-status-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 60;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px; border-radius: 12px;
+  background: rgba(16,16,20,0.97); border: 1px solid var(--cv-line);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 40px -12px rgba(0,0,0,0.6);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  animation: cvAskPanelIn 0.16s var(--cv-ease) both;
+}
+[data-theme="light"] .cv-status-menu { background: rgba(255,255,255,0.98); border-color: rgba(0,0,0,0.1); }
+.cv-status-menu[hidden] { display: none !important; }
+
+/* Tools list inside the Settings modal */
+.settings-tools { display: flex; flex-direction: column; gap: 6px; max-width: 440px; }
+
 /* Sidebar collapse — cv-v2 compatible */
 .app-container.sidebar-collapsed .sidebar.cv-side { width: 56px; padding: 20px 8px; }
 .app-container.sidebar-collapsed .cv-brand-text,
@@ -7010,10 +7247,11 @@ kbd {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 14px; margin-bottom: 32px;
   border-radius: var(--cv-r-md);
-  background: rgba(15,15,18,0.6); border: 1px solid var(--cv-line);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  /* No backdrop-filter: it makes nested popovers (e.g. the notifications panel)
+     composite as see-through. Near-opaque fill keeps the solid bar look. */
+  background: rgba(17,17,21,0.94); border: 1px solid var(--cv-line);
 }
-[data-theme="light"] .cv-topbar { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
+[data-theme="light"] .cv-topbar { background: rgba(252,252,253,0.96); border-color: rgba(0,0,0,0.08); }
 .cv-breadcrumb { font-family: var(--cv-mono); font-size: 11.5px; color: var(--cv-text-3); letter-spacing: 0.04em; }
 .cv-breadcrumb b { color: var(--cv-text-1); font-weight: 500; }
 [data-theme="light"] .cv-breadcrumb b { color: #2e2e33; }
@@ -7066,11 +7304,7 @@ kbd {
   padding-right: 0.2em;
 }
 [data-theme="light"] .cv-hero h1 .voltword { background: linear-gradient(180deg, #e8a500, #b45309 100%); -webkit-background-clip: text; background-clip: text; }
-.cv-hero h1 .voltword::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 0.12em; height: 0.06em;
-  background: linear-gradient(90deg, transparent, var(--cv-volt) 20%, var(--cv-volt) 80%, transparent);
-  filter: blur(6px); opacity: .5;
-}
+.cv-hero h1 .voltword::after { display: none; }
 @keyframes cv-blink { 0%,100%{opacity:1} 50%{opacity:.35} }
 
 /* ── Stats grid ───────────────────────────────────────────────── */
@@ -7294,10 +7528,17 @@ kbd {
    short enough that the per-frame jank is imperceptible. A snappy
    ease-out at 140ms reads as "responsive" rather than "smooth-but-slow". */
 .sidebar.cv-side {
-    transition: width 0.14s ease-out;
+    /* easeOutQuint — fast start, long gentle glide to rest = reads as "smooth" */
+    transition: width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.34s cubic-bezier(0.22, 1, 0.36, 1);
     overflow-x: hidden;
     overflow-y: auto;
     min-height: 0;
+    will-change: width;
+    /* Isolate the sidebar's own layout so its internal reflow doesn't ripple
+       outward each frame during the width animation (no paint containment —
+       that would clip the status-dot's pulsing glow). */
+    contain: layout;
 }
 /* During the width animation: lock the sidebar (hide scrollbar, freeze
    pointer interactions on children) so the only thing moving is width.
@@ -7454,13 +7695,35 @@ kbd {
     padding: 0 !important;
 }
 
-/* Every view fills the full available height and scrolls itself */
+/* App-wide blueprint grid on a slightly cooler dark tone. Views are transparent
+   so this single layer shows beneath every page; it fades toward the edges so
+   it never competes with dense content. */
+.main-content {
+    background-color: var(--cv-grid-bg);
+    background-image:
+        radial-gradient(120% 85% at 50% -2%, transparent 24%, var(--cv-grid-bg) 82%),
+        linear-gradient(to right, rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255,255,255,0.018) 1px, transparent 1px);
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+    background-position: center;
+    background-repeat: no-repeat, repeat, repeat;
+}
+[data-theme="light"] .main-content {
+    background-color: var(--cv-grid-bg);
+    background-image:
+        radial-gradient(120% 85% at 50% -2%, transparent 24%, var(--cv-grid-bg) 82%),
+        linear-gradient(to right, rgba(0,0,0,0.026) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0,0,0,0.026) 1px, transparent 1px);
+}
+
+/* Every view fills the full available height and scrolls itself.
+   Transparent so the app-wide blueprint grid on .main-content shows through. */
 .view {
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
-    background: var(--bg-primary);
+    background: transparent;
 }
 
 /* Library, Detail, Capture: restore the outer padding they lost */
@@ -7484,9 +7747,9 @@ kbd {
 #view-input {
     max-width: none !important;
     margin: 0 !important;
-    background: var(--cv-bg-0, #0c0c0f) !important;
+    background: transparent !important; /* show the app-wide grid on .main-content */
 }
-[data-theme="light"] #view-input { background: #f5f5f7 !important; }
+[data-theme="light"] #view-input { background: transparent !important; }
 
 /* ── Dashboard: responsive padding & spacing ────────────────── */
 #view-input.cv-main {
@@ -7578,22 +7841,22 @@ kbd {
     overflow-x: hidden !important;
     box-sizing: border-box !important;
     height: 100% !important;
-    background: var(--cv-bg-0) !important;
+    background: transparent !important; /* show app-wide grid */
 }
-[data-theme="light"] #view-detail.cv-main { background: #f5f5f7 !important; }
+[data-theme="light"] #view-detail.cv-main { background: transparent !important; }
 
 /* Hide the old view-header — its actions now live inside the rail */
 #view-detail.cv-main > .view-header { display: none !important; }
 
 /* ── Top rail: back button + meta + action buttons ─────────── */
 .cv-detail-rail {
-    display: flex; align-items: center; gap: 14px;
-    padding: 10px 14px; margin-bottom: 24px;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; margin-bottom: 32px;
     border-radius: var(--cv-r-md);
-    background: rgba(15,15,18,0.55);
+    background: rgba(15,15,18,0.6);
     border: 1px solid var(--cv-line);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     flex-wrap: wrap;
 }
 [data-theme="light"] .cv-detail-rail { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
@@ -7801,6 +8064,71 @@ kbd {
 }
 [data-theme="light"] .cv-block-pinned { background: linear-gradient(180deg, rgba(217,119,6,0.05), rgba(255,255,255,0.9)); border-color: rgba(217,119,6,0.2); }
 
+/* Pinned notes — rendered as markdown prose cards so long starred messages
+   keep their paragraphs, lists, code and emphasis instead of collapsing into
+   one run-on line. */
+.cv-pinned { display: flex; flex-direction: column; gap: 10px; }
+.cv-note {
+    padding: 10px 14px;
+    font-size: 13.5px; line-height: 1.6; color: var(--cv-text-1);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--cv-line);
+    border-radius: 12px;
+    overflow-wrap: anywhere;
+}
+.cv-note > :first-child { margin-top: 0; }
+.cv-note > :last-child  { margin-bottom: 0; }
+.cv-note p  { margin: 0 0 8px; }
+.cv-note ul, .cv-note ol { margin: 6px 0; padding-left: 20px; list-style: revert; }
+.cv-note li { margin: 3px 0; }
+.cv-note strong { color: var(--cv-text-0); font-weight: 600; }
+.cv-note em { font-style: italic; }
+.cv-note code {
+    font-family: var(--cv-mono, ui-monospace, monospace);
+    font-size: 0.9em; padding: 1px 5px; border-radius: 5px;
+    background: rgba(255,255,255,0.07);
+}
+.cv-note pre {
+    margin: 8px 0; padding: 10px 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.32); border: 1px solid var(--cv-line);
+    overflow-x: auto;
+}
+.cv-note pre code { background: none; padding: 0; }
+[data-theme="light"] .cv-note { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.06); color: #27272a; }
+[data-theme="light"] .cv-note code { background: rgba(0,0,0,0.06); }
+[data-theme="light"] .cv-note pre { background: rgba(0,0,0,0.05); }
+
+/* Markdown tables (shared by pinned notes + Ask Vault answers) */
+.cv-md-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    border: 1px solid var(--cv-line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.cv-md-table th, .cv-md-table td {
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--cv-line);
+    border-right: 1px solid var(--cv-line);
+    overflow-wrap: anywhere;
+}
+.cv-md-table th:last-child, .cv-md-table td:last-child { border-right: 0; }
+.cv-md-table tbody tr:last-child td { border-bottom: 0; }
+.cv-md-table thead th {
+    background: rgba(255,255,255,0.05);
+    font-weight: 600;
+    color: var(--cv-text-0);
+    white-space: nowrap;
+}
+.cv-md-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
+[data-theme="light"] .cv-md-table thead th { background: rgba(0,0,0,0.045); }
+[data-theme="light"] .cv-md-table tbody tr:nth-child(even) td { background: rgba(0,0,0,0.015); }
+
 /* ── Insights (3-col at wide, 1-col narrow) ──────────────── */
 .cv-insights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 1400px) { .cv-insights { grid-template-columns: 1fr; } }
@@ -7808,10 +8136,33 @@ kbd {
 /* Cap insight cards so long lists don't blow out the layout */
 .cv-insights .cv-block {
     display: flex; flex-direction: column;
-    max-height: 340px; transition: max-height 0.3s ease;
+    max-height: 340px; transition: max-height 0.34s var(--cv-ease, cubic-bezier(0.4, 0, 0.2, 1));
 }
 .cv-insights .cv-block.cv-expanded { max-height: 2000px; }
 .cv-insights .cv-block-head { flex-shrink: 0; }
+
+/* "Show all" popup — full list in a centered modal (grid stays put).
+   The header reuses .cv-block-head so it matches the small card exactly
+   (same icon box + title + count). */
+.cv-insight-modal { max-width: 560px; width: 90%; }
+.cv-insight-modal-head { margin-bottom: 14px; cursor: default; }
+.cv-insight-modal-head h3 { flex: 1; min-width: 0; }
+.cv-insight-modal-close {
+    margin-left: auto; flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--cv-text-3); font-size: 20px; line-height: 1;
+    transition: background 0.15s var(--cv-ease), color 0.15s var(--cv-ease);
+}
+.cv-insight-modal-close:hover { background: rgba(255,255,255,0.07); color: var(--cv-text-0); }
+[data-theme="light"] .cv-insight-modal-close:hover { background: rgba(0,0,0,0.06); color: #111; }
+.cv-insight-modal-list {
+    margin-top: 4px; padding: 0 4px 0 0;
+    max-height: 62vh; overflow-y: auto;
+}
+.cv-insight-modal-list::-webkit-scrollbar { width: 6px; }
+.cv-insight-modal-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
+[data-theme="light"] .cv-insight-modal-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); }
 .cv-insights .cv-list {
     flex: 1; min-height: 0;
     overflow-y: auto;
@@ -7889,7 +8240,19 @@ kbd {
 .cv-collapse-head { cursor: pointer; }
 .cv-collapse-chev { margin-left: 6px; color: var(--cv-text-3); transition: transform 0.25s var(--cv-ease); display: inline-flex; }
 .cv-collapse:not(.open) .cv-collapse-chev { transform: rotate(-90deg); }
-.cv-collapse:not(.open) .cv-chat { display: none; }
+
+/* Smooth open/close — animatable grid rows (0fr ⇄ 1fr), no JS height math. */
+.cv-collapse-body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.34s var(--cv-ease, cubic-bezier(0.4, 0, 0.2, 1));
+}
+.cv-collapse:not(.open) .cv-collapse-body { grid-template-rows: 0fr; }
+.cv-collapse-inner { overflow: hidden; min-height: 0; transition: opacity 0.28s var(--cv-ease); }
+.cv-collapse:not(.open) .cv-collapse-inner { opacity: 0; }
+/* Drop the header's bottom margin when collapsed so nothing floats. */
+.cv-collapse .cv-block-head { transition: margin-bottom 0.2s var(--cv-ease); }
+.cv-collapse:not(.open) .cv-block-head { margin-bottom: 0; }
 .cv-chat { position: relative; display: flex; flex-direction: column; gap: 12px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
 .cv-chat::-webkit-scrollbar { width: 4px; }
 .cv-chat::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
@@ -8050,6 +8413,40 @@ kbd {
     box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
 .cv-action-glow { display: none; }
+
+/* Continuation prompt now lives inside the main column — drop its standalone
+   vertical margins so it follows the column's flex-gap rhythm. */
+.cv-dmain .cv-action { margin: 0; }
+
+/* Empty state shown when a context has no extracted insights */
+.cv-empty-insights {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.cv-empty-insights .cv-block-ic { flex-shrink: 0; }
+.cv-empty-insights-text { flex: 1; min-width: 200px; }
+.cv-empty-insights-text h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--cv-text-1); }
+.cv-empty-insights-text p  { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--cv-text-3); }
+.cv-empty-insights-btn {
+    flex-shrink: 0;
+    padding: 7px 14px; border-radius: 8px;
+    background: var(--cv-volt-dim); color: var(--cv-volt);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 35%, transparent);
+    font: 600 12px/1 var(--cv-body); cursor: pointer;
+    transition: all 0.18s var(--cv-ease);
+}
+.cv-empty-insights-btn:hover { background: color-mix(in oklab, var(--cv-volt) 18%, transparent); }
+
+/* Clean empty state inside an always-on block (e.g. Open questions with none) */
+.cv-block-empty {
+    margin: 6px 0 2px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--cv-text-3);
+    font-style: italic;
+}
 
 .cv-action-head {
     display: flex; align-items: center; gap: 12px;
@@ -8251,9 +8648,12 @@ kbd {
     position: sticky;
     top: clamp(14px, 2vw, 24px);
     align-self: start;
-    max-height: calc(100vh - 48px);
+    /* Subtract the custom title bar so the last card isn't clipped below the
+       fold; the aside scrolls internally if its cards exceed the space. */
+    max-height: calc(100vh - var(--cv-titlebar-h, 34px) - 56px);
     overflow-y: auto;
     padding-right: 2px;
+    padding-bottom: 16px;
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.1) transparent;
 }
@@ -8449,9 +8849,9 @@ kbd {
     overflow-x: hidden !important;
     box-sizing: border-box !important;
     height: 100% !important;
-    background: var(--cv-bg-0) !important;
+    background: transparent !important; /* show app-wide grid */
 }
-[data-theme="light"] #view-library.cv-main { background: #f5f5f7 !important; }
+[data-theme="light"] #view-library.cv-main { background: transparent !important; }
 #view-library.cv-main > .view-header { display: none !important; }
 
 /* ── Lib hero ────────────────────────────────────────────── */
@@ -8481,11 +8881,7 @@ kbd {
     position: relative;
     padding-right: 0.2em;
 }
-.cv-lib-title .voltword::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0.08em; height: 0.06em;
-    background: linear-gradient(90deg, transparent, var(--cv-volt) 20%, var(--cv-volt) 80%, transparent);
-    filter: blur(6px); opacity: 0.5;
-}
+.cv-lib-title .voltword::after { display: none; }
 [data-theme="light"] .cv-lib-title .voltword { background: linear-gradient(180deg, #e8a500, #b45309 100%); -webkit-background-clip: text; background-clip: text; }
 
 /* Live count */
@@ -8526,14 +8922,19 @@ kbd {
     opacity: 0; transition: opacity 0.25s var(--cv-ease); pointer-events: none;
 }
 .cv-search-pill:focus-within { border-color: color-mix(in oklab, var(--cv-volt) 45%, transparent); background: rgba(15,15,18,0.85); }
-.cv-search-pill:focus-within::before { opacity: 1; }
+/* Drop the gradient ring so focus shows a single clean border (no double glow). */
+.cv-search-pill::before { display: none; }
 [data-theme="light"] .cv-search-pill:focus-within { background: #ffffff; }
 
 .cv-search-ic { color: var(--cv-text-3); flex-shrink: 0; display: grid; place-items: center; }
 .cv-search-pill:focus-within .cv-search-ic { color: var(--cv-volt); }
-.cv-search-input {
+.cv-search-input,
+.cv-search-input:focus,
+.cv-search-input:focus-visible {
     flex: 1; min-width: 0;
-    background: transparent; border: 0; outline: none;
+    background: transparent !important; border: 0 !important;
+    outline: none !important; box-shadow: none !important;
+    -webkit-appearance: none; appearance: none;
     color: var(--cv-text-0);
     font: 400 13.5px/1.4 var(--cv-body);
 }
@@ -9173,8 +9574,8 @@ kbd {
    Hide the leftover .view-header placeholder (already hidden by cv-main, but
    #view-ask doesn't have cv-main so we hide explicitly). */
 #view-ask > .view-header { display: none !important; }
-#view-ask { background: var(--cv-bg-0); }
-[data-theme="light"] #view-ask { background: #f5f5f7; }
+#view-ask { background: transparent; }
+[data-theme="light"] #view-ask { background: transparent; }
 
 /* Fully override the old ask-container; keep it as a thin wrapper. */
 #view-ask .ask-container {
@@ -9195,13 +9596,15 @@ kbd {
 /* ── Top rail ──────────────────────────────────────────────── */
 .cv-ask-rail {
     display: flex; align-items: center; gap: 12px;
-    padding: 10px clamp(16px, 3vw, 40px);
-    background: rgba(10,10,12,0.5);
-    border-bottom: 1px solid var(--cv-line);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    margin: clamp(20px, 3vw, 36px) clamp(16px, 4vw, 48px) 0;
+    padding: 10px 14px;
+    border-radius: var(--cv-r-md);
+    background: rgba(15,15,18,0.6);
+    border: 1px solid var(--cv-line);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     flex-shrink: 0;
 }
-[data-theme="light"] .cv-ask-rail { background: rgba(255,255,255,0.75); border-bottom-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .cv-ask-rail { background: rgba(255,255,255,0.8); border-color: rgba(0,0,0,0.08); }
 .cv-ask-rail-meta {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     font-family: var(--cv-mono); font-size: 11.5px; color: var(--cv-text-3);
@@ -9234,7 +9637,7 @@ kbd {
 .cv-ask-history-backdrop[hidden] { display: none !important; }
 
 .cv-ask-history-panel {
-    position: absolute; top: calc(100% + 8px); right: clamp(16px, 3vw, 40px);
+    position: absolute; top: calc(100% + 8px); right: 0;
     width: min(380px, calc(100vw - 32px));
     max-height: min(520px, 65vh);
     background: rgba(16, 16, 20, 0.92);
@@ -9333,15 +9736,29 @@ kbd {
     overflow-y: auto;
     padding: 6px 6px 8px;
     flex: 1;
+    /* Subtle scrollbar that stays hidden until the list is hovered, themed to
+       match the app surface rather than the stark default white. */
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.25s var(--cv-ease, ease);
 }
+.cv-ask-history-list:hover { scrollbar-color: var(--cv-line-2, rgba(255,255,255,0.14)) transparent; }
 .cv-ask-history-list::-webkit-scrollbar { width: 8px; }
+.cv-ask-history-list::-webkit-scrollbar-track { background: transparent; }
 .cv-ask-history-list::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.08);
-    border-radius: 4px;
+    background: transparent;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 100px;
+    transition: background 0.25s var(--cv-ease, ease);
 }
-[data-theme="light"] .cv-ask-history-list::-webkit-scrollbar-thumb {
-    background: rgba(0,0,0,0.12);
+.cv-ask-history-list:hover::-webkit-scrollbar-thumb {
+    background: var(--cv-line-2, rgba(255,255,255,0.14));
+    background-clip: padding-box;
+}
+.cv-ask-history-list::-webkit-scrollbar-thumb:hover {
+    background: var(--cv-volt-glow, rgba(255,255,255,0.22));
+    background-clip: padding-box;
 }
 
 .cv-ask-history-group {
@@ -9476,17 +9893,78 @@ kbd {
 [data-theme="light"] .cv-ask-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); }
 
 /* ── Empty state hero ──────────────────────────────────────── */
+/* The blueprint grid now lives app-wide on .main-content (see App layout). */
+
 #view-ask .ask-empty.cv-ask-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 22px;
-    max-width: 760px;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 1180px;
     margin: 0 auto;
-    padding: clamp(24px, 6vh, 80px) 20px 60px;
-    text-align: center;
+    padding: clamp(20px, 5vh, 64px) clamp(4px, 1.5vw, 20px) 24px;
+    text-align: left;
     min-height: auto;
+    overflow-x: hidden;
     animation: cv-ask-empty-in 0.5s var(--cv-ease) both;
+}
+.cv-ask-welcome { display: flex; flex-direction: column; gap: clamp(20px, 2.6vh, 30px); min-width: 0; }
+
+/* Header: intro text (left) + orb (right) */
+.cv-ask-whead {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 40px;
+}
+.cv-ask-wintro {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 16px;
+    flex: 1; min-width: 0;
+}
+@media (max-width: 760px) {
+    .cv-ask-whead { flex-direction: column-reverse; align-items: flex-start; gap: 20px; }
+}
+
+/* Section labels ("Ask anything" / "Starters") */
+.cv-ask-seclabel {
+    display: flex; align-items: center; gap: 9px;
+    font: 500 11px/1 var(--cv-mono);
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--cv-text-3);
+    margin-bottom: -6px;
+}
+.cv-ask-seclabel-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--cv-volt); box-shadow: 0 0 8px var(--cv-volt-glow);
+    animation: cv-ask-hint-pulse 2.4s ease-in-out infinite;
+}
+
+/* Staggered entrance — the hero, composer and starters rise in sequence. */
+.cv-ask-welcome > * { animation: cv-ask-rise 0.5s var(--cv-ease) both; }
+.cv-ask-welcome > *:nth-child(1) { animation-delay: 0.04s; }
+.cv-ask-welcome > *:nth-child(2) { animation-delay: 0.10s; }
+.cv-ask-welcome > *:nth-child(3) { animation-delay: 0.15s; }
+.cv-ask-welcome > *:nth-child(4) { animation-delay: 0.20s; }
+.cv-ask-welcome > *:nth-child(5) { animation-delay: 0.25s; }
+@keyframes cv-ask-rise {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* Keyboard focus rings (accessibility) */
+#view-ask .ask-suggestion.cv-ask-starter:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklab, var(--cv-volt) 55%, transparent);
+    box-shadow: 0 0 0 3px var(--cv-volt-glow);
+}
+#view-ask button.ask-send-btn.cv-ask-send:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--cv-volt-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cv-ask-welcome > *,
+    #view-ask .ask-empty.cv-ask-empty,
+    .cv-ask-seclabel-dot,
+    .cv-ask-orb-core,
+    .cv-ask-orb::before { animation: none !important; }
 }
 @keyframes cv-ask-empty-in {
     from { opacity: 0; transform: translateY(12px); }
@@ -9494,21 +9972,32 @@ kbd {
 }
 
 .cv-ask-orb {
-    width: 88px; height: 88px; border-radius: 50%;
+    position: relative; flex-shrink: 0;
+    width: clamp(150px, 15vw, 210px); aspect-ratio: 1;
     display: grid; place-items: center;
-    background: radial-gradient(circle at 30% 30%, var(--cv-volt-dim), transparent 70%);
-    border: 1px solid color-mix(in oklab, var(--cv-volt) 25%, transparent);
-    color: var(--cv-volt);
-    box-shadow: 0 0 60px var(--cv-volt-glow);
-    animation: cv-empty-pulse 3s ease-in-out infinite;
-    position: relative;
 }
-.cv-ask-orb svg { width: 36px; height: 36px; position: relative; z-index: 1; }
-.cv-ask-orb::after {
-    content: ""; position: absolute; inset: -6px; border-radius: 50%;
-    border: 1px solid color-mix(in oklab, var(--cv-volt) 35%, transparent);
-    opacity: 0.4; animation: cv-live-ring 2.6s cubic-bezier(0.2,0.7,0.1,1) infinite;
+/* concentric guide rings */
+.cv-ask-orb::before, .cv-ask-orb::after {
+    content: ""; position: absolute; border-radius: 50%; pointer-events: none;
 }
+.cv-ask-orb::after { inset: 0; border: 1px solid rgba(255,255,255,0.05); }
+.cv-ask-orb::before {
+    inset: 19%; border: 1px solid rgba(255,255,255,0.07);
+    animation: cv-live-ring 3s cubic-bezier(0.2,0.7,0.1,1) infinite;
+}
+[data-theme="light"] .cv-ask-orb::after { border-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .cv-ask-orb::before { border-color: rgba(0,0,0,0.09); }
+.cv-ask-orb-core {
+    position: relative; z-index: 1;
+    width: 44%; aspect-ratio: 1; border-radius: 50%;
+    display: grid; place-items: center;
+    background: radial-gradient(circle at 32% 26%, #2c2c33, #0b0b0f 74%);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 0 55px var(--cv-volt-glow), inset 0 1px 0 rgba(255,255,255,0.08);
+    color: #fff;
+    animation: cv-empty-pulse 3.4s ease-in-out infinite;
+}
+.cv-ask-orb-core svg { width: 40%; height: 40%; }
 
 .cv-ask-eyebrow {
     display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -9535,11 +10024,7 @@ kbd {
     font-style: italic; font-weight: 400;
     padding-right: 0.2em;
 }
-.cv-ask-title .voltword::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0.1em; height: 0.06em;
-    background: linear-gradient(90deg, transparent, var(--cv-volt) 20%, var(--cv-volt) 80%, transparent);
-    filter: blur(6px); opacity: 0.5;
-}
+.cv-ask-title .voltword::after { display: none; }
 [data-theme="light"] .cv-ask-title .voltword {
     background: linear-gradient(180deg, #e8a500, #b45309 100%);
     -webkit-background-clip: text; background-clip: text;
@@ -9549,29 +10034,30 @@ kbd {
     font-family: var(--cv-body);
     font-size: 14.5px; line-height: 1.6;
     color: var(--cv-text-2);
-    max-width: 560px;
+    max-width: 480px;
     margin: 0;
-    text-align: center;
+    text-align: left;
 }
+/* Eyebrow badge with the volt glyph */
+.cv-ask-eyebrow .cv-ebadge { display: inline-flex; align-items: center; gap: 5px; }
+.cv-ask-eyebrow .cv-ebadge svg { width: 11px; height: 11px; }
 [data-theme="light"] #view-ask .ask-empty.cv-ask-empty .cv-ask-desc { color: #52525b; }
 
 /* ── Starter cards ────────────────────────────────────────── */
 .cv-ask-starters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
     width: 100%;
-    max-width: 760px;
-    margin-top: 10px;
 }
-@media (max-width: 700px) {
+@media (max-width: 820px) {
     .cv-ask-starters { grid-template-columns: 1fr; }
 }
 
 #view-ask .ask-suggestion.cv-ask-starter {
     position: relative; overflow: hidden;
-    display: flex; align-items: center; gap: 12px;
-    padding: 14px 16px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 18px;
+    padding: 18px 18px 16px;
     border-radius: var(--cv-r-md);
     background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
     border: 1px solid var(--cv-line);
@@ -9595,28 +10081,49 @@ kbd {
     border-color: color-mix(in oklab, var(--cv-volt) 35%, var(--cv-line));
 }
 #view-ask .ask-suggestion.cv-ask-starter:hover::before { opacity: 1; }
+/* Top row: icon (left) + category badge (right) */
+.cv-ask-starter-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    position: relative; z-index: 1;
+}
 .cv-ask-starter-ic {
-    width: 32px; height: 32px; border-radius: 9px;
+    width: 36px; height: 36px; border-radius: 10px;
     display: grid; place-items: center;
-    background: var(--cv-volt-dim);
-    border: 1px solid color-mix(in oklab, var(--cv-volt) 28%, transparent);
-    color: var(--cv-volt);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--cv-line);
+    color: var(--cv-text-1);
     flex-shrink: 0;
 }
-.cv-ask-starter-ic svg { width: 15px; height: 15px; }
-.cv-ask-starter-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+[data-theme="light"] .cv-ask-starter-ic { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #3f3f46; }
+.cv-ask-starter-ic svg { width: 16px; height: 16px; }
+.cv-ask-starter-badge {
+    font: 500 9px/1 var(--cv-mono);
+    color: var(--cv-text-3);
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 5px 9px; border-radius: 100px;
+    border: 1px solid var(--cv-line);
+}
 .cv-ask-starter-t {
-    font: 500 13px/1.35 var(--cv-body);
+    position: relative; z-index: 1;
+    font: 500 15px/1.35 var(--cv-body);
     color: var(--cv-text-0);
-    letter-spacing: -0.005em;
-    overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
-    -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+    letter-spacing: -0.01em;
 }
 [data-theme="light"] .cv-ask-starter-t { color: #111113; }
-.cv-ask-starter-meta {
-    font: 500 9.5px/1 var(--cv-mono);
+.cv-ask-starter-run {
+    position: relative; z-index: 1;
+    display: inline-flex; align-items: center; gap: 7px;
+    font: 500 10px/1 var(--cv-mono);
     color: var(--cv-text-3);
     letter-spacing: 0.14em; text-transform: uppercase;
+    transition: color 0.2s var(--cv-ease), gap 0.2s var(--cv-ease);
+}
+.cv-ask-starter-run svg { width: 13px; height: 13px; }
+#view-ask .ask-suggestion.cv-ask-starter:hover .cv-ask-starter-run { color: var(--cv-volt); gap: 10px; }
+#view-ask .ask-suggestion.cv-ask-starter:hover .cv-ask-starter-ic {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 35%, transparent);
+    background: var(--cv-volt-dim);
 }
 
 /* ── Message re-skin ──────────────────────────────────────── */
@@ -9693,6 +10200,55 @@ kbd {
     background: rgba(0,0,0,0.08);
     color: #111;
 }
+
+/* ── Inline message editing (Claude/ChatGPT style) ────────── */
+#view-ask .ask-msg.ask-msg-user.editing .ask-msg-body {
+    flex: 0 0 auto;
+    width: min(92%, 720px);
+    max-width: min(92%, 720px);
+}
+.ask-msg-edit { display: flex; flex-direction: column; gap: 9px; width: 100%; }
+.ask-msg-edit-input {
+    width: 100%; box-sizing: border-box;
+    background: linear-gradient(135deg, rgba(28,28,34,0.95), rgba(18,18,22,0.95));
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 38%, var(--cv-line-2));
+    color: var(--cv-text-0);
+    border-radius: 16px;
+    padding: 12px 15px;
+    font: 400 14px/1.65 var(--cv-body);
+    resize: none; outline: none;
+    max-height: 260px; overflow-y: auto;
+    transition: border-color 0.18s var(--cv-ease), box-shadow 0.18s var(--cv-ease);
+}
+.ask-msg-edit-input:focus {
+    border-color: color-mix(in oklab, var(--cv-volt) 60%, transparent);
+    box-shadow: 0 0 0 3px var(--cv-volt-glow);
+}
+[data-theme="light"] .ask-msg-edit-input {
+    background: linear-gradient(135deg, #ffffff, #f4f4f7);
+    border-color: color-mix(in oklab, #e8a500 40%, rgba(0,0,0,0.1));
+    color: #111113;
+}
+.ask-msg-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ask-msg-edit-btn {
+    padding: 7px 14px; border-radius: 100px;
+    font: 500 12px/1 var(--cv-body); cursor: pointer;
+    border: 1px solid var(--cv-line-2);
+    transition: all 0.16s var(--cv-ease);
+}
+.ask-msg-edit-cancel { background: transparent; color: var(--cv-text-2); }
+.ask-msg-edit-cancel:hover { background: rgba(255,255,255,0.06); color: var(--cv-text-0); border-color: var(--cv-line); }
+.ask-msg-edit-save {
+    background: linear-gradient(180deg, color-mix(in oklab, var(--cv-volt) 90%, white 10%), var(--cv-volt-2));
+    color: #1a1200; border-color: color-mix(in oklab, var(--cv-volt) 70%, black);
+    font-weight: 600;
+}
+.ask-msg-edit-save:hover { box-shadow: 0 6px 18px var(--cv-volt-glow); transform: translateY(-1px); }
+.ask-msg-edit-save:active { transform: translateY(0); }
+[data-theme="light"] .ask-msg-edit-cancel { color: #52525b; }
+[data-theme="light"] .ask-msg-edit-cancel:hover { background: rgba(0,0,0,0.05); color: #111; }
+.ask-msg-edit-input::-webkit-scrollbar { width: 5px; }
+.ask-msg-edit-input::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 3px; }
 
 /* Edit-in-progress input highlight */
 #view-ask .ask-input.editing {
@@ -9938,7 +10494,7 @@ kbd {
 .cv-ask-pill:focus-within .cv-ask-pill-ic { color: var(--cv-volt); }
 .cv-ask-pill-ic svg { width: 16px; height: 16px; }
 
-#view-ask input.ask-input {
+#view-ask .ask-input {
     flex: 1; min-width: 0;
     background: transparent !important;
     border: 0 !important;
@@ -9948,9 +10504,19 @@ kbd {
     font: 400 14.5px/1.5 var(--cv-body);
     padding: 10px 0 !important;
     margin: 0;
+    /* Multiline: grow with content (capped), no manual resize grip. */
+    resize: none;
+    display: block;
+    max-height: 140px;
+    overflow-y: auto;
+    scrollbar-width: thin;
 }
-[data-theme="light"] #view-ask input.ask-input { color: #111113; }
-#view-ask input.ask-input::placeholder { color: var(--cv-text-3); }
+#view-ask textarea.ask-input::-webkit-scrollbar { width: 5px; }
+#view-ask textarea.ask-input::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+[data-theme="light"] #view-ask .ask-input { color: #111113; }
+#view-ask .ask-input::placeholder { color: var(--cv-text-3); }
+/* Center the controls with the input — reliable on one line, fine across a few. */
+#view-ask .cv-ask-pill { align-items: center; }
 
 .cv-ask-pill-kbd {
     display: none;
@@ -10000,6 +10566,33 @@ kbd {
 .cv-ask-hint-left {
     display: inline-flex; align-items: center; gap: 8px;
 }
+.cv-ask-hint-right {
+    display: inline-flex; align-items: center; gap: 8px;
+}
+.ask-scope-select {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-color: var(--cv-surface-2, rgba(255,255,255,0.04));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 9px center;
+    background-size: 11px;
+    color: var(--cv-text-2, inherit);
+    border: 1px solid var(--cv-line, rgba(255,255,255,0.12));
+    border-radius: 100px;
+    font: 500 11px/1 var(--cv-mono);
+    letter-spacing: 0.02em;
+    padding: 5px 27px 5px 11px;
+    max-width: 180px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.18s var(--cv-ease), color 0.18s var(--cv-ease), background-color 0.18s var(--cv-ease);
+}
+.ask-scope-select:hover { border-color: var(--cv-volt); color: var(--cv-volt); }
+.ask-scope-select:focus-visible { outline: none; border-color: var(--cv-volt); box-shadow: 0 0 0 3px var(--cv-volt-glow, rgba(204,255,0,0.15)); }
+/* Native option list can't take the pill styling, but at least keep it on-theme. */
+.ask-scope-select option { background: #16161b; color: #e4e4e7; }
+[data-theme="light"] .ask-scope-select option { background: #ffffff; color: #27272a; }
 .cv-ask-hint-dot {
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--cv-volt);
@@ -10026,6 +10619,88 @@ kbd {
     border-color: color-mix(in oklab, var(--cv-volt) 30%, transparent);
     background: var(--cv-volt-dim);
 }
+
+/* ── Custom scope dropdown inside the composer pill ────────── */
+.cv-ask-scope { position: relative; flex-shrink: 0; }
+.cv-ask-scope-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 9px 6px 11px;
+    border-radius: 100px;
+    border: 1px solid var(--cv-line);
+    background: rgba(255,255,255,0.03);
+    color: var(--cv-text-2);
+    font: 500 11px/1 var(--cv-mono);
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: border-color 0.18s var(--cv-ease), color 0.18s var(--cv-ease), background 0.18s var(--cv-ease);
+}
+[data-theme="light"] .cv-ask-scope-btn { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); color: #52525b; }
+.cv-ask-scope-btn:hover { border-color: var(--cv-line-2); color: var(--cv-text-1); }
+.cv-ask-scope-btn[aria-expanded="true"] {
+    border-color: color-mix(in oklab, var(--cv-volt) 45%, transparent);
+    color: var(--cv-text-0); background: var(--cv-volt-dim);
+}
+.cv-ask-scope-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--cv-volt-glow); }
+.cv-ask-scope-ic { display: grid; place-items: center; color: var(--cv-text-3); flex-shrink: 0; }
+.cv-ask-scope-ic svg { width: 13px; height: 13px; }
+.cv-ask-scope-btn[aria-expanded="true"] .cv-ask-scope-ic { color: var(--cv-volt); }
+.cv-ask-scope-label { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-ask-scope-chev { width: 12px; height: 12px; flex-shrink: 0; transition: transform 0.2s var(--cv-ease); }
+.cv-ask-scope-btn[aria-expanded="true"] .cv-ask-scope-chev { transform: rotate(180deg); }
+
+/* Popup menu — position:fixed (set by JS) so the pill's overflow can't clip it. */
+.cv-ask-scope-menu {
+    position: fixed; z-index: 2147483002;
+    min-width: 220px; max-width: 320px; max-height: 320px; overflow-y: auto;
+    padding: 6px;
+    border-radius: 12px;
+    background: rgba(16,16,20,0.96);
+    border: 1px solid var(--cv-line);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 24px 48px -12px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.35);
+    backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    animation: cvAskPanelIn 0.16s var(--cv-ease) both;
+}
+[data-theme="light"] .cv-ask-scope-menu { background: rgba(255,255,255,0.98); border-color: rgba(0,0,0,0.1); }
+.cv-ask-scope-menu[hidden] { display: none !important; }
+.cv-ask-scope-opt {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 9px 10px; border: 0; border-radius: 8px;
+    background: transparent; cursor: pointer; text-align: left;
+    color: var(--cv-text-1); font: 500 12.5px/1.2 var(--cv-body);
+    transition: background 0.12s var(--cv-ease);
+}
+.cv-ask-scope-opt:hover { background: rgba(255,255,255,0.06); }
+[data-theme="light"] .cv-ask-scope-opt { color: #27272a; }
+[data-theme="light"] .cv-ask-scope-opt:hover { background: rgba(0,0,0,0.05); }
+.cv-ask-scope-opt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-ask-scope-opt-count {
+    font: 500 10px/1 var(--cv-mono); color: var(--cv-text-3);
+    padding: 2px 7px; border-radius: 100px; border: 1px solid var(--cv-line);
+}
+.cv-ask-scope-opt-check { width: 15px; height: 15px; color: var(--cv-volt); flex-shrink: 0; opacity: 0; }
+.cv-ask-scope-opt[aria-selected="true"] { background: var(--cv-volt-dim); color: var(--cv-text-0); }
+.cv-ask-scope-opt[aria-selected="true"] .cv-ask-scope-opt-check { opacity: 1; }
+@media (max-width: 560px) { .cv-ask-scope { display: none; } }
+
+/* ── Hint kbd chips ───────────────────────────────────────── */
+.cv-ask-kbd {
+    font-family: var(--cv-mono); font-size: 10px;
+    padding: 2px 6px; border-radius: 5px;
+    background: rgba(255,255,255,0.06); color: var(--cv-text-2);
+    border: 1px solid var(--cv-line);
+}
+[data-theme="light"] .cv-ask-kbd { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); color: #52525b; }
+
+/* ── Inline composer (welcome state): drop the sticky/centered shell ── */
+#view-ask .ask-input-bar.cv-ask-composer.cv-ask-composer-inline {
+    position: static; padding: 0; background: none; z-index: auto;
+}
+#view-ask .cv-ask-composer-inline .cv-ask-pill { max-width: none; margin: 0; }
+#view-ask .cv-ask-composer-inline .cv-ask-hint { max-width: none; margin: 12px 2px 0; }
+
+/* Welcome state: the composer is inline, so the scroll doesn't need the
+   tall bottom reserve that keeps chat messages clear of the sticky composer. */
+.cv-ask-scroll.cv-ask-scroll-welcome { padding-bottom: clamp(24px, 4vh, 48px); }
 
 /* Smaller screens */
 @media (max-width: 700px) {
@@ -10960,6 +11635,122 @@ kbd {
 }
 
 /* ================================================================
+   Glass morphism for Volt & Space vibes
+   Brings the noir-grade frosted-glass surface treatment to the
+   other two dark vibes: translucent layered-gradient fills, a
+   top highlight hairline, layered depth shadows, and a frosted
+   blur so the ambient backdrop reads through the surface. Accent
+   washes use each vibe's own token (amber for volt, cyan for
+   space) instead of noir's violet/white so each keeps its identity.
+   Dark vibes only — light mode keeps its existing flat surfaces.
+   ================================================================ */
+
+/* Frosted topbar (mirrors noir's floating bar) */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar,
+[data-vibe="space"]:not([data-theme="light"]) .cv-topbar {
+  background: linear-gradient(180deg, rgba(22,22,30,0.78), rgba(12,12,18,0.78));
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 8px 32px -16px rgba(0,0,0,0.6);
+  position: relative;
+}
+[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar::after,
+[data-vibe="space"]:not([data-theme="light"]) .cv-topbar::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  pointer-events: none;
+}
+
+/* Glass surfaces — stat cards, recent cards, pipeline panel */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-pipeline,
+[data-vibe="space"]:not([data-theme="light"]) .cv-pipeline {
+  background:
+    radial-gradient(360px 120px at 0% 0%, var(--cv-volt-glow), transparent 60%),
+    radial-gradient(280px 200px at 100% 100%, color-mix(in oklab, var(--cv-plasma) 8%, transparent), transparent 65%),
+    linear-gradient(180deg, rgba(255,255,255,0.028) 0%, rgba(255,255,255,0.008) 100%);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 1px 2px rgba(0,0,0,0.35),
+    0 18px 44px -22px rgba(0,0,0,0.78),
+    0 0 0 1px rgba(255,255,255,0.02);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Top highlight hairline */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat::after,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat::after,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16%;
+  right: 16%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  pointer-events: none;
+  opacity: 0.65;
+  z-index: 1;
+}
+
+/* Hover lift + deepen */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-stat:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-stat:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover {
+  border-color: rgba(255,255,255,0.16);
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.07) inset,
+    0 26px 56px -22px rgba(0,0,0,0.9),
+    0 0 0 1px rgba(255,255,255,0.05);
+}
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
+[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before,
+[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before { opacity: 1; }
+
+/* Glass chips */
+[data-vibe="volt"]:not([data-theme="light"]) .cv-chip,
+[data-vibe="space"]:not([data-theme="light"]) .cv-chip {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.012));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(255,255,255,0.07);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* ================================================================
    Space vibe + Light mode
    Space only changes cv-* tokens (deep navy/cyan palette) — the
    ambient gradient is the biggest visual problem; white stars on
@@ -11591,6 +12382,33 @@ kbd {
     background: rgba(0,0,0,0.04);
     color: rgba(0,0,0,0.85);
 }
+.cv-onboard-field {
+    margin: 4px 0 2px;
+}
+.cv-onboard-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 9px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cv-onboard-input::placeholder { color: rgba(255,255,255,0.4); }
+.cv-onboard-input:focus {
+    border-color: var(--accent, #6c8cff);
+    box-shadow: 0 0 0 3px rgba(108,140,255,0.18);
+}
+[data-theme="light"] .cv-onboard-input {
+    color: rgba(0,0,0,0.9);
+    background: rgba(0,0,0,0.03);
+    border-color: rgba(0,0,0,0.16);
+}
+[data-theme="light"] .cv-onboard-input::placeholder { color: rgba(0,0,0,0.4); }
 .cv-onboard-progress {
     height: 3px;
     background: rgba(255,255,255,0.08);
@@ -11932,15 +12750,17 @@ kbd {
     width: 360px; max-width: calc(100vw - 32px);
     max-height: 460px;
     display: flex; flex-direction: column;
-    background: rgba(18,18,22,0.96);
+    /* Solid, NOT translucent: this panel is nested inside .cv-topbar which has
+       its own backdrop-filter — a nested backdrop-filter + alpha background
+       composites incorrectly (the panel renders see-through). Use an opaque
+       fill and no backdrop-filter so it always reads solid. */
+    background: #16161c;
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 14px;
     box-shadow:
         0 1px 0 rgba(255,255,255,0.05) inset,
         0 20px 60px -12px rgba(0,0,0,0.7),
         0 8px 24px -4px rgba(0,0,0,0.5);
-    backdrop-filter: blur(20px) saturate(140%);
-    -webkit-backdrop-filter: blur(20px) saturate(140%);
     z-index: 200;
     overflow: hidden;
     animation: cv-notify-panel-in 180ms cubic-bezier(0.16,1,0.3,1);
@@ -12087,7 +12907,7 @@ kbd {
 [data-theme="light"] .cv-notify-btn { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.08); color: #52525b; }
 [data-theme="light"] .cv-notify-btn:hover { background: rgba(0,0,0,0.06); color: #18181b; border-color: rgba(0,0,0,0.14); }
 [data-theme="light"] .cv-notify-dot { box-shadow: 0 0 0 2px #ffffff, 0 4px 10px rgba(216,51,69,0.3); }
-[data-theme="light"] .cv-notify-panel { background: rgba(255,255,255,0.98); border-color: rgba(0,0,0,0.1); box-shadow: 0 20px 60px -12px rgba(0,0,0,0.18), 0 8px 24px -4px rgba(0,0,0,0.1); }
+[data-theme="light"] .cv-notify-panel { background: #ffffff; border-color: rgba(0,0,0,0.1); box-shadow: 0 20px 60px -12px rgba(0,0,0,0.18), 0 8px 24px -4px rgba(0,0,0,0.1); }
 [data-theme="light"] .cv-notify-head { border-bottom-color: rgba(0,0,0,0.06); background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent); }
 [data-theme="light"] .cv-notify-title { color: #18181b; }
 [data-theme="light"] .cv-notify-count { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.06); color: #71717a; }
@@ -12119,7 +12939,7 @@ kbd {
         0 4px 12px rgba(0,0,0,0.4);
 }
 [data-vibe="noir"] .cv-notify-panel {
-    background: linear-gradient(180deg, rgba(22,22,28,0.96), rgba(14,14,18,0.96));
+    background: linear-gradient(180deg, #16161c, #0e0e12);
     border-color: rgba(255,255,255,0.09);
     box-shadow:
         0 1px 0 rgba(255,255,255,0.06) inset,
@@ -12444,5 +13264,65 @@ kbd {
 [data-theme="light"] .update-info-item {
     background: var(--bg-tertiary);
     border-color: var(--border);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Motion polish — global smoothness pass (additive, low-specificity)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Smooth programmatic scrolling everywhere content scrolls */
+.view,
+.main-content,
+.cv-ask-scroll,
+.cv-ask-history-list,
+.cv-notify-scroll,
+.settings-modal,
+.modal { scroll-behavior: smooth; }
+
+/* Tactile press feedback. These controls already animate hover via
+   `transition: all`, so the :active transform eases in smoothly. More specific
+   component rules (e.g. the ask send button, starter cards) still win. */
+.btn:active:not(:disabled),
+.cv-primary:active:not(:disabled),
+.cv-cmdk:active,
+.nav-item:active,
+.cv-nav:active,
+.cv-ibtn:active:not(:disabled),
+.cv-side-iconbtn:active,
+.cv-notify-btn:active,
+.sidebar-collapse-btn:active,
+.cv-vibe button:active,
+.cv-util:active,
+.settings-theme-opt:active { transform: scale(0.97); }
+
+/* Give a transform transition to interactive bits that don't declare one,
+   so the press above (and any hover lift) is never a hard snap. */
+.nav-item,
+.cv-nav,
+.cv-ibtn,
+.cv-util,
+.settings-theme-opt,
+.cv-side-iconbtn,
+.cv-notify-btn,
+.sidebar-collapse-btn {
+    transition: background 0.18s var(--cv-ease, ease),
+                border-color 0.18s var(--cv-ease, ease),
+                color 0.18s var(--cv-ease, ease),
+                box-shadow 0.18s var(--cv-ease, ease),
+                transform 0.13s var(--cv-ease, ease);
+}
+
+/* Links / inline interactive text get a gentle colour fade. */
+a { transition: color 0.16s ease; }
+
+/* Respect users who prefer less motion — disable animations app-wide.
+   (Supersedes the Ask-only guard added earlier.) */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 

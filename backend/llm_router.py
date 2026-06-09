@@ -89,8 +89,12 @@ def is_cloud_active() -> bool:
 # ─────────────────────────────────────────────────────────────────────
 
 def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
-             timeout: int = 180) -> dict:
+             timeout: int = 180, system: str | None = None) -> dict:
     """Generate a completion using the active provider.
+
+    `system`, when provided, is sent as a proper system prompt to cloud providers
+    (enabling role separation and Anthropic prompt caching). For Ollama it is
+    folded into the prompt, preserving the single-prompt behavior.
 
     Returns:
         {
@@ -113,16 +117,18 @@ def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            system=system,
         )
         result["provider"] = active["provider"]
         result["model"] = active["model"]
         return result
     else:
-        # Ollama path — use existing _call_generate
+        # Ollama path — fold system into the prompt (single-prompt model).
         from backend.ollama_client import _call_generate, _NUM_CTX
+        folded = f"{system}\n\n{prompt}" if system else prompt
         r = _call_generate(
             active["model"],
-            prompt,
+            folded,
             {"temperature": temperature, "num_predict": max_tokens, "num_ctx": _NUM_CTX},
             timeout=timeout,
         )
@@ -138,8 +144,12 @@ def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
 
 
 def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
-                    timeout: int = 180) -> Iterator[dict]:
+                    timeout: int = 180, system: str | None = None) -> Iterator[dict]:
     """Stream a completion using the active provider.
+
+    `system`, when provided, is sent as a proper system prompt to cloud providers
+    (role separation + Anthropic prompt caching). For Ollama it is folded into the
+    prompt, preserving single-prompt behavior.
 
     Yields:
         {"token": str} during generation
@@ -157,6 +167,7 @@ def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 200
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            system=system,
         ):
             if event.get("done"):
                 event["provider"] = active["provider"]
@@ -165,12 +176,59 @@ def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 200
     else:
         # Ollama streaming
         import requests as _req
-        from backend.ollama_client import OLLAMA_BASE, _NUM_CTX
+        from backend.ollama_client import OLLAMA_BASE, _NUM_CTX, _is_thinking_model
+
+        # Qwen 3 (hybrid-thinking) models emit a <think>...</think> block unless
+        # told not to. The non-streaming _call_generate appends /no_think; this
+        # streaming path historically did not, so reasoning leaked verbatim into
+        # RAG answers. Append the directive here too, and strip any block that
+        # still slips through (e.g. a model that ignores /no_think).
+        model = active["model"]
+        # Fold the system prompt into the single prompt (Ollama single-prompt model).
+        if system:
+            prompt = f"{system}\n\n{prompt}"
+        if _is_thinking_model(model) and "/no_think" not in prompt:
+            prompt = prompt + "\n/no_think"
+        _suppress_think = _is_thinking_model(model)
+        _in_think = False
+        _pending = ""  # holds a partial "<think>"/"</think>" tag split across tokens
+
+        def _filter_think(tok: str):
+            """Strip <think>…</think> spans from a token stream. Yields clean text."""
+            nonlocal _in_think, _pending
+            buf = _pending + tok
+            _pending = ""
+            out = []
+            while buf:
+                if _in_think:
+                    end = buf.find("</think>")
+                    if end == -1:
+                        # Keep a tail in case "</think>" straddles the next token
+                        if len(buf) > 8:
+                            buf = buf[-8:]
+                        _pending = buf
+                        break
+                    buf = buf[end + len("</think>"):]
+                    _in_think = False
+                else:
+                    start = buf.find("<think>")
+                    if start == -1:
+                        # Emit all but a possible partial opening tag tail
+                        if len(buf) > 7:
+                            out.append(buf[:-7]); _pending = buf[-7:]
+                        else:
+                            _pending = buf
+                        break
+                    out.append(buf[:start])
+                    buf = buf[start + len("<think>"):]
+                    _in_think = True
+            return "".join(out)
+
         try:
             r = _req.post(
                 f"{OLLAMA_BASE}/api/generate",
                 json={
-                    "model": active["model"],
+                    "model": model,
                     "prompt": prompt,
                     "stream": True,
                     "options": {"num_ctx": min(_NUM_CTX, 16384), "temperature": temperature},
@@ -186,8 +244,15 @@ def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 200
                     data = json.loads(line)
                     token = data.get("response", "")
                     if token:
-                        yield {"token": token}
+                        token = _filter_think(token) if _suppress_think else token
+                        if token:
+                            yield {"token": token}
                     if data.get("done"):
+                        # Flush any buffered non-tag tail
+                        if _suppress_think and _pending and not _in_think:
+                            tail = _pending; _pending = ""
+                            if tail:
+                                yield {"token": tail}
                         yield {
                             "done": True,
                             "usage": None,

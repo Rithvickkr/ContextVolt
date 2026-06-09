@@ -95,9 +95,18 @@ def estimate_cost(provider: str, model: str, input_tokens: int, output_tokens: i
 # OpenAI adapter
 # ─────────────────────────────────────────────────────────────────────
 
+def _openai_messages(prompt: str, system: str | None) -> list[dict]:
+    """Build an OpenAI messages array with an optional system message."""
+    msgs: list[dict] = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    msgs.append({"role": "user", "content": prompt})
+    return msgs
+
+
 def _openai_generate(prompt: str, model: str, api_key: str,
                      temperature: float = 0.2, max_tokens: int = 2000,
-                     timeout: int = 180) -> dict:
+                     timeout: int = 180, system: str | None = None) -> dict:
     """Call OpenAI Chat Completions API. Returns {response, usage}."""
     r = requests.post(
         "https://api.openai.com/v1/chat/completions",
@@ -107,7 +116,7 @@ def _openai_generate(prompt: str, model: str, api_key: str,
         },
         json={
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": _openai_messages(prompt, system),
             "temperature": temperature,
             "max_tokens": max_tokens,
         },
@@ -128,7 +137,7 @@ def _openai_generate(prompt: str, model: str, api_key: str,
 
 def _openai_generate_stream(prompt: str, model: str, api_key: str,
                             temperature: float = 0.2, max_tokens: int = 2000,
-                            timeout: int = 180) -> Iterator[dict]:
+                            timeout: int = 180, system: str | None = None) -> Iterator[dict]:
     """Stream OpenAI Chat Completions. Yields {token} dicts, final {done, usage}."""
     r = requests.post(
         "https://api.openai.com/v1/chat/completions",
@@ -138,7 +147,7 @@ def _openai_generate_stream(prompt: str, model: str, api_key: str,
         },
         json={
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": _openai_messages(prompt, system),
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
@@ -197,11 +206,40 @@ def _openai_validate(api_key: str) -> dict:
 
 _ANTHROPIC_API_VERSION = "2023-06-01"
 
+# Below this length, a system prompt is too short to be worth caching (Anthropic's
+# minimum cacheable prompt is ~1024 tokens; ~6000 chars is a safe floor) — send it
+# as a plain string and skip the cache_control block.
+_ANTHROPIC_CACHE_MIN_CHARS = 6000
+
+
+def _anthropic_system_field(system: str | None):
+    """Build Anthropic's top-level `system` field.
+
+    For large system prompts, emit a content block with cache_control=ephemeral
+    so Anthropic caches the prefix across calls (prompt caching) — cutting input
+    cost and latency on repeat turns. Short prompts are sent as a plain string.
+    Returns None when there is no system text.
+    """
+    if not system:
+        return None
+    if len(system) >= _ANTHROPIC_CACHE_MIN_CHARS:
+        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    return system
+
 
 def _anthropic_generate(prompt: str, model: str, api_key: str,
                         temperature: float = 0.2, max_tokens: int = 2000,
-                        timeout: int = 180) -> dict:
+                        timeout: int = 180, system: str | None = None) -> dict:
     """Call Anthropic Messages API. Returns {response, usage}."""
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    }
+    sys_field = _anthropic_system_field(system)
+    if sys_field is not None:
+        payload["system"] = sys_field
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={
@@ -209,12 +247,7 @@ def _anthropic_generate(prompt: str, model: str, api_key: str,
             "anthropic-version": _ANTHROPIC_API_VERSION,
             "Content-Type": "application/json",
         },
-        json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-        },
+        json=payload,
         timeout=timeout,
     )
     r.raise_for_status()
@@ -235,8 +268,18 @@ def _anthropic_generate(prompt: str, model: str, api_key: str,
 
 def _anthropic_generate_stream(prompt: str, model: str, api_key: str,
                                temperature: float = 0.2, max_tokens: int = 2000,
-                               timeout: int = 180) -> Iterator[dict]:
+                               timeout: int = 180, system: str | None = None) -> Iterator[dict]:
     """Stream Anthropic Messages. Yields {token} dicts, final {done, usage}."""
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "stream": True,
+    }
+    sys_field = _anthropic_system_field(system)
+    if sys_field is not None:
+        payload["system"] = sys_field
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={
@@ -244,13 +287,7 @@ def _anthropic_generate_stream(prompt: str, model: str, api_key: str,
             "anthropic-version": _ANTHROPIC_API_VERSION,
             "Content-Type": "application/json",
         },
-        json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": temperature,
-            "stream": True,
-        },
+        json=payload,
         stream=True,
         timeout=timeout,
     )
@@ -317,21 +354,29 @@ def _anthropic_validate(api_key: str) -> dict:
 _GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 
+def _gemini_body(prompt: str, system: str | None, temperature: float, max_tokens: int) -> dict:
+    """Build a Gemini request body with an optional systemInstruction."""
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        },
+    }
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+    return body
+
+
 def _gemini_generate(prompt: str, model: str, api_key: str,
                      temperature: float = 0.2, max_tokens: int = 2000,
-                     timeout: int = 180) -> dict:
+                     timeout: int = 180, system: str | None = None) -> dict:
     """Call Google Gemini generateContent API. Returns {response, usage}."""
     r = requests.post(
         f"{_GEMINI_BASE}/models/{model}:generateContent",
         params={"key": api_key},
         headers={"Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            },
-        },
+        json=_gemini_body(prompt, system, temperature, max_tokens),
         timeout=timeout,
     )
     r.raise_for_status()
@@ -352,19 +397,13 @@ def _gemini_generate(prompt: str, model: str, api_key: str,
 
 def _gemini_generate_stream(prompt: str, model: str, api_key: str,
                             temperature: float = 0.2, max_tokens: int = 2000,
-                            timeout: int = 180) -> Iterator[dict]:
+                            timeout: int = 180, system: str | None = None) -> Iterator[dict]:
     """Stream Gemini generateContent. Yields {token} dicts, final {done, usage}."""
     r = requests.post(
         f"{_GEMINI_BASE}/models/{model}:streamGenerateContent",
         params={"key": api_key, "alt": "sse"},
         headers={"Content-Type": "application/json"},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            },
-        },
+        json=_gemini_body(prompt, system, temperature, max_tokens),
         stream=True,
         timeout=timeout,
     )
@@ -423,17 +462,17 @@ def _gemini_validate(api_key: str) -> dict:
 
 def cloud_generate(prompt: str, provider: str, model: str, api_key: str,
                    temperature: float = 0.2, max_tokens: int = 2000,
-                   timeout: int = 180) -> dict:
+                   timeout: int = 180, system: str | None = None) -> dict:
     """Generate a completion via a cloud provider. Returns {response, usage}."""
     _log.debug("cloud_generate provider=%s model=%s prompt_len=%d", provider, model, len(prompt))
     start = time.time()
     try:
         if provider == "openai":
-            result = _openai_generate(prompt, model, api_key, temperature, max_tokens, timeout)
+            result = _openai_generate(prompt, model, api_key, temperature, max_tokens, timeout, system)
         elif provider == "anthropic":
-            result = _anthropic_generate(prompt, model, api_key, temperature, max_tokens, timeout)
+            result = _anthropic_generate(prompt, model, api_key, temperature, max_tokens, timeout, system)
         elif provider == "google":
-            result = _gemini_generate(prompt, model, api_key, temperature, max_tokens, timeout)
+            result = _gemini_generate(prompt, model, api_key, temperature, max_tokens, timeout, system)
         else:
             raise ValueError(f"Unknown provider: {provider}")
         elapsed = round(time.time() - start, 2)
@@ -456,16 +495,16 @@ def cloud_generate(prompt: str, provider: str, model: str, api_key: str,
 
 def cloud_generate_stream(prompt: str, provider: str, model: str, api_key: str,
                           temperature: float = 0.2, max_tokens: int = 2000,
-                          timeout: int = 180) -> Iterator[dict]:
+                          timeout: int = 180, system: str | None = None) -> Iterator[dict]:
     """Stream a completion via a cloud provider. Yields {token} and final {done, usage, cost}."""
     _log.debug("cloud_generate_stream provider=%s model=%s", provider, model)
     try:
         if provider == "openai":
-            gen = _openai_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout)
+            gen = _openai_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout, system)
         elif provider == "anthropic":
-            gen = _anthropic_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout)
+            gen = _anthropic_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout, system)
         elif provider == "google":
-            gen = _gemini_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout)
+            gen = _gemini_generate_stream(prompt, model, api_key, temperature, max_tokens, timeout, system)
         else:
             raise ValueError(f"Unknown provider: {provider}")
         for event in gen:

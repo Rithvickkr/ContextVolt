@@ -9,6 +9,7 @@ import sqlite3
 import json
 import logging
 import os
+import re
 import struct
 import threading
 from datetime import datetime, timezone
@@ -20,6 +21,10 @@ from backend.paths import db_path as _db_path
 DB_PATH = str(_db_path())
 
 _log = logging.getLogger("contextvolt")
+
+# Set during init_db: True when the SQLite build has FTS5 and the chunks_fts
+# index is ready. search_chunks_keyword falls back to LIKE when False.
+_HAS_FTS = False
 
 # ---------------------------------------------------------------------------
 # Connection helper — thread-local pooling
@@ -225,6 +230,63 @@ def init_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_chunks_starred ON chunks(is_starred)"
     )
+    conn.commit()
+
+    # FTS5 full-text index over chunk text, ranked with BM25. We use a STANDALONE
+    # FTS5 table (it stores its own copy of the text) rather than an
+    # external-content table: external-content FTS is tightly coupled to the
+    # source table and its 'delete' command raises "database disk image is
+    # malformed" the moment the index and content drift even slightly — which
+    # would block normal chunk/context deletion, not just search. The standalone
+    # table is kept in sync with plain INSERT/DELETE/UPDATE triggers that can't
+    # corrupt. Guarded because some SQLite builds ship without FTS5 — keyword
+    # search falls back to LIKE if so.
+    #
+    # FTS_SCHEMA_VERSION bumps whenever this layout changes; on mismatch we drop
+    # and rebuild the index so old/broken tables (e.g. the prior external-content
+    # one) are replaced cleanly.
+    global _HAS_FTS
+    FTS_SCHEMA_VERSION = "2"
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM _vec_meta WHERE key='fts_schema_version'").fetchone()
+        stored_fts_ver = row[0] if row else None
+        if stored_fts_ver != FTS_SCHEMA_VERSION:
+            # Drop any prior index + triggers (handles the broken external-content table).
+            for trig in ("chunks_fts_ai", "chunks_fts_ad", "chunks_fts_au"):
+                conn.execute(f"DROP TRIGGER IF EXISTS {trig}")
+            conn.execute("DROP TABLE IF EXISTS chunks_fts")
+            conn.commit()
+
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, tokenize='unicode61')"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN "
+            "INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text); END"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN "
+            "DELETE FROM chunks_fts WHERE rowid = old.id; END"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN "
+            "UPDATE chunks_fts SET text = new.text WHERE rowid = old.id; END"
+        )
+        # Backfill when the index is empty but chunks exist (first run or post-rebuild).
+        fts_count = conn.execute("SELECT COUNT(*) FROM chunks_fts").fetchone()[0]
+        chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        if chunk_count and not fts_count:
+            conn.execute("INSERT INTO chunks_fts(rowid, text) SELECT id, text FROM chunks")
+        conn.execute(
+            "INSERT OR REPLACE INTO _vec_meta (key, value) VALUES ('fts_schema_version', ?)",
+            (FTS_SCHEMA_VERSION,),
+        )
+        conn.commit()
+        _HAS_FTS = True
+    except Exception as e:
+        _HAS_FTS = False
+        _log.warning("FTS5 unavailable — keyword search will use LIKE fallback: %s", e)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_contexts_status ON contexts(status)"
     )
@@ -332,6 +394,31 @@ def init_db():
     )
     conn.commit()
     # connection reused (thread-local pool)
+
+
+# ---------------------------------------------------------------------------
+# Embedding-scheme metadata (fix #6 — detect embed-model switches)
+# ---------------------------------------------------------------------------
+
+def get_meta(key: str) -> str | None:
+    """Read a value from the _vec_meta key/value table, or None if absent."""
+    conn = _get_conn()
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM _vec_meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def set_meta(key: str, value: str) -> None:
+    """Upsert a value into the _vec_meta key/value table."""
+    conn = _get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute(
+        "INSERT OR REPLACE INTO _vec_meta (key, value) VALUES (?, ?)", (key, value)
+    )
+    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -503,11 +590,13 @@ def get_contexts_paginated(
     total = conn.execute(f"SELECT COUNT(*) FROM contexts {where}", params_count).fetchone()[0]
     offset = (page - 1) * per_page
 
+    # id is a deterministic tie-breaker: created_at is a TEXT timestamp that can
+    # collide for rows created in the same instant, leaving the order undefined.
     order_clause = {
-        "newest": "starred DESC, created_at DESC",
-        "oldest": "starred DESC, created_at ASC",
-        "alpha":  "starred DESC, title COLLATE NOCASE ASC",
-    }.get(sort, "starred DESC, created_at DESC")
+        "newest": "starred DESC, created_at DESC, id DESC",
+        "oldest": "starred DESC, created_at ASC, id ASC",
+        "alpha":  "starred DESC, title COLLATE NOCASE ASC, id ASC",
+    }.get(sort, "starred DESC, created_at DESC, id DESC")
 
     params = (*params_count, per_page, offset)
     rows = conn.execute(
@@ -631,17 +720,67 @@ def delete_context(context_id: int) -> bool:
     return cursor.rowcount > 0
 
 
-def search_chunks_keyword(query: str, top_k: int = 20) -> list[dict]:
-    """Full-text keyword search across all chunk text. Returns chunks with context_id."""
+def _build_fts_match(query: str) -> str | None:
+    """Turn arbitrary user text into a safe FTS5 MATCH expression.
+
+    Extracts alphanumeric tokens and quotes each (so FTS special characters in
+    the raw query can't break the parse or inject operators). Tokens are ANDed
+    — matching the previous LIKE-on-phrase semantics where every term must be
+    present. Returns None when the query has no usable tokens.
+    """
+    tokens = re.findall(r"[a-zA-Z0-9]+", query)
+    if not tokens:
+        return None
+    return " ".join(f'"{t}"' for t in tokens)
+
+
+def search_chunks_keyword(
+    query: str, top_k: int = 20, context_ids: list[int] | None = None,
+) -> list[dict]:
+    """Full-text keyword search across all chunk text. Returns chunks with context_id.
+
+    Uses the FTS5 index (BM25-ranked) when available; falls back to a LIKE scan
+    on SQLite builds without FTS5. When `context_ids` is given, results are
+    restricted to chunks whose context is in that set (collection scoping).
+    """
     conn = _get_conn()
+    scope_sql = ""
+    scope_params: tuple = ()
+    if context_ids:
+        ph = ",".join("?" * len(context_ids))
+        scope_sql = f" AND c.context_id IN ({ph})"
+        scope_params = tuple(context_ids)
+
+    if _HAS_FTS:
+        match = _build_fts_match(query)
+        if match:
+            try:
+                rows = conn.execute(
+                    f"""SELECT c.id, c.context_id, c.chunk_index, c.text, c.role_hint,
+                              c.has_code, c.is_starred
+                       FROM chunks_fts
+                       JOIN chunks c ON c.id = chunks_fts.rowid
+                       WHERE chunks_fts MATCH ?{scope_sql}
+                       ORDER BY bm25(chunks_fts)
+                       LIMIT ?""",
+                    (match, *scope_params, top_k),
+                ).fetchall()
+                return [{"id": r[0], "context_id": r[1], "chunk_index": r[2],
+                         "text": r[3], "role_hint": r[4], "has_code": bool(r[5]),
+                         "is_starred": bool(r[6]), "_score": None, "_keyword_match": True}
+                        for r in rows]
+            except Exception as e:
+                _log.warning("FTS query failed (%r) — falling back to LIKE: %s", query, e)
+
+    # LIKE fallback
     like = f"%{query}%"
     rows = conn.execute(
-        """SELECT c.id, c.context_id, c.chunk_index, c.text, c.role_hint, c.has_code, c.is_starred
+        f"""SELECT c.id, c.context_id, c.chunk_index, c.text, c.role_hint, c.has_code, c.is_starred
            FROM chunks c
-           WHERE lower(c.text) LIKE lower(?)
+           WHERE lower(c.text) LIKE lower(?){scope_sql}
            ORDER BY c.created_at DESC
            LIMIT ?""",
-        (like, top_k),
+        (like, *scope_params, top_k),
     ).fetchall()
     # connection reused (thread-local pool)
     return [{"id": r[0], "context_id": r[1], "chunk_index": r[2],
@@ -748,6 +887,23 @@ def update_chunk_embedding(chunk_id: int, embedding: list[float]) -> None:
     # connection reused (thread-local pool)
 
 
+def rebuild_chunks_fts() -> None:
+    """Rebuild the external-content FTS5 index from the chunks table.
+
+    chunks_fts is an external-content table whose AFTER-DELETE trigger issues
+    the FTS5 'delete' command using the row's old text to locate its postings.
+    If the index drifts out of sync with chunks(text) — e.g. a partial write or
+    a re-chunk that reused rowids — that command raises "database disk image is
+    malformed" and aborts any DELETE on chunks. A 'rebuild' regenerates the
+    index from the content table and clears the corruption.
+    """
+    if not _HAS_FTS:
+        return
+    conn = _get_conn()
+    conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')")
+    conn.commit()
+
+
 def delete_chunks_by_context(context_id: int) -> int:
     """Delete all chunks for a context. Returns count deleted."""
     conn = _get_conn()
@@ -760,7 +916,22 @@ def delete_chunks_by_context(context_id: int) -> int:
             conn.execute("DELETE FROM chunk_vecs WHERE rowid = ?", (cid,))
         except Exception:
             pass
-    cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
+    try:
+        cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
+    except sqlite3.DatabaseError as e:
+        # A corrupt chunks_fts index makes the AFTER-DELETE trigger raise
+        # "database disk image is malformed", which would otherwise bubble up as
+        # a 500 and block deletion (incl. bulk delete). Repair the index in place
+        # and retry once.
+        if "malformed" not in str(e).lower():
+            raise
+        conn.rollback()
+        _log.warning(
+            "chunks_fts corrupt while deleting context %s — rebuilding FTS index",
+            context_id,
+        )
+        rebuild_chunks_fts()
+        cur = conn.execute("DELETE FROM chunks WHERE context_id = ?", (context_id,))
     conn.commit()
     # connection reused (thread-local pool)
     return cur.rowcount
@@ -944,11 +1115,12 @@ def search_chunks_semantic(
     context_id: int | None = None,
     top_k: int = 10,
     star_boost: float = 0.15,
+    context_ids: list[int] | None = None,
 ) -> list[dict]:
     """Return top_k chunks ranked by cosine similarity via sqlite-vec.
 
-    If context_id is given, search within that context only.
-    Starred chunks get +star_boost added to their score.
+    Scope precedence: `context_id` (single context) > `context_ids` (a set of
+    contexts, e.g. a collection) > global. Starred chunks get +star_boost.
     """
     conn = _get_conn()
 
@@ -978,6 +1150,23 @@ def search_chunks_semantic(
             # connection reused (thread-local pool)
             return []
 
+        scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
+    elif context_ids:
+        # Collection-scoped: exact cosine over the bounded subset of chunks whose
+        # context is in the given set. Same JOIN approach as single-context.
+        ph = ",".join("?" * len(context_ids))
+        try:
+            vec_rows = conn.execute(
+                f"""SELECT c.id, vec_distance_cosine(cv.embedding, ?) AS dist
+                    FROM chunks c
+                    JOIN chunk_vecs cv ON cv.rowid = c.id
+                    WHERE c.context_id IN ({ph})
+                    ORDER BY dist ASC
+                    LIMIT ?""",
+                (q_blob, *context_ids, top_k * 3),
+            ).fetchall()
+        except Exception:
+            return []
         scored_ids = [(r[0], 1.0 - r[1]) for r in vec_rows]
     else:
         # Global search
@@ -1123,6 +1312,15 @@ def get_all_collections() -> list[dict]:
         {"id": r[0], "name": r[1], "color": r[2], "created_at": r[3], "count": counts.get(r[0], 0)}
         for r in rows
     ]
+
+
+def get_context_ids_by_collection(collection_id: int) -> list[int]:
+    """Return the IDs of all contexts assigned to a collection."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id FROM contexts WHERE collection_id = ?", (collection_id,)
+    ).fetchall()
+    return [r[0] for r in rows]
 
 
 def create_collection(name: str, color: str = "#6366f1") -> dict:

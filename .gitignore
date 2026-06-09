@@ -7,6 +7,12 @@ venv/
 *.egg-info/
 dist/
 
+# ─── React frontend ──────────────────────────────
+# The built bundle IS committed so installs work without Node.
+!frontend-react/dist/
+!frontend-react/dist/**
+frontend-react/node_modules/
+
 # ─── App data (generated at runtime) ─────────────
 context_vault.db
 context_volt.db

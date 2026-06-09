@@ -1,0 +1,127 @@
+/* ================================================================
+   ContextVolt — Design Tokens (ported from legacy styles.css)
+   ================================================================ */
+
+:root {
+    --bg-primary: #09090b;
+    --bg-secondary: #0f0f12;
+    --bg-tertiary: #17171c;
+    --bg-elevated: #1e1e24;
+    --bg-card: rgba(23, 23, 28, 0.75);
+    --bg-glass: rgba(15, 15, 18, 0.65);
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --bg-active: rgba(255, 255, 255, 0.07);
+    --bg-surface: rgba(255, 255, 255, 0.025);
+
+    --text-primary: #f0f0f0;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --text-faint: #3f3f46;
+
+    --accent: #ffffff;
+    --accent-light: #ededed;
+    --accent-glow: rgba(255, 255, 255, 0.06);
+    --accent-subtle: rgba(255, 255, 255, 0.04);
+    --accent-dim: rgba(255, 255, 255, 0.05);
+    --accent-fg: #f0f0f0;
+
+    --danger: #f87171;
+    --danger-bg: rgba(248, 113, 113, 0.08);
+    --danger-border: rgba(248, 113, 113, 0.18);
+    --success: #34d399;
+    --success-bg: rgba(52, 211, 153, 0.08);
+    --success-border: rgba(52, 211, 153, 0.2);
+    --warning: #fbbf24;
+
+    --border: rgba(255, 255, 255, 0.07);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-accent: rgba(255, 255, 255, 0.15);
+
+    --sidebar-width: 248px;
+    --content-max: 820px;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-pill: 100px;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --shadow-lg: 0 16px 64px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --shadow-card: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 1px var(--border);
+    --shadow-card-hover: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+
+    --font-display: 'Space Grotesk', -apple-system, sans-serif;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'Geist Mono', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --transition: 0.2s var(--ease);
+    --transition-slow: 0.35s var(--ease);
+    --transition-fast: 0.12s var(--ease);
+
+    /* Volt accent (default vibe) */
+    --cv-volt: oklch(0.88 0.19 92);
+    --cv-volt-2: oklch(0.78 0.19 78);
+    --cv-volt-dim: oklch(0.88 0.19 92 / 0.15);
+    --cv-volt-glow: oklch(0.88 0.19 92 / 0.28);
+}
+
+[data-vibe="space"] {
+    --cv-volt: oklch(0.86 0.14 200);
+    --cv-volt-2: oklch(0.74 0.16 215);
+    --cv-volt-dim: oklch(0.86 0.14 200 / 0.15);
+    --cv-volt-glow: oklch(0.86 0.14 200 / 0.28);
+}
+
+[data-vibe="noir"] {
+    --cv-volt: #f0f0f0;
+    --cv-volt-2: #a1a1aa;
+    --cv-volt-dim: rgba(255, 255, 255, 0.08);
+    --cv-volt-glow: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="light"] {
+    --bg-primary: #fafafa;
+    --bg-secondary: #f4f4f5;
+    --bg-tertiary: #e9e9eb;
+    --bg-elevated: #ffffff;
+    --bg-card: rgba(255, 255, 255, 0.85);
+    --bg-glass: rgba(255, 255, 255, 0.7);
+    --bg-hover: rgba(0, 0, 0, 0.04);
+    --bg-active: rgba(0, 0, 0, 0.07);
+    --bg-surface: rgba(0, 0, 0, 0.025);
+
+    --text-primary: #18181b;
+    --text-secondary: #52525b;
+    --text-muted: #71717a;
+    --text-faint: #a1a1aa;
+
+    --accent: #18181b;
+    --accent-light: #2e2e33;
+    --accent-glow: rgba(0, 0, 0, 0.07);
+    --accent-subtle: rgba(0, 0, 0, 0.04);
+    --accent-dim: rgba(0, 0, 0, 0.05);
+    --accent-fg: #18181b;
+
+    --warning: #d97706;
+
+    --border: rgba(0, 0, 0, 0.09);
+    --border-subtle: rgba(0, 0, 0, 0.05);
+    --border-accent: rgba(0, 0, 0, 0.18);
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.03);
+    --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 16px 64px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 2px 8px rgba(0,0,0,0.05), 0 0 0 1px var(--border);
+    --shadow-card-hover: 0 8px 32px rgba(0,0,0,0.1), 0 0 0 1px rgba(0, 0, 0, 0.1);
+
+    --cv-volt: oklch(0.62 0.16 78);
+    --cv-volt-2: oklch(0.55 0.16 70);
+    --cv-volt-dim: oklch(0.62 0.16 78 / 0.12);
+    --cv-volt-glow: oklch(0.62 0.16 78 / 0.2);
+}

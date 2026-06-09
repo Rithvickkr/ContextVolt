@@ -244,7 +244,19 @@ class _NoCacheStatic(StaticFiles):
         return response
 
 
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend")
+def _resolve_frontend_dir() -> str:
+    """Pick the UI to serve: env override > built React app > legacy vanilla JS."""
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    override = os.environ.get("CV_FRONTEND_DIR")
+    if override and os.path.isfile(os.path.join(override, "index.html")):
+        return override
+    react_dist = os.path.join(root, "frontend-react", "dist")
+    if os.path.isfile(os.path.join(react_dist, "index.html")):
+        return react_dist
+    return os.path.join(root, "frontend")
+
+
+FRONTEND_DIR = _resolve_frontend_dir()
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/static", _NoCacheStatic(directory=FRONTEND_DIR), name="static")
 

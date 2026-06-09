@@ -1,0 +1,222 @@
+/* ── Dashboard view ─────────────────────────────────────────── */
+.dash {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.dash-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dash-hero h1 {
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.15;
+}
+
+.dash-sub {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Stats */
+.dash-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 760px) {
+    .dash-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+.stat-card {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.stat-card:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-card-hover);
+}
+
+.stat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.stat-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+}
+
+.stat-ic { color: var(--cv-volt); opacity: 0.9; }
+
+.stat-value {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.stat-dash { color: var(--text-faint); }
+
+/* Quick actions */
+.dash-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* Recent contexts */
+.dash-section-head h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 14px;
+}
+
+.recent-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 680px) {
+    .recent-grid { grid-template-columns: 1fr; }
+}
+
+.recent-card {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition-fast);
+}
+
+.recent-card:hover {
+    border-color: var(--border-accent);
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
+}
+
+.recent-top {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.recent-top .col-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.recent-title {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.recent-star {
+    flex-shrink: 0;
+    color: var(--cv-volt);
+}
+
+.recent-snippet {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.recent-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.recent-date {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-right: auto;
+}
+
+/* Empty state */
+.dash-empty {
+    padding: 44px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+}
+
+.dash-empty-ic {
+    color: var(--cv-volt);
+    filter: drop-shadow(0 0 12px var(--cv-volt-glow));
+}
+
+.dash-empty h3 {
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.dash-empty p {
+    margin: 0 0 8px;
+    max-width: 380px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* Skeletons */
+.recent-skel {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.skel-line {
+    height: 11px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%);
+    background-size: 200% 100%;
+    animation: skelShimmer 1.4s ease-in-out infinite;
+}
+
+.skel-line.w-40 { width: 40%; }
+.skel-line.w-60 { width: 60%; }
+.skel-line.w-90 { width: 90%; }
+
+@keyframes skelShimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+}

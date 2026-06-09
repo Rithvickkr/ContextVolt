@@ -183,7 +183,7 @@ async def _lifespan(_app: "FastAPI"):
         yield
 
 
-app = FastAPI(title="ContextVolt", version="2.2.0", lifespan=_lifespan)
+app = FastAPI(title="ContextVolt", version="2.3.0", lifespan=_lifespan)
 
 
 @app.middleware("http")

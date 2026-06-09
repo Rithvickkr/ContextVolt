@@ -52,24 +52,42 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # ── Versioned release on v* tags ──────────────────────────────
+      - name: Resolve release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $ver = "${{ steps.version.outputs.VERSION }}"
+          $path = "RELEASE_NOTES_v$ver.md"
+          if (Test-Path $path) {
+            Write-Host "Using release notes file: $path"
+          } else {
+            Write-Host "No RELEASE_NOTES_v$ver.md found; writing generic fallback."
+            $path = "RELEASE_NOTES_generated.md"
+            $lines = @(
+              "## ContextVolt $ver",
+              "",
+              "### How to install",
+              "1. Download **ContextVolt-Setup.exe** below",
+              "2. Run it and follow the wizard (takes ~30 seconds)",
+              "3. On first launch, ContextVolt downloads Ollama and the AI model automatically",
+              "",
+              "### What's included",
+              "- Embedded Python runtime (no system Python needed)",
+              "- FastAPI backend & local database",
+              "- Browser-based dashboard",
+              "- Browser & VS Code extensions"
+            )
+            $lines | Set-Content -Encoding utf8 $path
+          }
+          echo "NOTES_PATH=$path" >> $env:GITHUB_OUTPUT
+
       - name: Create versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: ContextVolt ${{ steps.version.outputs.VERSION }}
-          body: |
-            ## ContextVolt ${{ steps.version.outputs.VERSION }}
-
-            ### How to install
-            1. Download **ContextVolt-Setup.exe** below
-            2. Run it and follow the wizard (takes ~30 seconds)
-            3. On first launch, ContextVolt downloads Ollama and the AI model automatically
-
-            ### What's included
-            - Embedded Python runtime (no system Python needed)
-            - FastAPI backend & local database
-            - Browser-based dashboard
-            - Browser & VS Code extensions
+          body_path: ${{ steps.notes.outputs.NOTES_PATH }}
           files: installer/output/ContextVolt-Setup.exe
           draft: false
           prerelease: false

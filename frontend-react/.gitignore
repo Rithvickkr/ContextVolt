@@ -8,7 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# dist is committed so installs work without Node (see root .gitignore)
 dist-ssr
 *.local
 

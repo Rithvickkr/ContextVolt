@@ -1,0 +1,383 @@
+/* ================================================================
+   Ask Vault — chat view
+   ================================================================ */
+
+.ask-view {
+    display: flex;
+    gap: 16px;
+    height: calc(100vh - 80px);
+    margin-bottom: -40px; /* reclaim view-wrap bottom padding for the input bar */
+}
+
+.ask-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.ask-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.ask-scope { font-family: var(--font-mono); font-size: 10.5px; }
+
+.ask-header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.ask-hbtn { padding: 6px 12px; font-size: 12px; }
+.ask-hbtn.on {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
+}
+
+/* ── Scroll area ────────────────────────────────────────────── */
+.ask-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 4px;
+    scroll-behavior: smooth;
+}
+
+/* ── Empty state ────────────────────────────────────────────── */
+.ask-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    justify-content: center;
+    min-height: 100%;
+    padding: 24px;
+}
+
+.ask-empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-lg);
+    color: var(--cv-volt);
+    background: var(--cv-volt-dim);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 25%, transparent);
+    box-shadow: 0 0 36px var(--cv-volt-glow);
+    margin-bottom: 20px;
+}
+
+.ask-empty h1 {
+    font-size: 26px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.ask-empty p {
+    max-width: 420px;
+    margin: 0 0 24px;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+    line-height: 1.65;
+}
+
+.ask-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
+.ask-pill {
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    transition: all var(--transition-fast);
+}
+.ask-pill:hover {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
+    transform: translateY(-1px);
+}
+
+/* ── Messages ───────────────────────────────────────────────── */
+.ask-msgs { display: flex; flex-direction: column; gap: 14px; }
+
+.ask-msg { display: flex; }
+.ask-msg.from-user { justify-content: flex-end; }
+.ask-msg.from-assistant { justify-content: flex-start; }
+
+.ask-bubble {
+    max-width: 86%;
+    padding: 11px 15px;
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.user-bubble {
+    background: var(--cv-volt-dim);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 22%, transparent);
+    color: var(--text-primary);
+    border-bottom-right-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.assistant-bubble {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 6px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.assistant-bubble.is-error {
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+}
+
+.ask-error-note { margin-top: 8px; font-size: 12.5px; color: var(--danger); }
+.ask-stopped-note {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Blinking caret on the streaming bubble */
+.md-lite.is-streaming > *:last-child::after,
+.md-lite.is-streaming:empty::after {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 15px;
+    margin-left: 3px;
+    vertical-align: -2px;
+    background: var(--cv-volt);
+    border-radius: 1.5px;
+    animation: ask-caret 0.9s steps(2, start) infinite;
+}
+
+@keyframes ask-caret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+/* Thinking dots */
+.thinking-dots { display: inline-flex; gap: 5px; padding: 4px 2px; }
+.thinking-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cv-volt);
+    animation: ask-dot 1.2s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes ask-dot {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-4px); }
+}
+
+/* ── Source chips ───────────────────────────────────────────── */
+.ask-sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.ask-src-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 240px;
+    padding: 4px 10px 4px 4px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+.ask-src-chip:hover {
+    color: var(--text-primary);
+    border-color: color-mix(in oklab, var(--cv-volt) 45%, transparent);
+    background: var(--cv-volt-dim);
+}
+
+.src-n {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--cv-volt);
+    background: var(--cv-volt-dim);
+}
+
+.src-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Input bar ──────────────────────────────────────────────── */
+.ask-inputbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    padding: 10px;
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-card);
+    transition: border-color var(--transition-fast), box-shadow var(--transition);
+}
+.ask-inputbar:focus-within {
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    box-shadow: 0 0 0 3px var(--cv-volt-dim), var(--shadow-card);
+}
+
+.ask-input {
+    flex: 1;
+    resize: none;
+    border: none;
+    background: none;
+    box-shadow: none;
+    font-size: 14px;
+    line-height: 1.55;
+    padding: 7px 6px;
+    max-height: 148px;
+    overflow-y: auto;
+}
+.ask-input:focus { border: none; box-shadow: none; }
+.ask-input:disabled { opacity: 0.55; cursor: wait; }
+.ask-input::placeholder { color: var(--text-muted); }
+
+.ask-send {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    color: #09090b;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--cv-volt) 90%, white 10%), var(--cv-volt-2));
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 70%, black);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 6px 18px -4px var(--cv-volt-glow);
+    transition: transform var(--transition-fast), box-shadow var(--transition), opacity var(--transition-fast);
+}
+.ask-send:hover:not(:disabled) { transform: translateY(-1px); }
+.ask-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.ask-send.stop {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    box-shadow: none;
+}
+.ask-send.stop:hover { background: rgba(248, 113, 113, 0.16); }
+
+/* ── Sessions panel ─────────────────────────────────────────── */
+.ask-sessions {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    align-self: stretch;
+}
+
+.ask-sessions-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.ask-sessions-close {
+    color: var(--text-muted);
+    padding: 4px;
+    border-radius: 5px;
+    transition: all var(--transition-fast);
+}
+.ask-sessions-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.ask-sessions-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+
+.ask-sessions-empty {
+    padding: 18px 10px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.ask-session {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+.ask-session:hover { background: var(--bg-hover); }
+.ask-session.active {
+    background: var(--bg-active);
+    box-shadow: inset 0 0 0 1px var(--border);
+}
+.ask-session.loading { opacity: 0.6; }
+
+.ask-session-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+.ask-session-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ask-session-meta {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+.ask-session-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+.ask-session:hover .ask-session-actions,
+.ask-session-actions:has(.pinned) { opacity: 1; }
+
+.ask-session-btn {
+    padding: 4px;
+    border-radius: 5px;
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+.ask-session-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.ask-session-btn.pinned { color: var(--cv-volt); }
+.ask-session-btn.danger:hover { color: var(--danger); background: var(--danger-bg); }

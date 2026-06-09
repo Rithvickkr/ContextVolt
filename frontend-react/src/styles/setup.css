@@ -1,0 +1,168 @@
+/* ── Setup wizard overlay ───────────────────────────────────── */
+.setup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(900px 500px at 50% -10%, color-mix(in oklab, var(--cv-volt) 6%, transparent) 0%, transparent 60%),
+        var(--bg-primary);
+}
+
+.setup-panel {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.setup-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+
+.setup-logo {
+    filter: drop-shadow(0 0 16px var(--cv-volt-glow));
+}
+
+.setup-name {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.setup-heading {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.setup-sub {
+    margin: 0 0 26px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.setup-cards {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.setup-card {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 13px 16px;
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    text-align: left;
+    transition: border-color var(--transition-slow);
+}
+
+.setup-card.ok {
+    border-color: var(--success-border);
+}
+
+.setup-card-ic {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    transition: color var(--transition-slow);
+}
+
+.setup-card.ok .setup-card-ic { color: var(--success); }
+.setup-card.checking .setup-card-ic { color: var(--cv-volt); }
+
+.setup-card-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.4;
+}
+
+.setup-card-label {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.setup-card-sub {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+.setup-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.setup-dot.pending {
+    width: 8px;
+    height: 8px;
+    margin: 4px;
+    background: var(--text-faint);
+}
+
+.setup-dot.ok {
+    color: #09090b;
+    background: var(--success);
+    box-shadow: 0 0 12px var(--success-border);
+}
+
+.setup-spinner {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+    border-top-color: var(--cv-volt);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.setup-foot {
+    margin-top: 26px;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.setup-waiting {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+.setup-ready {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--success);
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+}

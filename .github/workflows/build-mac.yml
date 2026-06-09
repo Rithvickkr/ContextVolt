@@ -58,8 +58,11 @@ jobs:
           if [ ! -x "$APP" ]; then
             echo "Bundle executable not found at $APP"; ls -la dist/ContextVolt.app/Contents/MacOS; exit 1
           fi
-          # 60s ceiling so a hang fails the job instead of stalling the runner.
-          OUT=$(CONTEXTVOLT_CI=1 /usr/bin/timeout 60 "$APP" 2>&1) || {
+          # macOS ships no timeout(1) (it's GNU coreutils). Enforce a 60s ceiling
+          # portably via perl: alarm() survives exec and SIGALRM's default action
+          # terminates the process, so a hung bundle fails the job instead of
+          # stalling the runner.
+          OUT=$(CONTEXTVOLT_CI=1 perl -e 'alarm shift; exec @ARGV' 60 "$APP" 2>&1) || {
             echo "Bundle launch failed:"; echo "$OUT"; exit 1
           }
           echo "$OUT"

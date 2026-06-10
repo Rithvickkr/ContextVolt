@@ -25,6 +25,7 @@ from backend.database import (
     get_all_contexts,
     get_contexts_paginated,
     get_context,
+    get_starred_contexts,
     get_summarizing_contexts,
     get_contexts_by_ids,
     get_chunks_by_context,
@@ -2609,9 +2610,15 @@ def api_dashboard():
     except Exception:
         recent_contexts = []
 
+    try:
+        pinned = get_starred_contexts(limit=4)
+    except Exception:
+        pinned = []
+
     return {
         "stats": db,
         "recent": recent_contexts,
+        "pinned": pinned,
     }
 
 

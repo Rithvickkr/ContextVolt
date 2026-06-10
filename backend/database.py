@@ -621,6 +621,16 @@ def get_context(context_id: int) -> dict | None:
     return _row_to_dict(row)
 
 
+def get_starred_contexts(limit: int = 4) -> list[dict]:
+    """Return the most recently created starred/pinned contexts."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM contexts WHERE starred = 1 ORDER BY created_at DESC, id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def get_summarizing_contexts() -> list[dict]:
     """Return id and title for all contexts currently being summarized."""
     conn = _get_conn()

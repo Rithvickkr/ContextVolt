@@ -298,6 +298,18 @@
                     </h1>
                 </section>
 
+                <!-- Ask bar — question goes straight to Ask Vault -->
+                <div class="cv-dash-ask" id="dash-ask" role="search">
+                    <span class="cv-dash-ask-ic" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/></svg>
+                    </span>
+                    <label for="dash-ask-input" class="sr-only">Ask your vault</label>
+                    <input type="text" id="dash-ask-input" class="cv-dash-ask-input"
+                        placeholder="Ask your vault anything…" aria-label="Ask your vault"
+                        autocomplete="off" spellcheck="false">
+                    <kbd class="cv-dash-ask-kbd" aria-hidden="true">↵</kbd>
+                </div>
+
                 <!-- Stats -->
                 <section class="cv-stats-grid" id="dashboard-stats" aria-label="Vault statistics">
                     <article class="cv-stat">
@@ -354,6 +366,12 @@
                         <span id="cv-stream-text"></span><span class="caret" aria-hidden="true"></span>
                     </div>
                 </section>
+
+                <!-- Pinned contexts (hidden until something is pinned) -->
+                <div class="cv-sec-head" id="dashboard-pinned-head" style="display:none;">
+                    <h2 class="cv-sec-title">Pinned</h2>
+                </div>
+                <section class="cv-pinned-row" id="dashboard-pinned-row" style="display:none;" aria-label="Pinned contexts"></section>
 
                 <!-- Recent Contexts -->
                 <div class="cv-sec-head">
@@ -641,21 +659,62 @@
 
             <!-- Context Library View -->
             <div class="view cv-main" id="view-library" style="display:none;" role="region" aria-labelledby="view-library-heading">
-                <div class="view-header">
-                    <h1 id="view-library-heading">Library</h1>
-                </div>
-
-                <!-- Hero -->
-                <section class="cv-lib-header">
-                    <div class="cv-lib-eyebrow">
-                        <span class="cv-ebadge">Library</span>
-                        <span class="cv-dot"></span>
-                        <span id="cv-lib-count-text">Loading your vault…</span>
+                <!-- Compact header: title + live count left, tools right -->
+                <section class="cv-lib-head">
+                    <div class="cv-lib-head-text">
+                        <h1 class="cv-lib-title" id="view-library-heading">Library</h1>
+                        <span class="cv-lib-sub" id="cv-lib-count-text">Loading your vault…</span>
                     </div>
-                    <h1 class="cv-lib-title">Everything you've <span class="voltword">saved</span>.</h1>
+                    <div class="cv-lib-tools">
+                        <div class="cv-view-seg" id="cv-view-seg" role="tablist" aria-label="View mode">
+                            <button data-view="grid" class="on" role="tab" aria-selected="true" title="Grid view">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                                Grid
+                            </button>
+                            <button data-view="rows" role="tab" aria-selected="false" title="Compact rows">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                                Rows
+                            </button>
+                        </div>
+                        <div class="cv-sort" id="cv-sort">
+                            <button type="button" class="cv-sort-btn" id="cv-sort-btn"
+                                    aria-haspopup="listbox" aria-expanded="false" aria-label="Sort order">
+                                <svg class="cv-sort-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h13M3 12h9M3 18h5M17 8l4-4 4 4M21 4v16"/></svg>
+                                <span class="cv-sort-value" id="cv-sort-value">Newest</span>
+                                <svg class="cv-sort-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                            </button>
+                            <div class="cv-sort-menu" id="cv-sort-menu" role="listbox" aria-label="Sort order" hidden>
+                                <button class="cv-sort-opt" role="option" data-sort="newest" aria-selected="true">
+                                    <span class="cv-sort-opt-text">
+                                        <span class="cv-sort-opt-title">Newest first</span>
+                                        <span class="cv-sort-opt-sub">Most recent on top</span>
+                                    </span>
+                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                                </button>
+                                <button class="cv-sort-opt" role="option" data-sort="oldest">
+                                    <span class="cv-sort-opt-text">
+                                        <span class="cv-sort-opt-title">Oldest first</span>
+                                        <span class="cv-sort-opt-sub">Earliest on top</span>
+                                    </span>
+                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                                </button>
+                                <button class="cv-sort-opt" role="option" data-sort="alpha">
+                                    <span class="cv-sort-opt-text">
+                                        <span class="cv-sort-opt-title">A — Z</span>
+                                        <span class="cv-sort-opt-sub">Alphabetical by title</span>
+                                    </span>
+                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <button class="cv-select-mode-btn btn-select-mode" id="btn-select-mode" aria-label="Toggle multi-select">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
+                            Select
+                        </button>
+                    </div>
                 </section>
 
-                <!-- Command bar: search + view mode + sort + select -->
+                <!-- Search row -->
                 <div class="cv-lib-command">
                     <div class="cv-search-pill" role="search">
                         <span class="cv-search-ic" aria-hidden="true">
@@ -673,57 +732,6 @@
                         <kbd class="cv-search-kbd" aria-hidden="true">Ctrl K</kbd>
                     </div>
 
-                    <div class="cv-lib-tools">
-                        <div class="cv-view-seg" id="cv-view-seg" role="tablist" aria-label="View mode">
-                            <button data-view="grid" class="on" role="tab" aria-selected="true" title="Grid view">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                                Grid
-                            </button>
-                            <button data-view="rows" role="tab" aria-selected="false" title="Compact rows">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                                Rows
-                            </button>
-                        </div>
-                        <div class="cv-sort" id="cv-sort">
-                            <button type="button" class="cv-sort-btn" id="cv-sort-btn"
-                                    aria-haspopup="listbox" aria-expanded="false" aria-label="Sort order">
-                                <svg class="cv-sort-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h13M3 12h9M3 18h5M17 8l4-4 4 4M21 4v16"/></svg>
-                                <span class="cv-sort-label">Sort</span>
-                                <span class="cv-sort-value" id="cv-sort-value">Newest</span>
-                                <svg class="cv-sort-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                            </button>
-                            <div class="cv-sort-menu" id="cv-sort-menu" role="listbox" aria-label="Sort order" hidden>
-                                <button class="cv-sort-opt" role="option" data-sort="newest" aria-selected="true">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6M12 22v-2M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24"/></svg>
-                                    <span class="cv-sort-opt-text">
-                                        <span class="cv-sort-opt-title">Newest first</span>
-                                        <span class="cv-sort-opt-sub">Most recent on top</span>
-                                    </span>
-                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                                </button>
-                                <button class="cv-sort-opt" role="option" data-sort="oldest">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                                    <span class="cv-sort-opt-text">
-                                        <span class="cv-sort-opt-title">Oldest first</span>
-                                        <span class="cv-sort-opt-sub">Earliest on top</span>
-                                    </span>
-                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                                </button>
-                                <button class="cv-sort-opt" role="option" data-sort="alpha">
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18h6M7 18V6l-3 6M14 6h6l-6 12h6"/></svg>
-                                    <span class="cv-sort-opt-text">
-                                        <span class="cv-sort-opt-title">A — Z</span>
-                                        <span class="cv-sort-opt-sub">Alphabetical by title</span>
-                                    </span>
-                                    <svg class="cv-sort-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
-                                </button>
-                            </div>
-                        </div>
-                        <button class="cv-select-mode-btn btn-select-mode" id="btn-select-mode" aria-label="Toggle multi-select">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
-                            Select
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Active filter pills (search/collection/tag) -->
@@ -1237,12 +1245,16 @@
                         <td>Summarize &amp; Save (in Quick Capture)</td>
                     </tr>
                     <tr>
-                        <td><div class="shortcut-keys"><kbd>N</kbd></div></td>
+                        <td><div class="shortcut-keys"><kbd>D</kbd> <span class="shortcut-plus">or</span> <kbd>N</kbd></div></td>
                         <td>Go to Dashboard</td>
                     </tr>
                     <tr>
                         <td><div class="shortcut-keys"><kbd>L</kbd></div></td>
                         <td>Go to Library</td>
+                    </tr>
+                    <tr>
+                        <td><div class="shortcut-keys"><kbd>A</kbd></div></td>
+                        <td>Go to Ask Vault</td>
                     </tr>
                 </table>
             </div>
@@ -1332,7 +1344,9 @@
         <div id="sidebar-tooltip-content"></div>
     </div>
 
-    <script src="/static/js/app.js?v=detail-ui-v23"></script>
+    <!-- ES module entry point — imports the rest of frontend/js/. The backend
+         serves /static with Cache-Control: no-store, so no ?v= busting needed. -->
+    <script type="module" src="/static/js/main.js"></script>
 </body>
 
 </html>

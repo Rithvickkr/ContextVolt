@@ -2605,20 +2605,35 @@ def api_dashboard():
         db = {"contexts": 0, "chunks": 0, "collections": 0, "size_mb": 0.0}
 
     try:
-        recent = get_contexts_paginated(page=1, per_page=8, sort="newest")
-        recent_contexts = recent["contexts"]
+        # Pinned items live in their own rail — keep the recent list to
+        # genuinely recent, unpinned contexts so nothing shows up twice.
+        recent = get_contexts_paginated(page=1, per_page=20, sort="newest")
+        recent_contexts = [c for c in recent["contexts"] if not c.get("starred")][:8]
     except Exception:
         recent_contexts = []
 
     try:
-        pinned = get_starred_contexts(limit=4)
+        pinned = get_starred_contexts(limit=20)
     except Exception:
         pinned = []
+
+    try:
+        from backend.database import get_activity_daily
+        activity = get_activity_daily(days=14)
+    except Exception:
+        activity = []
+
+    try:
+        sessions = sorted(list_ask_sessions(), key=lambda s: s["updated_at"] or "", reverse=True)[:3]
+    except Exception:
+        sessions = []
 
     return {
         "stats": db,
         "recent": recent_contexts,
         "pinned": pinned,
+        "activity": activity,
+        "ask_sessions": sessions,
     }
 
 

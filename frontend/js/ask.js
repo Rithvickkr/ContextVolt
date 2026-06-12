@@ -1260,4 +1260,4 @@ async function askVault(question) {
 }
 
 
-export { _askCloseHistoryPanel, _askPopulateScopeSelect, _askSimpleMarkdown, _initAskVault, askVault };
+export { _askCloseHistoryPanel, _askLoadSession, _askPopulateScopeSelect, _askSimpleMarkdown, _initAskVault, askVault };

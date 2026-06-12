@@ -6,6 +6,7 @@ import { startWorkerPolling } from './polling.js';
 // â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function navigateTo(view) {
     state.view = view;
+    document.body.dataset.view = view; // lets CSS adapt per view (e.g. lights backdrop)
 
     // Hide all views, show target with fade-in
     $$('.view').forEach(v => {

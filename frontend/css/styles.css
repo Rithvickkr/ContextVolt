@@ -7349,9 +7349,29 @@ kbd {
 @keyframes cv-blink { 0%,100%{opacity:1} 50%{opacity:.35} }
 
 /* ── Stats grid ───────────────────────────────────────────────── */
-.cv-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 36px; }
-@media (max-width: 1180px) { .cv-stats-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 760px)  { .cv-stats-grid { grid-template-columns: 1fr 1fr; } }
+/* ── Dashboard hero row: compact greeting + 2×2 stat strip ─────── */
+.cv-dash-hero { display: grid; grid-template-columns: 1fr minmax(320px, 400px); gap: 18px; align-items: stretch; margin-bottom: 20px; }
+.cv-dash-hero .cv-hero { border-bottom: 0; margin-bottom: 0; padding: 6px 4px 0; }
+.cv-dash-hero .cv-hero h1 { font-size: clamp(30px, 3.4vw, 50px); }
+@media (max-width: 1180px) { .cv-dash-hero { grid-template-columns: 1fr; } }
+
+.cv-statstrip {
+  display: grid; grid-template-columns: 1fr 1fr; overflow: hidden;
+  border-radius: var(--cv-r-lg); border: 1px solid var(--cv-line);
+  background: linear-gradient(180deg, rgba(22,22,27,0.6), rgba(14,14,18,0.6));
+}
+[data-theme="light"] .cv-statstrip { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
+.cv-statstrip .cv-stat {
+  border: 0; border-radius: 0; background: none; padding: 14px 18px;
+  display: flex; flex-direction: column; justify-content: center; gap: 7px;
+}
+[data-theme="light"] .cv-statstrip .cv-stat { background: none; }
+.cv-statstrip .cv-stat:nth-child(even) { border-left: 1px solid var(--cv-line); }
+.cv-statstrip .cv-stat:nth-child(n+3)  { border-top: 1px solid var(--cv-line); }
+[data-theme="light"] .cv-statstrip .cv-stat:nth-child(even) { border-left-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .cv-statstrip .cv-stat:nth-child(n+3)  { border-top-color: rgba(0,0,0,0.07); }
+.cv-statstrip .cv-stat:hover { transform: none; }
+.cv-statstrip .cv-stat .v { margin-top: 0; font-size: 26px; }
 
 .cv-stat {
   position: relative; overflow: hidden; padding: 18px 20px 20px; border-radius: var(--cv-r-md);
@@ -7491,17 +7511,14 @@ kbd {
 [data-theme="light"] .cv-chip { color: #52525b; border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
 [data-theme="light"] .cv-chip:hover { color: #111113; }
 
-/* ── Recent contexts grid ─────────────────────────────────────── */
-.cv-recent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-
-/* ── Dashboard ask bar — the launchpad input under the greeting ── */
+/* ── Ask command bar — the dashboard centerpiece ──────────────── */
+.cv-dash-cmd { margin: 2px 0 24px; }
 .cv-dash-ask {
-    display: flex; align-items: center; gap: 10px;
-    max-width: 640px; height: 46px;
-    margin: 4px 0 26px;
-    padding: 0 14px;
-    border-radius: 12px;
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+    display: flex; align-items: center; gap: 11px;
+    height: 54px;
+    padding: 0 10px 0 16px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(22,22,27,0.75), rgba(12,12,15,0.75));
     border: 1px solid var(--cv-line);
     transition: border-color 0.2s var(--cv-ease), box-shadow 0.2s var(--cv-ease);
 }
@@ -7513,48 +7530,187 @@ kbd {
 .cv-dash-ask:focus-within .cv-dash-ask-ic { color: var(--cv-volt); }
 .cv-dash-ask-input {
     flex: 1; min-width: 0; background: none; border: 0; outline: none;
-    font: 400 14px/1.4 var(--cv-body); color: var(--cv-text-0);
+    font: 400 14.5px/1.4 var(--cv-body); color: var(--cv-text-0);
 }
 .cv-dash-ask-input::placeholder { color: var(--cv-text-3); }
 .cv-dash-ask-kbd {
     font: 500 10px/1 var(--cv-mono); color: var(--cv-text-3);
-    padding: 4px 6px; border-radius: 5px;
+    padding: 4px 7px; border-radius: 5px;
     border: 1px solid var(--cv-line); background: rgba(255,255,255,0.03);
-    flex-shrink: 0;
+    flex-shrink: 0; white-space: nowrap;
+}
+.cv-dash-ask-go {
+    display: grid; place-items: center; flex-shrink: 0;
+    width: 36px; height: 36px; border-radius: 10px; cursor: pointer;
+    color: var(--cv-text-2); background: rgba(255,255,255,0.04);
+    border: 1px solid var(--cv-line);
+    transition: all 0.18s var(--cv-ease);
+}
+.cv-dash-ask:focus-within .cv-dash-ask-go,
+.cv-dash-ask-go:hover {
+    color: var(--cv-volt); border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
 }
 [data-theme="light"] .cv-dash-ask { background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.1); }
 [data-theme="light"] .cv-dash-ask-input { color: #111113; }
 [data-theme="light"] .cv-dash-ask-kbd { border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+[data-theme="light"] .cv-dash-ask-go { border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); color: #52525b; }
 
-/* ── Pinned strip — one-line chip-cards above Recent contexts ── */
-.cv-pinned-row {
-    display: grid; gap: 10px;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    margin-bottom: 22px;
-}
-.cv-pin-card {
-    display: flex; align-items: center; gap: 9px;
-    padding: 11px 14px; min-width: 0;
-    border-radius: 11px; cursor: pointer; text-align: left;
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
-    border: 1px solid var(--cv-line);
-    transition: transform 0.18s var(--cv-ease), border-color 0.2s var(--cv-ease);
-}
-.cv-pin-card:hover { transform: translateY(-1px); border-color: var(--cv-line-2); }
-.cv-pin-star { color: var(--cv-volt); flex-shrink: 0; }
-.cv-pin-title {
-    flex: 1; min-width: 0;
-    font: 500 13px/1.3 var(--cv-body); color: var(--cv-text-1);
+/* Suggestion chips under the bar */
+.cv-dash-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 0 2px; }
+.cv-dash-chips-label { font: 500 10px/1 var(--cv-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--cv-text-3); }
+.cv-dash-chip {
+    padding: 6px 13px; border-radius: 100px; cursor: pointer;
+    font: 400 12px/1.3 var(--cv-body); color: var(--cv-text-2);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--cv-line);
+    transition: all 0.18s var(--cv-ease); max-width: 360px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.cv-dash-chip:hover { color: var(--cv-text-0); border-color: var(--cv-line-2); background: rgba(255,255,255,0.05); }
+.cv-dash-chip.resume { color: var(--cv-volt); border-color: color-mix(in oklab, var(--cv-volt) 35%, transparent); background: var(--cv-volt-dim); }
+[data-theme="light"] .cv-dash-chip { color: #52525b; border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+[data-theme="light"] .cv-dash-chip:hover { color: #111113; }
+
+/* ── Bento: recent list + right rail ──────────────────────────── */
+.cv-dash-bento { display: grid; grid-template-columns: 1fr minmax(280px, 340px); gap: 16px; align-items: start; }
+@media (max-width: 1180px) { .cv-dash-bento { grid-template-columns: 1fr; } }
+.cv-dash-panel {
+    padding: 16px 16px 14px; border-radius: var(--cv-r-lg);
+    background: linear-gradient(180deg, rgba(22,22,27,0.55), rgba(14,14,18,0.55));
+    border: 1px solid var(--cv-line);
+}
+[data-theme="light"] .cv-dash-panel { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
+.cv-dash-panel .cv-sec-head { margin: 0 2px 14px; }
+.cv-dash-rail { display: flex; flex-direction: column; gap: 16px; }
+.cv-rail-head { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 12px; }
+.cv-rail-head h2 { font-family: var(--cv-display); font-weight: 500; font-size: 15px; letter-spacing: -0.01em; color: var(--cv-text-0); margin: 0; }
+[data-theme="light"] .cv-rail-head h2 { color: #111113; }
+.cv-rail-meta { font: 400 10px/1 var(--cv-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--cv-text-3); margin-left: auto; }
+
+/* Recent contexts — dense list rows */
+.cv-recent-list { display: flex; flex-direction: column; gap: 8px; }
+.cv-row {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 10px 14px 10px 0; min-width: 0; text-align: left; cursor: pointer;
+    border-radius: 10px; border: 1px solid var(--cv-line);
+    background: rgba(255,255,255,0.015);
+    transition: border-color 0.18s var(--cv-ease), background 0.18s var(--cv-ease), transform 0.18s var(--cv-ease);
+}
+.cv-row:hover { border-color: var(--cv-line-2); background: rgba(255,255,255,0.04); transform: translateX(2px); }
+.cv-row-rail { width: 3px; align-self: stretch; border-radius: 0 2px 2px 0; background: var(--accent, var(--cv-volt)); opacity: 0.55; flex-shrink: 0; }
+.cv-row:hover .cv-row-rail { opacity: 1; }
+.cv-row-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cv-row-title {
+    font: 500 13.5px/1.3 var(--cv-body); color: var(--cv-text-0);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 7px;
+}
+.cv-row-star { color: var(--cv-volt); flex-shrink: 0; }
+.cv-row-sub {
+    font: 400 12px/1.4 var(--cv-body); color: var(--cv-text-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cv-row-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cv-row-time { font: 400 10.5px/1 var(--cv-mono); color: var(--cv-text-3); min-width: 52px; text-align: right; }
+[data-theme="light"] .cv-row { border-color: rgba(0,0,0,0.07); background: rgba(255,255,255,0.7); }
+[data-theme="light"] .cv-row:hover { border-color: rgba(0,0,0,0.16); background: #fff; }
+[data-theme="light"] .cv-row-title { color: #111113; }
+[data-theme="light"] .cv-row-star { color: #d97706; }
+.cv-skel-row {
+    height: 56px; border-radius: 10px; border: 1px solid var(--cv-line);
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%);
+    background-size: 200% 100%;
+    animation: cv-skel-shimmer 1.4s ease infinite;
+}
+.cv-skel-row:nth-child(2) { animation-delay: 0.12s; }
+.cv-skel-row:nth-child(3) { animation-delay: 0.24s; }
+.cv-skel-row:nth-child(4) { animation-delay: 0.36s; }
+[data-theme="light"] .cv-skel-row {
+    border-color: rgba(0,0,0,0.08);
+    background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.09) 50%, rgba(0,0,0,0.04) 75%);
+    background-size: 200% 100%;
+}
+
+/* Pinned — rail cards: brand pill + age on top, 2-line title below */
+.cv-pinned-list { display: flex; flex-direction: column; gap: 8px; }
+.cv-pin-card {
+    display: flex; flex-direction: column; gap: 7px;
+    padding: 11px 13px; min-width: 0; width: 100%;
+    border-radius: 10px; cursor: pointer; text-align: left;
+    background: rgba(255,255,255,0.015);
+    border: 1px solid var(--cv-line);
+    transition: border-color 0.2s var(--cv-ease), background 0.18s var(--cv-ease);
+}
+.cv-pin-card:hover { border-color: var(--cv-line-2); background: rgba(255,255,255,0.04); }
+.cv-pin-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cv-pin-star { color: var(--cv-volt); flex-shrink: 0; }
+.cv-pin-title {
+    font: 500 12.5px/1.4 var(--cv-body); color: var(--cv-text-1);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 .cv-pin-card:hover .cv-pin-title { color: var(--cv-text-0); }
-.cv-pin-date { font: 400 10.5px/1 var(--cv-mono); color: var(--cv-text-3); flex-shrink: 0; }
-[data-theme="light"] .cv-pin-card { background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.07); }
-[data-theme="light"] .cv-pin-card:hover { border-color: rgba(0,0,0,0.16); }
+.cv-pin-date { font: 400 10px/1 var(--cv-mono); color: var(--cv-text-3); flex-shrink: 0; margin-left: auto; }
+[data-theme="light"] .cv-pin-card { background: rgba(255,255,255,0.7); border-color: rgba(0,0,0,0.07); }
+[data-theme="light"] .cv-pin-card:hover { border-color: rgba(0,0,0,0.16); background: #fff; }
 [data-theme="light"] .cv-pin-title { color: #3f3f46; }
 [data-theme="light"] .cv-pin-star { color: #d97706; }
-@media (max-width: 1180px) { .cv-recent-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 760px)  { .cv-recent-grid { grid-template-columns: 1fr; } }
+
+/* Activity sparkline — stacked capture/ask bars */
+.cv-spark { display: flex; align-items: flex-end; gap: 4px; height: 64px; padding: 2px 2px 0; }
+.cv-spark-col {
+    flex: 1; min-width: 0; height: 100%;
+    display: flex; flex-direction: column; justify-content: flex-end; gap: 1px;
+    border-radius: 3px; cursor: default;
+}
+.cv-spark-col i { display: block; border-radius: 2px; min-height: 0; transition: opacity 0.18s var(--cv-ease); }
+.cv-spark-col i.cap { background: var(--cv-volt); opacity: 0.85; }
+.cv-spark-col i.ask { background: oklch(0.72 0.18 280); opacity: 0.75; }
+.cv-spark-col.empty::after { content: ""; display: block; height: 2px; border-radius: 1px; background: var(--cv-line); }
+.cv-spark-col:hover i { opacity: 1; }
+.cv-spark-legend { display: flex; gap: 14px; margin: 10px 2px 0; }
+.cv-spark-legend span { display: inline-flex; align-items: center; gap: 6px; font: 400 10px/1 var(--cv-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--cv-text-3); }
+.cv-spark-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.cv-spark-legend i.cap { background: var(--cv-volt); }
+.cv-spark-legend i.ask { background: oklch(0.72 0.18 280); }
+
+/* System rail rows */
+.cv-sys { display: flex; flex-direction: column; }
+.cv-sys-row { display: flex; align-items: center; gap: 9px; padding: 7px 2px; min-width: 0; }
+.cv-sys-row + .cv-sys-row { border-top: 1px solid color-mix(in oklab, var(--cv-line) 55%, transparent); }
+.cv-sys-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.cv-sys-dot.ok { background: oklch(0.78 0.18 145); box-shadow: 0 0 8px oklch(0.78 0.18 145 / 0.5); }
+.cv-sys-dot.warn { background: oklch(0.78 0.15 30); box-shadow: 0 0 8px oklch(0.78 0.15 30 / 0.5); }
+.cv-sys-label {
+    flex: 1; min-width: 0; font: 400 12px/1.3 var(--cv-body); color: var(--cv-text-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cv-sys-val {
+    font: 500 10px/1 var(--cv-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--cv-text-3); padding: 3px 8px; border-radius: 100px;
+    border: 1px solid var(--cv-line); background: rgba(255,255,255,0.03); flex-shrink: 0;
+}
+[data-theme="light"] .cv-sys-label { color: #3f3f46; }
+[data-theme="light"] .cv-sys-val { border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+
+/* Sidebar — recent Ask sessions */
+.cv-recent-asks { display: flex; flex-direction: column; gap: 2px; }
+.cv-recent-ask {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 7px 10px; min-width: 0; cursor: pointer; text-align: left;
+    border: 0; border-radius: 8px; background: none;
+    color: var(--cv-text-2); transition: all 0.16s var(--cv-ease);
+}
+.cv-recent-ask:hover { background: rgba(255,255,255,0.05); color: var(--cv-text-0); }
+.cv-recent-ask-ic { display: grid; place-items: center; color: var(--cv-text-3); flex-shrink: 0; }
+.cv-recent-ask:hover .cv-recent-ask-ic { color: var(--cv-volt); }
+.cv-recent-ask-t {
+    font: 400 12px/1.3 var(--cv-body); min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+[data-theme="light"] .cv-recent-ask { color: #52525b; }
+[data-theme="light"] .cv-recent-ask:hover { background: rgba(0,0,0,0.05); color: #111113; }
 
 .cv-card {
   --mx: 50%; --my: 50%;
@@ -7690,6 +7846,8 @@ kbd {
 .app-container.sidebar-collapsed .cv-side-section { display: block !important; }
 /* Hide only the collections section (not the nav) */
 .app-container.sidebar-collapsed #collections-section { display: none !important; }
+/* Recent asks are title-driven — meaningless as bare icons, hide when collapsed */
+.app-container.sidebar-collapsed #recent-asks-section { display: none !important; }
 .app-container.sidebar-collapsed .cv-nav-kbd { display: none !important; }
 
 /* Nav: centered icon only */
@@ -13363,9 +13521,774 @@ a { transition: color 0.16s ease; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.001ms !important;
+        animation-delay: 0ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.001ms !important;
         scroll-behavior: auto !important;
     }
 }
 
+
+/* ── Statstrip vibe fixes — cells stay flat inside the joined strip;
+      the strip frame carries the chrome, not the individual cells. ── */
+[data-vibe="noir"] .cv-statstrip {
+    background:
+        radial-gradient(420px 120px at 50% -40%, rgba(255,255,255,0.05), transparent 70%),
+        linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.008) 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.05) inset,
+        0 20px 48px -22px rgba(0,0,0,0.75);
+}
+[data-vibe="noir"] .cv-statstrip .cv-stat,
+[data-vibe="noir"] .cv-statstrip .cv-stat:hover {
+    border: 0; box-shadow: none; transform: none; background: none;
+}
+[data-vibe="noir"] .cv-statstrip .cv-stat::after { display: none; }
+[data-vibe="noir"] .cv-statstrip .cv-stat:nth-child(even) { border-left: 1px solid rgba(255,255,255,0.07); }
+[data-vibe="noir"] .cv-statstrip .cv-stat:nth-child(n+3)  { border-top: 1px solid rgba(255,255,255,0.07); }
+[data-vibe="noir"] .cv-statstrip .cv-stat .meta { border-top: 0; padding-top: 0; margin-top: 0; }
+
+/* ── Dashboard composition fixes ─────────────────────────────────
+   1. Grid-blowout guard: nowrap row titles must truncate, never
+      widen the 1fr column and shove the rail off-screen.         */
+.cv-dash-bento > section,
+.cv-dash-bento > aside { min-width: 0; }
+.cv-dash-panel { overflow: hidden; }
+
+/* 2. Cap + center the dashboard column on very wide windows */
+.cv-dash-hero,
+.cv-dash-cmd,
+.cv-dash-bento,
+#view-input .cv-pipeline {
+    max-width: 1480px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* 3. Compact single-line greeting — wins over vibe-level hero rules */
+.cv-dash-hero .cv-hero h1,
+[data-vibe="noir"] .cv-dash-hero .cv-hero h1,
+[data-vibe="space"] .cv-dash-hero .cv-hero h1,
+[data-vibe="volt"] .cv-dash-hero .cv-hero h1 {
+    font-size: clamp(28px, 2.6vw, 44px);
+    line-height: 1.12;
+}
+.cv-dash-hero .cv-hero,
+[data-vibe="noir"] .cv-dash-hero .cv-hero,
+[data-vibe="space"] .cv-dash-hero .cv-hero,
+[data-vibe="volt"] .cv-dash-hero .cv-hero {
+    border-bottom: 0;
+    margin-bottom: 0;
+    padding: 6px 4px 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 10px;
+}
+
+/* ── Pinned rail: cap at ~4 cards, then scroll ───────────────── */
+.cv-pinned-list.scroll {
+    max-height: 312px;
+    overflow-y: auto;
+    padding-right: 6px;
+    /* NOTE: no `scrollbar-width` here — Chromium ignores ::-webkit-scrollbar
+       styling entirely when it's set, falling back to the native bar. */
+    /* soft fade hint that more cards exist below */
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
+            mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
+}
+.cv-pinned-list.scroll::-webkit-scrollbar { width: 4px; }
+.cv-pinned-list.scroll::-webkit-scrollbar-track { background: transparent; }
+.cv-pinned-list.scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12);
+    border-radius: 99px;
+}
+.cv-pinned-list.scroll:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); }
+[data-theme="light"] .cv-pinned-list.scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.16); }
+[data-theme="light"] .cv-pinned-list.scroll:hover::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.28); }
+
+/* ── Dashboard motion pass ───────────────────────────────────────
+   Staggered rise-in for rows/cards (via --i set inline), panel
+   cascade for the rail, and bottom-up growth for the spark bars.
+   The global prefers-reduced-motion guard zeroes all of these.   */
+@keyframes cv-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+}
+@keyframes cv-grow-y {
+    from { transform: scaleY(0); }
+    to   { transform: scaleY(1); }
+}
+.cv-dash-hero  { animation: cv-rise 0.45s var(--cv-ease) backwards; }
+.cv-dash-cmd   { animation: cv-rise 0.45s var(--cv-ease) 60ms backwards; }
+.cv-dash-bento .cv-dash-recent { animation: cv-rise 0.5s var(--cv-ease) 100ms backwards; }
+.cv-dash-rail .cv-dash-panel             { animation: cv-rise 0.5s var(--cv-ease) 140ms backwards; }
+.cv-dash-rail .cv-dash-panel:nth-child(2){ animation-delay: 220ms; }
+.cv-dash-rail .cv-dash-panel:nth-child(3){ animation-delay: 300ms; }
+.cv-row {
+    animation: cv-rise 0.4s var(--cv-ease) backwards;
+    animation-delay: calc(140ms + var(--i, 0) * 35ms);
+}
+.cv-pin-card {
+    animation: cv-rise 0.4s var(--cv-ease) backwards;
+    animation-delay: calc(180ms + var(--i, 0) * 45ms);
+}
+.cv-spark-col i {
+    transform-origin: bottom;
+    animation: cv-grow-y 0.55s var(--cv-ease) backwards;
+    animation-delay: calc(280ms + var(--i, 0) * 25ms);
+}
+.cv-sys-row { animation: cv-rise 0.4s var(--cv-ease) backwards; }
+.cv-sys-row:nth-child(2) { animation-delay: 60ms; }
+.cv-sys-row:nth-child(3) { animation-delay: 120ms; }
+.cv-dash-chip { animation: cv-rise 0.35s var(--cv-ease) backwards; }
+.cv-dash-chips .cv-dash-chip:nth-child(2) { animation-delay: 100ms; }
+.cv-dash-chips .cv-dash-chip:nth-child(3) { animation-delay: 160ms; }
+.cv-dash-chips .cv-dash-chip:nth-child(4) { animation-delay: 220ms; }
+.cv-recent-ask { animation: cv-rise 0.35s var(--cv-ease) backwards; }
+.cv-recent-asks .cv-recent-ask:nth-child(2) { animation-delay: 60ms; }
+.cv-recent-asks .cv-recent-ask:nth-child(3) { animation-delay: 120ms; }
+
+/* ── Dashboard aesthetic pass ────────────────────────────────────
+   Matches the app's existing finish language: top highlight lines,
+   soft radial sheens, mono eyebrow labels, volt accents.          */
+
+/* Panels — top highlight line + ambient sheen + hover lift */
+.cv-dash-panel { position: relative; }
+.cv-dash-panel::before {
+    content: ""; position: absolute; top: 0; left: 16%; right: 16%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+    pointer-events: none; opacity: 0.8;
+}
+.cv-dash-panel::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(480px 140px at 50% -30%, rgba(255,255,255,0.035), transparent 70%);
+}
+.cv-dash-panel {
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 44px -24px rgba(0,0,0,0.7);
+    transition: border-color 0.25s var(--cv-ease), box-shadow 0.25s var(--cv-ease);
+}
+.cv-dash-panel:hover { border-color: var(--cv-line-2); }
+[data-theme="light"] .cv-dash-panel::before,
+[data-theme="light"] .cv-dash-panel::after { display: none; }
+[data-theme="light"] .cv-dash-panel { box-shadow: 0 10px 30px -18px rgba(0,0,0,0.12); }
+
+/* Rail headers — mono eyebrow labels with an accent tick, matching
+   the sidebar/stat-label language instead of plain headings */
+.cv-rail-head { position: relative; z-index: 1; }
+.cv-rail-head h2 {
+    font: 600 10.5px/1 var(--cv-mono);
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--cv-text-3);
+    display: inline-flex; align-items: center; gap: 8px;
+}
+.cv-rail-head h2::before {
+    content: ""; width: 6px; height: 6px; border-radius: 2px;
+    background: var(--cv-volt); box-shadow: 0 0 8px var(--cv-volt-glow);
+}
+.cv-dash-rail .cv-dash-panel:nth-child(2) .cv-rail-head h2::before { background: oklch(0.72 0.18 280); box-shadow: 0 0 8px oklch(0.72 0.18 280 / 0.5); }
+.cv-dash-rail .cv-dash-panel:nth-child(3) .cv-rail-head h2::before { background: oklch(0.78 0.18 145); box-shadow: 0 0 8px oklch(0.78 0.18 145 / 0.5); }
+[data-theme="light"] .cv-rail-head h2 { color: #71717a; }
+
+/* Command bar — deeper, floats above the page, breathes on focus */
+.cv-dash-ask {
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 22px 48px -26px rgba(0,0,0,0.8);
+}
+.cv-dash-ask:focus-within {
+    box-shadow:
+        0 0 0 3px color-mix(in oklab, var(--cv-volt) 12%, transparent),
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 26px 64px -24px color-mix(in oklab, var(--cv-volt) 18%, rgba(0,0,0,0.8));
+}
+.cv-dash-ask-ic { transition: transform 0.25s var(--cv-ease), color 0.2s var(--cv-ease); }
+.cv-dash-ask:focus-within .cv-dash-ask-ic { transform: scale(1.12) rotate(8deg); }
+[data-theme="light"] .cv-dash-ask { box-shadow: 0 12px 32px -20px rgba(0,0,0,0.18); }
+
+/* Suggestion chips — lift on hover */
+.cv-dash-chip { transition: all 0.18s var(--cv-ease), transform 0.18s var(--cv-ease); }
+.cv-dash-chip:hover { transform: translateY(-1px); }
+
+/* Recent rows — accent-tinted hover, soft inner top light */
+.cv-row {
+    box-shadow: 0 1px 0 rgba(255,255,255,0.025) inset;
+}
+.cv-row:hover {
+    background: color-mix(in oklab, var(--accent, var(--cv-volt)) 6%, rgba(255,255,255,0.025));
+    border-color: color-mix(in oklab, var(--accent, var(--cv-volt)) 28%, var(--cv-line));
+}
+[data-theme="light"] .cv-row:hover {
+    background: color-mix(in oklab, var(--accent, var(--cv-volt)) 5%, #ffffff);
+}
+
+/* Stat numbers — gradient ink like the Noir cards, in every vibe */
+.cv-statstrip .cv-stat .v {
+    background: linear-gradient(180deg, #ffffff 0%, #a9a9b6 130%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+    font-weight: 600;
+}
+[data-theme="light"] .cv-statstrip .cv-stat .v {
+    background: linear-gradient(180deg, #18181b 0%, #52525b 130%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Spark bars — gradient ink + rounded caps */
+.cv-spark-col i { border-radius: 3px 3px 1px 1px; }
+.cv-spark-col i.cap { background: linear-gradient(180deg, var(--cv-volt), color-mix(in oklab, var(--cv-volt) 45%, transparent)); opacity: 0.95; }
+.cv-spark-col i.ask { background: linear-gradient(180deg, oklch(0.72 0.18 280), oklch(0.72 0.18 280 / 0.4)); opacity: 0.9; }
+.cv-spark-col { border-radius: 4px; transition: background 0.18s var(--cv-ease); }
+.cv-spark-col:hover { background: rgba(255,255,255,0.04); }
+[data-theme="light"] .cv-spark-col:hover { background: rgba(0,0,0,0.05); }
+
+/* Pinned cards — star gets a soft glow, card gets accent edge on hover */
+.cv-pin-star { filter: drop-shadow(0 0 4px var(--cv-volt-glow)); }
+.cv-pin-card:hover { box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 28px -18px rgba(0,0,0,0.7); }
+[data-theme="light"] .cv-pin-card:hover { box-shadow: 0 8px 22px -16px rgba(0,0,0,0.18); }
+
+/* System value pills — tint by state */
+.cv-sys-row:has(.cv-sys-dot.ok) .cv-sys-val {
+    color: oklch(0.78 0.18 145);
+    border-color: color-mix(in oklab, oklch(0.78 0.18 145) 30%, transparent);
+    background: color-mix(in oklab, oklch(0.78 0.18 145) 8%, transparent);
+}
+.cv-sys-row:has(.cv-sys-dot.warn) .cv-sys-val {
+    color: oklch(0.78 0.15 30);
+    border-color: color-mix(in oklab, oklch(0.78 0.15 30) 30%, transparent);
+    background: color-mix(in oklab, oklch(0.78 0.15 30) 8%, transparent);
+}
+
+/* ── Activity axis + today marker ─────────────────────────────── */
+.cv-spark-axis {
+    display: flex; justify-content: space-between;
+    margin: 6px 2px 0; padding: 0 2px;
+    font: 400 9.5px/1 var(--cv-mono); letter-spacing: 0.05em;
+    color: var(--cv-text-3); text-transform: uppercase;
+}
+.cv-spark-axis span:last-child { color: var(--cv-text-2); }
+.cv-spark-col.today {
+    background: rgba(255,255,255,0.045);
+    box-shadow: inset 0 0 0 1px var(--cv-line-2);
+}
+.cv-spark-col.today.empty::after { background: var(--cv-text-3); }
+[data-theme="light"] .cv-spark-col.today { background: rgba(0,0,0,0.05); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.14); }
+
+/* ── Entrance animations play once per session ────────────────────
+   loadDashboard sets .cv-dash-settled on <body> for every render
+   after the first, so navigating back updates content in place
+   instead of replaying the whole rise-in cascade ("page refreshes
+   many times" feel). Hover/focus transitions are untouched.       */
+body.cv-dash-settled .cv-dash-hero,
+body.cv-dash-settled .cv-dash-cmd,
+body.cv-dash-settled .cv-dash-bento .cv-dash-recent,
+body.cv-dash-settled .cv-dash-rail .cv-dash-panel,
+body.cv-dash-settled .cv-row,
+body.cv-dash-settled .cv-pin-card,
+body.cv-dash-settled .cv-spark-col i,
+body.cv-dash-settled .cv-sys-row,
+body.cv-dash-settled .cv-dash-chip,
+body.cv-dash-settled .cv-recent-ask {
+    animation: none !important;
+}
+
+/* ═══════════════ Library redesign ═══════════════ */
+
+/* ── Sticky command zone — header + search + filters as one block ── */
+.cv-lib-zone {
+    position: sticky; top: 0; z-index: 30;
+    margin: -8px -8px 18px; padding: 14px 8px 12px;
+    background: color-mix(in oklab, var(--cv-bg-1, #0a0a0c) 82%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--cv-line);
+}
+[data-theme="light"] .cv-lib-zone {
+    background: rgba(245,245,247,0.85);
+    border-bottom-color: rgba(0,0,0,0.07);
+}
+.cv-lib-zone .cv-lib-head { margin-bottom: 12px; }
+.cv-lib-zone .cv-lib-command { margin-bottom: 10px; }
+
+/* ── Filter row ── */
+.cv-lib-filterrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 4px; }
+.cv-lib-filterlabel {
+    font: 600 9.5px/1 var(--cv-mono); letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--cv-text-3); margin-right: 2px;
+}
+.cv-fdrop { position: relative; }
+.cv-fchip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 100px; cursor: pointer;
+    font: 400 12px/1.2 var(--cv-body); color: var(--cv-text-2);
+    background: rgba(255,255,255,0.03); border: 1px solid var(--cv-line);
+    transition: all 0.18s var(--cv-ease);
+}
+.cv-fchip:hover { color: var(--cv-text-0); border-color: var(--cv-line-2); }
+.cv-fchip.on {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
+}
+[data-theme="light"] .cv-fchip { color: #52525b; border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+[data-theme="light"] .cv-fchip:hover { color: #111113; }
+
+.cv-fmenu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+    min-width: 180px; max-height: 320px; overflow-y: auto;
+    padding: 6px; border-radius: 12px;
+    background: color-mix(in oklab, var(--cv-bg-2, #101014) 92%, #fff 2%);
+    border: 1px solid var(--cv-line-2);
+    box-shadow: 0 18px 48px -16px rgba(0,0,0,0.75);
+}
+[data-theme="light"] .cv-fmenu { background: #fff; border-color: rgba(0,0,0,0.12); box-shadow: 0 14px 36px -16px rgba(0,0,0,0.25); }
+.cv-fmenu::-webkit-scrollbar { width: 4px; }
+.cv-fmenu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+.cv-fopt {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 11px; border: 0; border-radius: 8px; cursor: pointer;
+    font: 400 12.5px/1.2 var(--cv-body); color: var(--cv-text-1);
+    background: none; text-align: left;
+}
+.cv-fopt:hover { background: rgba(255,255,255,0.06); color: var(--cv-text-0); }
+.cv-fopt.on { color: var(--cv-volt); background: var(--cv-volt-dim); }
+[data-theme="light"] .cv-fopt { color: #3f3f46; }
+[data-theme="light"] .cv-fopt:hover { background: rgba(0,0,0,0.05); color: #111113; }
+.cv-fopt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cv-fopt-count {
+    margin-left: auto; font: 500 9.5px/1 var(--cv-mono); color: var(--cv-text-3);
+    border: 1px solid var(--cv-line); border-radius: 99px; padding: 2px 7px;
+}
+.cv-fopt-none { padding: 10px 12px; font: 400 12px var(--cv-body); color: var(--cv-text-3); }
+.cv-lib-filterrow .cv-lib-activefilters { margin: 0 0 0 4px; }
+
+/* ── Time-grouped grid ── */
+#contexts-grid.cv-lib-grid { display: block; }
+.cv-lib-groupgrid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    margin-bottom: 4px;
+}
+@media (max-width: 900px) { .cv-lib-groupgrid { grid-template-columns: 1fr; } }
+.cv-lib-group {
+    display: flex; align-items: center; gap: 12px;
+    margin: 22px 2px 12px;
+}
+.cv-lib-group:first-child { margin-top: 4px; }
+.cv-lib-group-label {
+    font: 600 10px/1 var(--cv-mono); letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--cv-text-3); flex-shrink: 0;
+}
+.cv-lib-group-rule { flex: 1; height: 1px; background: color-mix(in oklab, var(--cv-line) 70%, transparent); }
+.cv-lib-group-count {
+    font: 500 9.5px/1 var(--cv-mono); color: var(--cv-text-3);
+    border: 1px solid var(--cv-line); border-radius: 99px; padding: 3px 8px; flex-shrink: 0;
+}
+
+/* ── Card hover quick actions ── */
+.cv-card { overflow: hidden; }
+.cv-card-qa {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 3;
+    display: flex; gap: 6px;
+    padding: 6px; border-radius: 10px;
+    background: color-mix(in oklab, var(--cv-bg-1, #0c0c10) 88%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--cv-line-2);
+    opacity: 0; transform: translateY(8px); pointer-events: none;
+    transition: opacity 0.18s var(--cv-ease), transform 0.18s var(--cv-ease);
+}
+.cv-card:hover .cv-card-qa,
+.cv-card:focus-within .cv-card-qa { opacity: 1; transform: none; pointer-events: auto; }
+.cv-card-qa-btn {
+    flex: 1; padding: 6px 10px; border-radius: 7px; cursor: pointer;
+    font: 500 11px/1.2 var(--cv-body); color: var(--cv-text-1);
+    background: rgba(255,255,255,0.04); border: 1px solid var(--cv-line);
+    white-space: nowrap; transition: all 0.15s var(--cv-ease);
+}
+.cv-card-qa-btn:hover {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
+}
+[data-theme="light"] .cv-card-qa { background: rgba(255,255,255,0.92); border-color: rgba(0,0,0,0.12); }
+[data-theme="light"] .cv-card-qa-btn { color: #3f3f46; border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+
+/* ── Rows mode: master–detail split ── */
+.cv-lib-body[data-view="rows"] {
+    display: grid; gap: 16px; align-items: start;
+    grid-template-columns: minmax(340px, 1.05fr) 1.4fr;
+}
+@media (max-width: 1100px) { .cv-lib-body[data-view="rows"] { grid-template-columns: 1fr; } }
+#contexts-grid[data-view="rows"] { display: flex !important; flex-direction: column; gap: 8px; }
+
+.cv-lrow {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    padding: 10px 13px 10px 0; min-width: 0; text-align: left; cursor: pointer;
+    border-radius: 10px; border: 1px solid var(--cv-line);
+    background: rgba(255,255,255,0.015);
+    transition: border-color 0.16s var(--cv-ease), background 0.16s var(--cv-ease);
+}
+.cv-lrow:hover { border-color: var(--cv-line-2); background: rgba(255,255,255,0.04); }
+.cv-lrow.active {
+    border-color: color-mix(in oklab, var(--accent, var(--cv-volt)) 50%, var(--cv-line));
+    background: color-mix(in oklab, var(--accent, var(--cv-volt)) 7%, rgba(255,255,255,0.02));
+}
+.cv-lrow-rail { width: 3px; align-self: stretch; border-radius: 0 2px 2px 0; background: var(--accent, var(--cv-volt)); opacity: 0.5; flex-shrink: 0; }
+.cv-lrow.active .cv-lrow-rail { opacity: 1; }
+.cv-lrow-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cv-lrow-title {
+    font: 500 13px/1.3 var(--cv-body); color: var(--cv-text-0);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 6px;
+}
+.cv-lrow-star { color: var(--cv-volt); flex-shrink: 0; }
+.cv-lrow-sub {
+    font: 400 11.5px/1.4 var(--cv-body); color: var(--cv-text-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cv-lrow-time { font: 400 10px/1 var(--cv-mono); color: var(--cv-text-3); flex-shrink: 0; }
+.cv-lrow-check { margin-left: 12px; flex-shrink: 0; }
+[data-theme="light"] .cv-lrow { border-color: rgba(0,0,0,0.07); background: rgba(255,255,255,0.7); }
+[data-theme="light"] .cv-lrow:hover { background: #fff; border-color: rgba(0,0,0,0.16); }
+[data-theme="light"] .cv-lrow-title { color: #111113; }
+
+/* Preview pane */
+.cv-lib-preview {
+    position: sticky; top: 158px;
+    max-height: calc(100vh - 190px); overflow-y: auto;
+    padding: 18px; border-radius: var(--cv-r-lg);
+    background: linear-gradient(180deg, rgba(22,22,27,0.55), rgba(14,14,18,0.55));
+    border: 1px solid var(--cv-line);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 44px -24px rgba(0,0,0,0.7);
+}
+[data-theme="light"] .cv-lib-preview { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
+.cv-lib-preview::-webkit-scrollbar { width: 4px; }
+.cv-lib-preview::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+.cv-pv-empty { padding: 40px 0; text-align: center; font: 400 13px var(--cv-body); color: var(--cv-text-3); }
+.cv-pv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.cv-pv-pin { font: 500 10px/1 var(--cv-mono); color: var(--cv-volt); letter-spacing: 0.06em; }
+.cv-pv-col { font: 500 10px/1 var(--cv-mono); letter-spacing: 0.06em; }
+.cv-pv-date { margin-left: auto; font: 400 10px/1 var(--cv-mono); color: var(--cv-text-3); }
+.cv-pv-title {
+    font-family: var(--cv-display); font-weight: 500; font-size: 19px;
+    letter-spacing: -0.015em; line-height: 1.3; color: var(--cv-text-0); margin: 0 0 10px;
+}
+[data-theme="light"] .cv-pv-title { color: #111113; }
+.cv-pv-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.cv-pv-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.cv-pv-btn {
+    padding: 7px 13px; border-radius: 9px; cursor: pointer;
+    font: 500 12px/1.2 var(--cv-body); color: var(--cv-text-1);
+    background: rgba(255,255,255,0.04); border: 1px solid var(--cv-line);
+    transition: all 0.16s var(--cv-ease);
+}
+.cv-pv-btn:hover { color: var(--cv-text-0); border-color: var(--cv-line-2); }
+.cv-pv-btn.primary {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent);
+    background: var(--cv-volt-dim);
+}
+[data-theme="light"] .cv-pv-btn { color: #3f3f46; border-color: rgba(0,0,0,0.1); background: rgba(0,0,0,0.03); }
+.cv-pv-sec { margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; background: rgba(255,255,255,0.02); border: 1px solid color-mix(in oklab, var(--cv-line) 70%, transparent); }
+[data-theme="light"] .cv-pv-sec { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.06); }
+.cv-pv-seclabel {
+    font: 600 9.5px/1 var(--cv-mono); letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--cv-text-3); margin-bottom: 8px;
+}
+.cv-pv-snap { font: 400 12.5px/1.6 var(--cv-body); color: var(--cv-text-1); margin: 0; }
+.cv-pv-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; }
+.cv-pv-list li { font: 400 12.5px/1.5 var(--cv-body); color: var(--cv-text-1); }
+[data-theme="light"] .cv-pv-snap, [data-theme="light"] .cv-pv-list li { color: #3f3f46; }
+
+/* ── Bulk pill: collection menu drops up ── */
+.cv-bulk-coll { position: relative; }
+.cv-bulk-coll-menu { top: auto; bottom: calc(100% + 8px); left: 0; }
+
+/* ── Deep search loading ── */
+.cv-deep-loading { text-align: center; padding: 40px 0; color: var(--cv-text-3); font: 400 13px var(--cv-body); }
+
+/* ── Library entrance motion (plays via --card-delay stagger) ── */
+.cv-lrow { animation: cv-rise 0.35s var(--cv-ease) backwards; animation-delay: var(--card-delay, 0ms); }
+.cv-lib-group { animation: cv-rise 0.4s var(--cv-ease) backwards; }
+body.cv-dash-settled .cv-lrow, body.cv-dash-settled .cv-lib-group { animation: none !important; }
+
+/* Sticky fix: #view-library is the scroll container and its top padding sits
+   above the stuck zone, so cards scrolled up were visible through that strip.
+   Zero the container's top padding and let the zone own it, bleeding to the
+   scroller's full width so no transparent gap remains above or beside it. */
+#view-library { padding-top: 0; }
+.cv-lib-zone {
+    top: 0;
+    margin: 0 calc(-1 * clamp(24px, 3.5vw, 64px)) 18px;
+    padding: clamp(20px, 3vh, 40px) clamp(24px, 3.5vw, 64px) 12px;
+    background: color-mix(in oklab, var(--cv-bg-1, #0a0a0c) 90%, transparent);
+}
+[data-theme="light"] .cv-lib-zone { background: rgba(245,245,247,0.93); }
+
+/* Preview pane sticks below the (now taller) command zone */
+.cv-lib-preview { top: 210px; max-height: calc(100vh - 250px); }
+
+/* Belt-and-suspenders: opaque mask extending above the zone. If any engine
+   pins the sticky box below the scrollport edge (padding-inset quirk), this
+   covers the strip so scrolled cards can never peek above the zone. Clipped
+   away entirely when the zone sits flush, so it costs nothing. */
+.cv-lib-zone::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 140px;
+    background: var(--cv-grid-bg, #0a0a0c);
+    pointer-events: none;
+}
+[data-theme="light"] .cv-lib-zone::before { background: var(--cv-grid-bg, #f3f4f8); }
+
+/* Command zone hugs the very top of the content area — toolbar, not banner */
+.cv-lib-zone {
+    padding-top: 14px;
+    padding-bottom: 10px;
+}
+.cv-lib-zone .cv-lib-head { margin-bottom: 10px; }
+.cv-lib-zone::before { height: 60px; }
+
+/* ═══════════════ Chromeless window chrome ═══════════════
+   The 34px titlebar strip is gone. A transparent drag strip overlays the
+   top of the window and mac-style traffic lights float in a glass pill
+   at the top-right. All control ids/wiring unchanged. */
+
+:root { --cv-titlebar-h: 0px; }
+
+/* Invisible drag strip — stops short of the lights pill */
+.cv-dragstrip {
+    position: fixed; top: 0; left: 0; right: 130px; height: 26px;
+    z-index: 2147482998;
+}
+
+/* Floating traffic lights */
+.cv-lights {
+    position: fixed; top: 10px; right: 12px; z-index: 2147483000;
+    display: flex; gap: 8px; align-items: center;
+    padding: 7px 11px; border-radius: 999px;
+    background: color-mix(in oklab, var(--cv-bg-1, #0a0a0c) 74%, transparent);
+    border: 1px solid var(--cv-line, rgba(255,255,255,0.08));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 8px 24px -10px rgba(0,0,0,0.65);
+    user-select: none; -webkit-user-select: none;
+}
+[data-theme="light"] .cv-lights { background: rgba(255,255,255,0.82); border-color: rgba(0,0,0,0.1); box-shadow: 0 8px 22px -12px rgba(0,0,0,0.25); }
+
+.cv-light {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 0; padding: 0; margin: 0; cursor: pointer;
+    display: grid; place-items: center;
+    color: transparent;
+    box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.4);
+    transition: color 0.15s ease, transform 0.1s ease, filter 0.15s ease, background 0.2s ease;
+}
+.cv-light svg { width: 8px; height: 8px; display: block; }
+.cv-light:active { transform: scale(0.9); filter: brightness(0.85); }
+.cv-light-close { background: linear-gradient(180deg, #ff6159, #e0443e); }
+.cv-light-min   { background: linear-gradient(180deg, #ffbd2e, #dea123); }
+.cv-light-max   { background: linear-gradient(180deg, #28c840, #1faf34); }
+/* mac behaviour: glyphs appear when the cursor enters the cluster */
+.cv-lights:hover .cv-light { color: rgba(0,0,0,0.6); }
+.cv-light:focus-visible { outline: 2px solid var(--cv-volt); outline-offset: 2px; color: rgba(0,0,0,0.6); }
+/* maximize ↔ restore glyph swap (run.py + shell.js toggle .is-maximized) */
+.cv-light .cv-ic-restore { display: none; }
+.cv-light.is-maximized .cv-ic-max { display: none; }
+.cv-light.is-maximized .cv-ic-restore { display: block; }
+/* unfocused window: candy goes gray, like macOS */
+body.cv-win-blurred .cv-light {
+    background: #45454d;
+    box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.3);
+}
+[data-theme="light"] body.cv-win-blurred .cv-light { background: #c9c9cf; }
+
+/* ── Layout reserves: keep interactive elements clear of strip + pill ── */
+/* Sidebar brand drops below the drag strip; brand itself is a drag handle */
+.sidebar { padding-top: 28px; }
+/* Library command zone: clear the strip on top, the pill on the right */
+.cv-lib-zone { padding-top: 30px; }
+.cv-lib-zone .cv-lib-head { padding-right: 118px; }
+/* Dashboard topbar: same reserves */
+#view-input .cv-topbar { margin-top: 26px; margin-right: 118px; }
+/* Ask rail + capture rail + detail rail: right reserve for the pill */
+.cv-ask-rail { margin-right: calc(clamp(16px, 4vw, 48px) + 96px); }
+.cv-capture-rail { padding-right: 130px; }
+.cv-detail-rail { padding-right: 118px; padding-top: 26px; }
+
+/* Dashboard topbar rides inline with the floating lights — no dead band */
+#view-input.cv-main { padding-top: 12px; }
+#view-input .cv-topbar { margin-top: 0; margin-bottom: 24px; }
+
+/* ── Unified page rails: Library + Ask adopt the dashboard topbar anatomy ── */
+/* Library rail inside the sticky zone */
+.cv-lib-zone { padding-top: 12px; }
+.cv-lib-zone .cv-topbar.cv-lib-rail {
+    margin: 0 96px 12px 0;
+    flex-wrap: nowrap;
+}
+.cv-lib-crumb {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    white-space: nowrap;
+}
+.cv-lib-crumb .cv-lib-sub { overflow: hidden; text-overflow: ellipsis; }
+.cv-lib-crumb-dot { color: var(--cv-text-4, #4b4b52); }
+.cv-lib-rail .cv-lib-tools { margin-left: auto; flex-wrap: nowrap; }
+
+/* Compact Quick Capture for rails (dashboard keeps its full-size one) */
+.cv-rail-capture {
+    display: inline-flex; align-items: center; gap: 7px;
+    flex-shrink: 0; white-space: nowrap;
+}
+
+/* Ask rail: shared geometry — same top offset and right clearance as siblings */
+.cv-ask-rail { margin-top: 12px; }
+.cv-ask-rail-actions { gap: 8px; }
+
+/* ── Rail alignment: one geometry for all three pages ──────────────
+   Same top offset, same height, content vertically centered; the
+   lights pill centers on the same band. Change the two tokens and
+   everything stays in lockstep. */
+:root { --cv-rail-top: 10px; --cv-rail-h: 52px; }
+
+#view-input.cv-main { padding-top: var(--cv-rail-top); }
+.cv-lib-zone        { padding-top: var(--cv-rail-top); }
+.cv-ask-rail        { margin-top:  var(--cv-rail-top); }
+
+#view-input .cv-topbar,
+.cv-lib-zone .cv-topbar.cv-lib-rail,
+.cv-ask-rail {
+    box-sizing: border-box;
+    min-height: var(--cv-rail-h);
+    padding-top: 0;
+    padding-bottom: 0;
+    display: flex;
+    align-items: center;
+}
+#view-input .cv-topbar { margin-top: 0; }
+
+/* Traffic lights: vertically centered on the rail band (pill ≈ 29px tall) */
+.cv-lights { top: calc(var(--cv-rail-top) + (var(--cv-rail-h) - 29px) / 2); }
+
+/* Ask rail: identical visual finish to the shared topbar — same near-opaque
+   fill (no glassy blur), same crumb tracking, same right-edge clearance. */
+.cv-ask-rail {
+    background: rgba(17,17,21,0.94);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    margin-right: calc(clamp(16px, 4vw, 48px) + 110px);
+}
+[data-theme="light"] .cv-ask-rail { background: rgba(252,252,253,0.96); border-color: rgba(0,0,0,0.08); }
+.cv-ask-rail-meta { letter-spacing: 0.04em; }
+
+/* ═══════════════ N1 — Floating island navbar ═══════════════
+   The three unified rails become detached floating pills with aligned
+   edges; the traffic lights lose their own chrome and sit inside each
+   island's right end. Content scrolls underneath. */
+
+/* Island shape + finish — applies to all three rails */
+#view-input .cv-topbar,
+.cv-lib-zone .cv-topbar.cv-lib-rail,
+.cv-ask-rail {
+    border-radius: 999px;
+    padding-left: 20px;
+    padding-right: 96px; /* inner reserve: the lights cluster lives here */
+    background: rgba(17,17,21,0.96);
+    border: 1px solid var(--cv-line-2);
+    box-shadow:
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 0 0 1px rgba(255,255,255,0.02),
+        0 18px 40px -18px rgba(0,0,0,0.85),
+        0 10px 32px -14px color-mix(in oklab, var(--cv-volt) 22%, transparent);
+}
+[data-theme="light"] #view-input .cv-topbar,
+[data-theme="light"] .cv-lib-zone .cv-topbar.cv-lib-rail,
+[data-theme="light"] .cv-ask-rail {
+    background: rgba(252,252,253,0.97);
+    border-color: rgba(0,0,0,0.09);
+    box-shadow:
+        0 14px 30px -16px rgba(0,0,0,0.25),
+        0 8px 24px -12px color-mix(in oklab, var(--cv-volt) 14%, transparent);
+}
+
+/* Aligned edges: every island starts/ends at the same offsets.
+   Each container has different side padding — cancel it down to 16px. */
+#view-input .cv-topbar {
+    margin-left: calc(16px - 40px);
+    margin-right: calc(16px - 40px);
+}
+.cv-lib-zone .cv-topbar.cv-lib-rail {
+    margin-left: calc(16px - clamp(24px, 3.5vw, 64px));
+    margin-right: calc(16px - clamp(24px, 3.5vw, 64px));
+    margin-bottom: 12px;
+}
+.cv-ask-rail {
+    margin-left: 16px;
+    margin-right: 16px;
+}
+
+/* Dashboard: island floats — content scrolls under it.
+   (#view-input top padding stays 0-ish via the rail token; the sticky
+   inset leaves a deliberate 10px reveal band around the island.) */
+#view-input.cv-main { padding-top: 0; }
+#view-input .cv-topbar {
+    position: sticky;
+    top: var(--cv-rail-top);
+    z-index: 40;
+    margin-top: var(--cv-rail-top);
+}
+
+/* Library: the zone is already sticky; let the island float visually by
+   making the zone's own chrome quieter (island carries the depth now). */
+.cv-lib-zone { border-bottom: 0; }
+
+/* Lights: chrome stripped — the island is the chrome now */
+.cv-lights {
+    background: none;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding: 7px 0;
+    right: 38px; /* 16px island margin + ~22px inner end padding */
+}
+
+/* Views without a rail under the lights (setup wizard, capture, detail):
+   a whisper of backdrop so bare dots don't float on busy content. */
+.cv-lights { position: fixed; }
+.cv-lights::before {
+    content: ""; position: absolute; inset: -5px -12px; z-index: -1;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--cv-bg-1, #0a0a0c) 55%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+/* Only show that backdrop on views that have no island behind the dots */
+body[data-view="capture"] .cv-lights::before,
+body[data-view="detail"] .cv-lights::before { opacity: 1; }
+
+/* Island alignment fix: the responsive block at #view-input.cv-main uses
+   `padding: ... !important`, which silently beat the earlier non-important
+   top-padding overrides — the island sat ~28px lower than the lights.
+   Match its force and its actual clamp() so the math is exact. */
+#view-input.cv-main { padding-top: 0 !important; }
+#view-input .cv-topbar {
+    margin-top: var(--cv-rail-top) !important;
+    margin-left:  calc(16px - clamp(14px, 3vw, 40px)) !important;
+    margin-right: calc(16px - clamp(14px, 3vw, 40px)) !important;
+    margin-bottom: 20px !important;
+}
+
+/* Library island alignment fix: #view-library.cv-main (line ~9085) forces
+   `padding: ... clamp(14px,3vw,40px) ... !important`, not the clamp(24,3.5vw,64)
+   the zone bleed assumed — so the zone overhung the window and the island
+   clipped at the right edge while sitting 28px too low. Use the real values. */
+#view-library.cv-main { padding-top: 0 !important; }
+.cv-lib-zone {
+    margin-left:  calc(-1 * clamp(14px, 3vw, 40px));
+    margin-right: calc(-1 * clamp(14px, 3vw, 40px));
+    padding-left:  clamp(14px, 3vw, 40px);
+    padding-right: clamp(14px, 3vw, 40px);
+}
+.cv-lib-zone .cv-topbar.cv-lib-rail {
+    margin-left:  calc(16px - clamp(14px, 3vw, 40px));
+    margin-right: calc(16px - clamp(14px, 3vw, 40px));
+}

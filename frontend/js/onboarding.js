@@ -42,7 +42,7 @@ const CV_ONBOARD_STEPS = [
     // ── Library walkthrough ───────────────────────────────────────────────
     {
         view: 'library',
-        target: '.cv-lib-header',
+        target: '.cv-lib-rail',
         title: 'Library — everything you’ve saved',
         body: 'Every captured conversation lives here. Browse as a grid or compact rows, then click any card to dive in. Press <kbd>L</kbd> to jump here from anywhere.',
         eyebrow: 'View'

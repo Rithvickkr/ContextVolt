@@ -1290,6 +1290,44 @@ def get_db_stats() -> dict:
             "contexts_this_week": contexts_this_week}
 
 
+def get_activity_daily(days: int = 14) -> list[dict]:
+    """Per-day capture and ask counts for the dashboard sparkline.
+
+    Returns one entry per calendar day (UTC), oldest first, zero-filled:
+    [{"date": "2026-06-11", "captures": 2, "asks": 5}, ...]
+    """
+    from datetime import timedelta
+    conn = _get_conn()
+    start_dt = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    start = start_dt.strftime("%Y-%m-%d")
+
+    by_day: dict[str, dict] = {}
+    for i in range(days):
+        d = (start_dt + timedelta(days=i)).strftime("%Y-%m-%d")
+        by_day[d] = {"date": d, "captures": 0, "asks": 0}
+
+    try:
+        for d, n in conn.execute(
+            "SELECT substr(created_at, 1, 10) AS d, COUNT(*) FROM contexts "
+            "WHERE d >= ? GROUP BY d", (start,)
+        ).fetchall():
+            if d in by_day:
+                by_day[d]["captures"] = n
+    except Exception:
+        pass
+    try:
+        for d, n in conn.execute(
+            "SELECT substr(created_at, 1, 10) AS d, COUNT(*) FROM ask_messages "
+            "WHERE role = 'user' AND d >= ? GROUP BY d", (start,)
+        ).fetchall():
+            if d in by_day:
+                by_day[d]["asks"] = n
+    except Exception:
+        pass
+
+    return list(by_day.values())
+
+
 def increment_stat(key: str) -> None:
     """Atomically increment an app-level counter."""
     conn = _get_conn()

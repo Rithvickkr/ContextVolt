@@ -196,7 +196,7 @@ EXTRACTED FACTS:
 {merged_facts}
 
 Respond in EXACTLY this format (no extra text):
-TOPIC: [one sentence — what the user originally wanted to do, learn, or solve]
+TOPIC: [a short, specific title for this conversation — 3-8 words, headline style, naming the actual subject and key technology (e.g. "Debugging sqlite-vec load failure on macOS"); never start with "The user" or describe what the user wanted]
 POINTS: [4-10 key points covering the full conversation; semicolons; include specific values and claims]
 SNAPSHOT: [one sentence: what was actively being discussed/built/debugged at the very end, or "n/a"]
 VITALS: [up to 6 exact verbatim technical values — copy character-for-character; semicolons, or "none"]
@@ -236,6 +236,40 @@ def _clean_value(val: str) -> str:
     return re.sub(r'^\*+|\*+$', '', val).strip()
 
 
+# Summary-speak framing that small models prepend to TOPIC despite the
+# prompt forbidding it: "The user wants to know if X", "The user was
+# trying to Y", etc. The optional verb groups only consume filler verbs
+# (know/understand/...) so content verbs like "build" survive the strip.
+_TITLE_BOILERPLATE_RE = re.compile(
+    r"^the\s+user\s+"
+    r"(?:originally\s+|initially\s+)?"
+    r"(?:wanted|wants?|is\s+trying|was\s+trying|tried|tries|asked|asks?|"
+    r"needed|needs?|sought|seeks?|is\s+asking|is\s+looking|is\s+seeking)\b\s*"
+    r"(?:to\s+|for\s+|about\s+)?"
+    r"(?:know|understand|learn|find\s+out|figure\s+out|determine|explore|"
+    r"discuss|get\s+help\s+with|help\s+with|ask\s+about)?\b\s*"
+    r"(?:if|whether|how\s+to|how|what|why|when|where|about)?\s*",
+    re.IGNORECASE,
+)
+
+
+def _polish_title(val: str) -> str:
+    """Turn a TOPIC value into a presentable title.
+
+    Strips "The user wants to know..." framing so the title leads with the
+    actual subject, then tidies wrapping quotes, a trailing period, and
+    re-capitalizes. Falls back to the input if stripping leaves nothing.
+    """
+    t = val.strip().strip('"“”').strip()
+    stripped = _TITLE_BOILERPLATE_RE.sub("", t, count=1).strip()
+    if len(stripped) >= 3:
+        t = stripped
+    t = t.rstrip(".").strip()
+    if t and t[0].islower():
+        t = t[0].upper() + t[1:]
+    return t or val.strip()
+
+
 def _parse_text_summary(response_text: str) -> dict:
     """Parse the structured summary text from the LLM.
 
@@ -265,7 +299,7 @@ def _parse_text_summary(response_text: str) -> dict:
             val = _clean_value(line[colon_idx + 1:].strip())  # type: ignore[index]
             # Reject unfilled placeholders like "[one sentence describing the main topic]"
             if val and not (val.startswith("[") and val.endswith("]")):
-                result["main_topic"] = val
+                result["main_topic"] = _polish_title(val)
             current_section = None
 
         elif line_lower.startswith("points:") or line_lower.startswith("key points:") or line_lower.startswith("claims:"):
@@ -321,9 +355,9 @@ def _parse_text_summary(response_text: str) -> dict:
                 if item.lower() not in ("none", "n/a"):
                     result["unresolved_questions"].append(item)
 
-    # Last-ditch: if still no topic but we have key ideas, use the first idea as-is
+    # Last-ditch: if still no topic but we have key ideas, use the first idea
     if result["main_topic"] == "No topic extracted" and result["key_ideas"]:
-        result["main_topic"] = result["key_ideas"][0]  # type: ignore[index]
+        result["main_topic"] = _polish_title(result["key_ideas"][0])  # type: ignore[index]
 
     return result
 

@@ -228,6 +228,9 @@ _wndproc_keepalive: list = []
 # HWND of the main window, set once found, used by the JS-driven resize handles.
 _main_hwnd: int = 0
 
+# The pywebview Window, set in main() — used by _revive_webview to run JS.
+_pywebview_window = None
+
 # Private messages handled inside the window's own WndProc (UI thread).
 _WM_CV_RESIZE = 0x0400 + 0x51    # begin a native resize, direction = wparam
 _WM_CV_REWINDOW = 0x0400 + 0x52  # restore phase 1: drop a maximized window to windowed
@@ -304,12 +307,37 @@ def _revive_webview() -> None:
             return
 
         WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
-        x, y = 8, 8
+        # Land the nudge in the title bar but clear of the resize grips:
+        # the corner grip is 8×8 CSS px at (0,0) and the edge strips are
+        # 4 px — a click at (8,8) physical px hits the top-left grip and
+        # drops the window into a buttonless native resize loop (cursor
+        # turns to a resize arrow and the window tracks the mouse). (80,20)
+        # is drag-region-only at any DPI scale: below the 4 px top strip,
+        # right of the 8 px corner, far left of the window controls.
+        x, y = 80, 20
         lparam = (y << 16) | x
         post = user32.PostMessageW
         post.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
         post(h, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
         post(h, WM_LBUTTONUP, 0, lparam)
+
+        # (8,8) sits inside the .pywebview-drag-region, so the synthetic DOWN
+        # arms pywebview's drag handler (a window-level mousemove listener that
+        # moves the window). WebView2 sometimes swallows the posted UP, leaving
+        # that listener armed — the window then glues itself to the cursor on
+        # plain hover until a real click. Chase the click with a JS-level
+        # mouseup, which detaches the handler no matter what happened to the
+        # native UP. Harmless when the UP did arrive (the listener is already
+        # gone) and the user can't be mid-drag this soon after a restore.
+        w = _pywebview_window
+        if w:
+            time.sleep(0.05)  # let Chromium process the posted click first
+            try:
+                w.evaluate_js(
+                    "window.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}))"
+                )
+            except Exception:
+                logging.exception("drag-release mouseup failed")
     except Exception:
         logging.exception("WebView2 revive click failed")
 
@@ -489,6 +517,14 @@ def _enable_frameless_chrome(hwnd: int) -> None:
                     _sz["min"] = False
                 # fall through to default sizing behaviour
             if msg == _WM_CV_RESIZE:
+                # A real resize drag always has the physical left button held.
+                # Without this guard a synthetic click on a grip (e.g. the
+                # _revive_webview repaint nudge) enters a buttonless modal
+                # resize loop that glues the window to the cursor until the
+                # user clicks.
+                VK_LBUTTON = 0x01
+                if not (user32.GetKeyState(VK_LBUTTON) & 0x8000):
+                    return 0
                 # Runs on the UI thread, so ReleaseCapture() now actually frees
                 # the capture WebView2 grabbed on mousedown, letting the OS
                 # resize loop take the mouse. wparam is the WMSZ_* direction.
@@ -617,6 +653,8 @@ def main():
         frameless=True,
         easy_drag=False,
     )
+    global _pywebview_window
+    _pywebview_window = window
 
     # ─── Custom title-bar window controls (exposed to JS) ─────────────
     # JS calls these via window.pywebview.api.cv_minimize() etc.

@@ -53,22 +53,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Dashboard ask bar — Enter jumps to Ask Vault with the question submitted
     const dashAsk = $('#dash-ask-input');
+    const _dashAskSubmit = () => {
+        const q = dashAsk.value.trim();
+        if (!q || state.askStreaming) return;
+        dashAsk.value = '';
+        navigateTo('ask');
+        askVault(q);
+    };
     if (dashAsk) {
         dashAsk.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter') return;
-            const q = dashAsk.value.trim();
-            if (!q || state.askStreaming) return;
             e.preventDefault();
-            dashAsk.value = '';
-            navigateTo('ask');
-            askVault(q);
+            _dashAskSubmit();
         });
+        if ($('#dash-ask-go')) $('#dash-ask-go').addEventListener('click', _dashAskSubmit);
     }
 
     // Dashboard event handlers
-    if ($('#quick-capture-toggle')) {
-        $('#quick-capture-toggle').addEventListener('click', () => navigateTo('capture'));
-    }
+    // Quick Capture lives in the shared rail on every page now
+    ['quick-capture-toggle', 'quick-capture-toggle-lib', 'quick-capture-toggle-ask'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.addEventListener('click', () => navigateTo('capture'));
+    });
     if ($('#capture-back-btn')) {
         $('#capture-back-btn').addEventListener('click', () => navigateTo('input'));
     }

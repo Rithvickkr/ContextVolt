@@ -56,6 +56,10 @@ function toggleTheme() {
         // Double-click the drag area maximizes/restores, like a native title bar.
         if (drag) drag.addEventListener('dblclick', toggleMax);
 
+        // mac detail: traffic lights go gray while the window is unfocused.
+        window.addEventListener('blur',  () => document.body.classList.add('cv-win-blurred'));
+        window.addEventListener('focus', () => document.body.classList.remove('cv-win-blurred'));
+
         // Edge/corner grips → hand off to the native OS resize loop on mousedown.
         document.querySelectorAll('.cv-rz').forEach(grip => {
             grip.addEventListener('mousedown', (e) => {

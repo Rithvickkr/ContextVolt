@@ -28,7 +28,7 @@ APP = ["installer.py"]
 
 # Keep the bundle version in lockstep with the release tag (build_mac.sh / CI
 # pass CONTEXTVOLT_VERSION); fall back to the current version for local builds.
-_VERSION = os.environ.get("CONTEXTVOLT_VERSION", "2.3.0")
+_VERSION = os.environ.get("CONTEXTVOLT_VERSION", "2.4.0")
 
 PLIST = {
     "CFBundleName": "ContextVolt",

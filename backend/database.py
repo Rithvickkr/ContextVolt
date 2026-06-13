@@ -659,7 +659,8 @@ def get_contexts_by_ids(context_ids: list[int]) -> dict[int, dict]:
 
 
 def update_context(context_id: int, **kwargs) -> dict | None:
-    """Update fields of a context. Accepts title, summary, tags, status, important_notes."""
+    """Update fields of a context. Accepts title, summary, tags, status,
+    important_notes, original_chat, conversation_url."""
     conn = _get_conn()
     now = datetime.now(timezone.utc).isoformat()
 
@@ -687,6 +688,9 @@ def update_context(context_id: int, **kwargs) -> dict | None:
     if "original_chat" in kwargs:
         updates.append("original_chat = ?")
         params.append(kwargs["original_chat"])
+    if "conversation_url" in kwargs:
+        updates.append("conversation_url = ?")
+        params.append(kwargs["conversation_url"] or None)
 
     if not updates:
         # connection reused (thread-local pool)

@@ -16,6 +16,9 @@ class CaptureRequest(BaseModel):
     source: str = "Extension"
     important_snippets: list[str] = []
     conversation_url: str = ""
+    # Context the user pasted into this conversation via "From Vault" — lets a
+    # save from a different conversation URL update that context in place.
+    imported_context_id: int | None = None
 
 
 class SummaryData(BaseModel):

@@ -842,15 +842,39 @@ def api_summarize_stream(req: SummarizeRequest):
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
+# Continuation briefs pasted via "From Vault" are generated artifacts, not
+# conversation content — strip them from captures so a re-saved chat doesn't
+# store its own summary as part of the transcript. Every prompt builder wraps
+# its output in <context_brief>…</context_brief>; the trailing "Begin now"
+# line is emitted after the closing tag by generate_continuation_prompt.
+_CONTEXT_BRIEF_RE = re.compile(
+    r"<context_brief>.*?</context_brief>\s*"
+    r"(?:The next message in the conversation is yours, as the assistant\.\s*Begin now:\s*)?",
+    re.DOTALL,
+)
+
+
 @app.post("/api/capture")
 def api_capture(req: CaptureRequest):
     """Receive raw text from the browser extension, chunk + embed, and save.
 
     If conversation_url matches an existing context, updates it in place instead
-    of creating a duplicate entry.
+    of creating a duplicate entry. If the URL doesn't match but the extension
+    reports that a vault context was imported into this conversation
+    (imported_context_id), that context is updated instead — the new exchanges
+    are appended and the whole thing is re-summarized.
     """
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    text = _CONTEXT_BRIEF_RE.sub("", req.text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    # Bare role labels are all that's left when the message was only a brief
+    if not re.sub(r"(?im)^\s*(?:USER|ASSISTANT)\s*:\s*$", "", text).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No conversation content beyond the imported context brief",
+        )
 
     def _bg_summarize(cid: int, text: str, snippets: list) -> None:
         # Serialise local LLM work so concurrent captures don't contend on the GPU
@@ -900,6 +924,13 @@ def api_capture(req: CaptureRequest):
     try:
         # Check if we already saved this conversation URL before
         existing = get_context_by_url(req.conversation_url) if req.conversation_url else None
+        matched_by_url = existing is not None
+
+        # No URL match — fall back to the context the user imported into this
+        # conversation via "From Vault", so continuing a saved context in a new
+        # chat updates the original instead of creating a duplicate.
+        if not existing and req.imported_context_id:
+            existing = get_context(req.imported_context_id)
 
         if existing:
             context_id = existing["id"]
@@ -908,28 +939,42 @@ def api_capture(req: CaptureRequest):
             # If the incoming text is shorter than what's already stored, the
             # extension only captured new messages (e.g. after a page refresh or
             # navigating back). Append only the new part so we never lose history.
-            if len(req.text) >= len(stored_chat):
-                full_chat = req.text
+            # An imported-context save is always an append: the new conversation
+            # doesn't contain the original transcript.
+            if matched_by_url and len(text) >= len(stored_chat):
+                full_chat = text
             else:
-                full_chat = stored_chat + "\n\n" + req.text
+                full_chat = (stored_chat + "\n\n" + text) if stored_chat else text
 
-            update_context(
-                context_id,
-                original_chat=full_chat,
-                important_notes=req.important_snippets or [],
-                status="summarizing",
-            )
+            new_notes = req.important_snippets or []
+            update_kwargs: dict = {
+                "original_chat": full_chat,
+                "important_notes": new_notes,
+                "status": "summarizing",
+            }
+            if not matched_by_url:
+                # Continuing in a different conversation: keep prior starred
+                # snippets (they live in the old transcript) and re-key the
+                # context to the new URL so the next save matches directly.
+                prior_notes = existing.get("important_notes") or []
+                update_kwargs["important_notes"] = prior_notes + [
+                    s for s in new_notes if s not in prior_notes
+                ]
+                if req.conversation_url:
+                    update_kwargs["conversation_url"] = req.conversation_url
+
+            update_context(context_id, **update_kwargs)
             # All Ollama work (chunk, embed, summarize) happens in the background
             threading.Thread(
                 target=_bg_summarize,
-                args=(context_id, full_chat, req.important_snippets or []),
+                args=(context_id, full_chat, update_kwargs["important_notes"]),
                 daemon=True,
             ).start()
             return {"success": True, "id": context_id, "updated": True}
 
         # No existing context — create a new one
-        user_parts = _USER_TURN.split(req.text)
-        first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else req.text.strip()[:100]
+        user_parts = _USER_TURN.split(text)
+        first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else text.strip()[:100]
         title = first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "..."
         summary: dict = {
             "main_topic": first_user_msg,
@@ -940,7 +985,7 @@ def api_capture(req: CaptureRequest):
             title=title,
             summary=summary,
             tags=[req.source, "Extension"],
-            original_chat=req.text,
+            original_chat=text,
             important_notes=req.important_snippets or [],
             status="summarizing",
             conversation_url=req.conversation_url or None,
@@ -949,7 +994,7 @@ def api_capture(req: CaptureRequest):
         # All Ollama work (chunk, embed, summarize) happens in the background
         threading.Thread(
             target=_bg_summarize,
-            args=(context_id, req.text, req.important_snippets or []),
+            args=(context_id, text, req.important_snippets or []),
             daemon=True,
         ).start()
         return {"success": True, "id": context_id, "updated": False}

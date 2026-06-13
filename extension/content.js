@@ -44,13 +44,56 @@ function requestInterceptorTranscript() {
     });
 }
 
+// ─── Imported-context marker ──────────────────────────────────────
+// When the user pastes a context via "From Vault", remember which one so a
+// later "Send to Vault" from this conversation can update that context in
+// place instead of creating a duplicate. sessionStorage is per-tab and
+// survives SPA navigation and reloads.
+const IMPORT_MARKER_KEY = "cv_imported_ctx";
+
+function _readImportMarker() {
+    try {
+        const raw = sessionStorage.getItem(IMPORT_MARKER_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+}
+
+function _setImportMarker(contextId) {
+    try {
+        sessionStorage.setItem(IMPORT_MARKER_KEY, JSON.stringify({
+            id: contextId, href: location.href, followed: false,
+        }));
+    } catch (_) {}
+}
+
+function _clearImportMarker() {
+    try { sessionStorage.removeItem(IMPORT_MARKER_KEY); } catch (_) {}
+}
+
+// A brand-new chat gets its permanent URL after the first message is sent —
+// let the marker follow that single navigation, then treat any further URL
+// change as leaving the conversation.
+function _updateImportMarkerOnNav(prevUrl) {
+    const marker = _readImportMarker();
+    if (!marker) return;
+    if (marker.href === prevUrl && !marker.followed) {
+        marker.href = location.href;
+        marker.followed = true;
+        try { sessionStorage.setItem(IMPORT_MARKER_KEY, JSON.stringify(marker)); } catch (_) {}
+    } else {
+        _clearImportMarker();
+    }
+}
+
 // Reset intercepted messages when URL changes (SPA navigation)
 let _lastContentUrl = location.href;
 setInterval(() => {
     if (location.href !== _lastContentUrl) {
+        const prevUrl = _lastContentUrl;
         _lastContentUrl = location.href;
         _interceptedMessages = [];
         _markedSnippets.clear();
+        _updateImportMarkerOnNav(prevUrl);
     }
 }, 1000);
 
@@ -543,6 +586,10 @@ function injectButton() {
             else if (h.includes("perplexity.ai")) source = "Perplexity";
             else if (h.includes("copilot.microsoft.com")) source = "Copilot";
 
+            const marker = _readImportMarker();
+            const importedContextId =
+                marker && marker.href === location.href ? marker.id : null;
+
             chrome.runtime.sendMessage({
                 action: "save_chat",
                 payload: {
@@ -550,6 +597,7 @@ function injectButton() {
                     source: source,
                     important_snippets: Array.from(_markedSnippets.values()),
                     conversation_url: window.location.href,
+                    imported_context_id: importedContextId,
                 }
             }, (response) => {
                 clearTimeout(stateTimer);
@@ -561,6 +609,9 @@ function injectButton() {
                     exportBtn.innerHTML = `❌ ${msg.length > 30 ? msg.substring(0, 30) + "…" : msg}`;
                     exportBtn.classList.add("cv-error");
                 } else if (response && response.success) {
+                    // The backend re-keyed the context to this conversation's
+                    // URL, so future saves match directly — drop the marker.
+                    if (importedContextId) _clearImportMarker();
                     exportBtn.innerHTML = `✅ Saved!`;
                     exportBtn.classList.add("cv-success");
                 } else {
@@ -868,6 +919,10 @@ function loadContexts(query = "") {
                     dismissLoading();
 
                     if (res && res.success && res.prompt) {
+                        // Remember which context was imported into this
+                        // conversation so a later save updates it in place.
+                        _setImportMarker(ctx.id);
+
                         const mode = res.mode === "hybrid" ? "⚡ Hybrid" : res.mode === "retrieval" ? "🎯 Retrieved" : res.mode === "context" ? "📋 Context" : "📄 Static";
 
                         // Close panel FIRST so focus returns to the page input,

@@ -196,7 +196,7 @@ EXTRACTED FACTS:
 {merged_facts}
 
 Respond in EXACTLY this format (no extra text):
-TOPIC: [a short, specific title for this conversation — 3-8 words, headline style, naming the actual subject and key technology (e.g. "Debugging sqlite-vec load failure on macOS"); never start with "The user" or describe what the user wanted]
+TOPIC: [a specific headline-style title, 4-12 words — name the actual subject plus the single most important concrete detail from the facts when one is central: an exact value, version, error, or technology. Copy values verbatim. Examples: "Debugging sqlite-vec load failure on macOS"; "Blood Sugar Drop 395 to 65 mg/dL After Lantus"; "Migrating Express 4 to 5 Auth Middleware". If no concrete detail stands out, just name the subject. Never start with "The user" or describe what the user wanted]
 POINTS: [4-10 key points covering the full conversation; semicolons; include specific values and claims]
 SNAPSHOT: [one sentence: what was actively being discussed/built/debugged at the very end, or "n/a"]
 VITALS: [up to 6 exact verbatim technical values — copy character-for-character; semicolons, or "none"]

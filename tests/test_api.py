@@ -285,6 +285,116 @@ class TestExportBackup:
 
 
 # ---------------------------------------------------------------------------
+# Capture (extension save / update)
+# ---------------------------------------------------------------------------
+
+_BRIEF = (
+    "<context_brief>\n<meta>\nSource: ChatGPT\n</meta>\n"
+    "<overview>\nPrior discussion digest.\n</overview>\n"
+    "</context_brief>\n"
+    "The next message in the conversation is yours, as the assistant. Begin now:"
+)
+
+
+class TestCaptureAPI:
+    @pytest.fixture(autouse=True)
+    def _no_bg_threads(self, monkeypatch):
+        """Capture spawns a summarize thread that needs Ollama — skip it."""
+        import backend.main as main_mod
+
+        class _NoopThread:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(main_mod.threading, "Thread", _NoopThread)
+
+    async def test_capture_strips_pasted_brief(self, client):
+        from backend.database import get_context
+
+        text = f"USER:\n{_BRIEF}\nLet's continue the auth work.\n\nASSISTANT:\nSure — where were we?"
+        resp = await client.post("/api/capture", json={
+            "text": text,
+            "source": "ChatGPT",
+            "conversation_url": "https://chatgpt.com/c/new-chat-1",
+        })
+        assert resp.status_code == 200
+        ctx = get_context(resp.json()["id"])
+        assert "<context_brief>" not in ctx["original_chat"]
+        assert "Begin now:" not in ctx["original_chat"]
+        assert "Let's continue the auth work." in ctx["original_chat"]
+
+    async def test_capture_brief_only_rejected(self, client):
+        resp = await client.post("/api/capture", json={
+            "text": f"USER:\n{_BRIEF}",
+            "source": "ChatGPT",
+        })
+        assert resp.status_code == 400
+
+    async def test_capture_updates_imported_context(self, client):
+        from backend.database import create_context, get_context
+
+        original = create_context(
+            title="Auth bug",
+            summary={"main_topic": "Auth bug", "key_ideas": ["jwt"], "snapshot": "",
+                     "vitals": [], "conclusions": [], "unresolved_questions": []},
+            tags=["ChatGPT", "Extension"],
+            original_chat="USER:\nThe login fails.\n\nASSISTANT:\nCheck the JWT expiry.",
+            conversation_url="https://chatgpt.com/c/old-conversation",
+        )
+
+        new_text = (
+            f"USER:\n{_BRIEF}\n\nASSISTANT:\nPicking up the auth bug.\n\n"
+            "USER:\nThe fix worked, but refresh tokens still rotate too early."
+        )
+        resp = await client.post("/api/capture", json={
+            "text": new_text,
+            "source": "Claude",
+            "conversation_url": "https://claude.ai/chat/brand-new",
+            "imported_context_id": original["id"],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["updated"] is True
+        assert data["id"] == original["id"]
+
+        ctx = get_context(original["id"])
+        # Old transcript preserved, new exchanges appended, brief stripped
+        assert "The login fails." in ctx["original_chat"]
+        assert "refresh tokens still rotate too early" in ctx["original_chat"]
+        assert "<context_brief>" not in ctx["original_chat"]
+        # Re-keyed to the new conversation so the next save matches by URL
+        assert ctx["conversation_url"] == "https://claude.ai/chat/brand-new"
+        assert ctx["status"] == "summarizing"
+
+    async def test_capture_same_url_still_replaces(self, client):
+        from backend.database import create_context, get_context
+
+        url = "https://chatgpt.com/c/same-conversation"
+        original = create_context(
+            title="Short",
+            summary={"main_topic": "Short", "key_ideas": [], "snapshot": "",
+                     "vitals": [], "conclusions": [], "unresolved_questions": []},
+            tags=["ChatGPT", "Extension"],
+            original_chat="USER:\nHi.",
+            conversation_url=url,
+        )
+
+        longer = "USER:\nHi.\n\nASSISTANT:\nHello!\n\nUSER:\nTell me more about pytest fixtures."
+        resp = await client.post("/api/capture", json={
+            "text": longer,
+            "source": "ChatGPT",
+            "conversation_url": url,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["id"] == original["id"]
+        ctx = get_context(original["id"])
+        assert ctx["original_chat"] == longer
+
+
+# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 

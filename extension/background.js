@@ -84,6 +84,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             text: request.payload.text,
             important_snippets: request.payload.important_snippets || [],
             conversation_url: request.payload.conversation_url || "",
+            imported_context_id: request.payload.imported_context_id ?? null,
         };
 
         const controller = new AbortController();

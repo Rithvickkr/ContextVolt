@@ -95,9 +95,11 @@ function renderDetail(ctx) {
         return escapeHtml(ctx.title || 'Untitled');
     })();
 
-    const tagsHtml = (ctx.tags || [])
-        .filter(t => !_KNOWN_SOURCES.includes(t))
-        .map(t => `<span class="cv-tag">#${escapeHtml(t)}</span>`).join('');
+    // Tags render as chips on the hero meta line (capped, with a +N tail) —
+    // they no longer get a whole rail card to themselves.
+    const userTagList = (ctx.tags || []).filter(t => !_KNOWN_SOURCES.includes(t));
+    const heroTagsHtml = userTagList.slice(0, 4).map(t => `<span class="cv-tag">#${escapeHtml(t)}</span>`).join('')
+        + (userTagList.length > 4 ? `<span class="cv-tag cv-tag-more" title="${escapeHtml(userTagList.slice(4).join(', '))}">+${userTagList.length - 4}</span>` : '');
 
     const icon = {
         pin:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
@@ -127,41 +129,18 @@ function renderDetail(ctx) {
     }
     eyebrowBits.push(`<span>${escapeHtml(timeAgo)}</span>`);
 
-    // Aside detail rows (rendered as a sleek key-value list on the right)
-    // Source lives in the eyebrow badge, Collection in the hero <select> — kept out
-    // of here so each fact appears exactly once.
-    const detailRows = [
-        { k: 'Model',   v: aiModel,                  ic: 'cpu'  },
-        { k: 'Turns',   v: turnCount || '—',         ic: 'msg'  },
-        { k: 'Words',   v: wordCount ? wordCount.toLocaleString() : '—', ic: 'type' },
-        { k: 'Tags',    v: tagCount || '—',          ic: 'tag'  },
-        { k: 'Created', v: date,                     ic: 'cal'  },
-        { k: 'Updated', v: timeAgo,                  ic: 'clk'  },
-    ];
-    const asideIc = {
-        cpu:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
-        msg:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
-        type:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
-        tag:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
-        cal:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-        clk:    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
-    };
-    const detailRowsHtml = detailRows.map(r => `
-        <div class="cv-aside-row">
-            <span class="cv-aside-ic">${asideIc[r.ic] || ''}</span>
-            <span class="cv-aside-k">${escapeHtml(r.k)}</span>
-            <span class="cv-aside-v" title="${escapeHtml(String(r.v))}">${escapeHtml(String(r.v))}</span>
-        </div>
-    `).join('');
+    // (The old aside Details rows are gone — model/turns/words live on the
+    // hero facts line, created/updated in the overview Record card.)
 
     container.innerHTML = `
-        <!-- Rail: back + meta + actions -->
-        <div class="cv-detail-rail">
+        <!-- Rail: island matching the app navbar — back + meta + actions -->
+        <div class="cv-detail-rail cv-disland">
             <button class="cv-back" onclick="navigateTo('library')" aria-label="Back to library">
                 ${icon.back} Library
             </button>
             <div class="cv-rail-meta">
                 <span>Context <b>#${ctx.id}</b></span>
+                ${source ? `<span class="cv-rail-sep">·</span><span>${escapeHtml(source)}</span>` : ''}
                 <span class="cv-rail-sep">·</span>
                 <span>${escapeHtml(timeAgo)}</span>
             </div>
@@ -187,13 +166,11 @@ function renderDetail(ctx) {
             </div>
         </div>
 
-        <!-- Hero -->
-        <section class="cv-dhero">
-            <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
-            <h1 class="cv-dtitle" id="detail-title-heading">${safeTitle}</h1>
-            ${mainTopic ? `<p class="cv-dtopic">${escapeHtml(mainTopic)}</p>` : ''}
-            ${snapshot ? `<p class="cv-dsnap">${escapeHtml(snapshot)}</p>` : ''}
-            <div class="cv-dmeta">
+        <!-- Hero: one meta line + title + single lede -->
+        <section class="cv-dhero cv-dhero2">
+            <div class="cv-dhero-meta">
+                <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
+                ${starred ? `<span class="cv-dhero-pin">★ pinned</span>` : ''}
                 <span class="cv-collection-inline">
                     <select id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
                         <option value="">Collection: None</option>
@@ -202,13 +179,26 @@ function renderDetail(ctx) {
                         ).join('')}
                     </select>
                 </span>
+                ${heroTagsHtml}
+                <span class="cv-dhero-facts">captured ${escapeHtml(date)}${aiModel && aiModel !== source ? ` · ${escapeHtml(aiModel)}` : ''}${turnCount ? ` · ${turnCount} turns` : ''}${wordCount ? ` · ${wordCount.toLocaleString()} words` : ''}</span>
             </div>
+            <h1 class="cv-dtitle" id="detail-title-heading">${safeTitle}</h1>
+            ${(snapshot || mainTopic) ? `<p class="cv-dsnap">${escapeHtml(snapshot || mainTopic)}</p>` : ''}
             ${statusInfo ? `<div class="cv-dstatus${ctx.status === 'failed' ? ' err' : ''}">${statusInfo}</div>` : ''}
         </section>
 
-        <!-- Body: 2-column layout — main content + sleek sticky aside -->
+        <!-- Sticky tab row: Overview / Conversation / Code -->
+        <div class="cv-dtabs" id="cv-dtabs">
+            <span class="cv-dtabs-title" aria-hidden="true">${escapeHtml(ctx.title || 'Untitled')}</span>
+            <button class="cv-dtab on" data-dtab="overview" role="tab" aria-selected="true">Overview</button>
+            <button class="cv-dtab" data-dtab="conversation" role="tab" aria-selected="false">Conversation${turnCount ? ` <span class="cv-dtab-n">${turnCount}</span>` : ''}</button>
+            ${_currentSnippets.length ? `<button class="cv-dtab" data-dtab="code" role="tab" aria-selected="false">Code <span class="cv-dtab-n">${_currentSnippets.length}</span></button>` : ''}
+        </div>
+
+        <!-- Body: 2-column layout — tabbed main content + sticky aside -->
         <section class="cv-dlayout">
           <div class="cv-dmain">
+            <div class="cv-dtab-panel" data-dpanel="overview">
 
             ${importantNotes.length ? `
             <div class="cv-block cv-block-pinned cv-collapse${_pinnedOpen() ? ' open' : ''}" id="pinnedBlock">
@@ -267,56 +257,51 @@ function renderDetail(ctx) {
                 <button class="cv-empty-insights-btn" onclick="retrySummarize()">Re-run summary</button>
             </div>` : ''}
 
-            <!-- ⚡ Continuation prompt — primary action, placed below the read content -->
-            <section class="cv-action" id="cv-action-card">
-                <div class="cv-action-head">
-                    <span class="cv-action-ic">${icon.bolt}</span>
-                    <div>
-                        <h2 class="cv-action-title">Continuation prompt</h2>
-                        <p class="cv-action-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
+            <!-- Meta band: vitals are content insights, record holds the two
+                 facts the hero line doesn't carry. (Replaces three rail cards.) -->
+            <div class="cv-metaband">
+                ${vitals.length ? `
+                <div class="cv-aside-card cv-meta-card">
+                    <div class="cv-aside-head">
+                        <span class="cv-aside-eyebrow">Technical vitals</span>
+                        <span class="cv-aside-pill">${vitals.length}</span>
+                    </div>
+                    <div class="cv-aside-vitals">
+                        ${vitals.map(v => `<code>${escapeHtml(v)}</code>`).join('')}
+                    </div>
+                </div>` : ''}
+                <div class="cv-aside-card cv-meta-card">
+                    <div class="cv-aside-head">
+                        <span class="cv-aside-eyebrow">Record</span>
+                    </div>
+                    <div class="cv-record-rows">
+                        <span class="cv-record-row">created <b>${escapeHtml(date)}</b></span>
+                        <span class="cv-record-row">updated <b>${escapeHtml(timeAgo)}</b></span>
                     </div>
                 </div>
-                <div class="cv-action-row">
-                    <input type="text" id="retrieval-query" class="cv-action-input"
-                           placeholder="Focus the prompt on… (optional — e.g. 'auth flow', 'the migration plan')" />
-                    <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
-                        ${icon.bolt}<span>Generate</span>
-                    </button>
-                </div>
-                <div class="cv-action-foot">
-                    <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
-                        <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
-                        <button class="prompt-size-btn on" role="tab" aria-selected="true" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
-                        <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
+            </div>
+
+            </div><!-- /overview panel -->
+
+            <!-- Conversation: full-height reader with role filter + turn scrubber -->
+            <div class="cv-dtab-panel" data-dpanel="conversation" hidden>
+                <div class="cv-conv-bar">
+                    <div class="cv-conv-filter" id="cv-conv-filter" role="group" aria-label="Filter by role">
+                        <button class="cv-conv-chip on" data-role="all">All</button>
+                        <button class="cv-conv-chip" data-role="user">You</button>
+                        <button class="cv-conv-chip" data-role="ai">AI</button>
                     </div>
-                    <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
-                    <span class="cv-action-kbd" aria-hidden="true"><kbd>⌘</kbd><kbd>↵</kbd></span>
+                    <span class="cv-conv-count">${turnCount || '—'} turns</span>
                 </div>
-                <div class="cv-prompt-out" id="prompt-section" role="region" aria-labelledby="prompt-section-heading" style="display:none;">
-                    <div class="cv-prompt-out-head">
-                        <h3 id="prompt-section-heading">Generated prompt</h3>
-                        <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
-                        <div class="cv-prompt-out-acts">
-                            <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                <span>Copy</span>
-                            </button>
-                            <button class="cv-prompt-close" id="close-prompt-btn" type="button" aria-label="Close">×</button>
-                        </div>
-                    </div>
-                    <pre class="prompt-display" id="prompt-display" tabindex="0"></pre>
+                <div class="cv-conv-wrap">
+                    <div class="cv-chat" id="original-chat-box" data-role-filter="all">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
+                    <div class="cv-conv-scrub" id="cv-conv-scrub" aria-hidden="true"></div>
                 </div>
-            </section>
+            </div>
 
             ${_currentSnippets.length ? `
-            <div class="cv-block cv-collapse open">
-                <button class="cv-block-head cv-collapse-head" onclick="cvToggleBlock(this)">
-                    <span class="cv-block-ic">${icon.code}</span>
-                    <h3>Code snippets</h3>
-                    <span class="cv-count">${_currentSnippets.length}</span>
-                    <span class="cv-collapse-chev">${icon.chev}</span>
-                </button>
-                <div class="cv-collapse-body"><div class="cv-collapse-inner">
+            <!-- Code: snippet gallery -->
+            <div class="cv-dtab-panel" data-dpanel="code" hidden>
                 <div class="cv-snips">
                     ${_currentSnippets.map((s, i) => `
                     <div class="cv-snip">
@@ -328,65 +313,70 @@ function renderDetail(ctx) {
                         <pre class="cv-snip-pre"><code>${escapeHtml(s.code.replace(/\n$/, ''))}</code></pre>
                     </div>`).join('')}
                 </div>
-                </div></div>
             </div>` : ''}
-
-            <!-- Original conversation (collapsible) -->
-            <div class="cv-block cv-collapse" id="origConv">
-                <button class="cv-block-head cv-collapse-head" onclick="cvToggleBlock(this)">
-                    <span class="cv-block-ic">${icon.chat}</span>
-                    <h3>Original conversation</h3>
-                    <span class="cv-count">${turnCount || '—'} turns</span>
-                    <span class="cv-collapse-chev">${icon.chev}</span>
-                </button>
-                <div class="cv-collapse-body"><div class="cv-collapse-inner">
-                <div class="cv-chat" id="original-chat-box">${_renderChatBubbles(ctx.original_chat, aiModel)}</div>
-                </div></div>
-            </div>
 
           </div>
 
-          <!-- Sticky aside: details + vitals -->
+          <!-- Sticky aside: continue (primary) + ask bridge + details + vitals -->
           <aside class="cv-daside">
-            <div class="cv-aside-card">
+            <div class="cv-aside-card cv-act2" id="cv-action-card">
                 <div class="cv-aside-head">
-                    <span class="cv-aside-eyebrow">Details</span>
+                    <span class="cv-aside-eyebrow cv-act2-eyebrow">${icon.bolt} Continuation prompt</span>
                 </div>
-                <div class="cv-aside-rows">
-                    ${detailRowsHtml}
+                <p class="cv-act2-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
+                <input type="text" id="retrieval-query" class="cv-action-input"
+                       placeholder="Focus on… (optional)" />
+                <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
+                    <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
+                    <button class="prompt-size-btn on" role="tab" aria-selected="true" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
+                    <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
                 </div>
+                <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
+                    ${icon.bolt}<span>Generate</span><kbd class="cv-act2-kbd">Ctrl ↵</kbd>
+                </button>
+                <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
             </div>
 
-            ${vitals.length ? `
-            <div class="cv-aside-card">
+            <div class="cv-aside-card cv-askbridge">
                 <div class="cv-aside-head">
-                    <span class="cv-aside-eyebrow">Technical vitals</span>
-                    <span class="cv-aside-pill">${vitals.length}</span>
+                    <span class="cv-aside-eyebrow">Ask about this</span>
                 </div>
-                <div class="cv-aside-vitals">
-                    ${vitals.map(v => `<code>${escapeHtml(v)}</code>`).join('')}
-                </div>
-            </div>` : ''}
-
-            ${tagsHtml ? `
-            <div class="cv-aside-card">
-                <div class="cv-aside-head">
-                    <span class="cv-aside-eyebrow">Tags</span>
-                    <span class="cv-aside-pill">${tagCount}</span>
-                </div>
-                <div class="cv-aside-tags">${tagsHtml}</div>
-            </div>` : ''}
+                <button class="cv-askbridge-go" id="cv-askbridge-go">Open in Ask Vault →</button>
+            </div>
           </aside>
         </section>
+
+        <!-- Generated prompt: overlay sheet over the page (not an inline reveal) -->
+        <div class="cv-prompt-sheet" id="prompt-section" role="dialog" aria-modal="true" aria-labelledby="prompt-section-heading" style="display:none;">
+            <div class="cv-prompt-sheet-card">
+                <div class="cv-prompt-out-head">
+                    <h3 id="prompt-section-heading">Generated prompt</h3>
+                    <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
+                    <div class="cv-prompt-out-acts">
+                        <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            <span>Copy</span>
+                        </button>
+                        <button class="cv-prompt-close" id="close-prompt-btn" type="button" aria-label="Close">×</button>
+                    </div>
+                </div>
+                <pre class="prompt-display" id="prompt-display" tabindex="0"></pre>
+            </div>
+        </div>
     `;
 
-    // Bind copy/close on the inline prompt-output (rendered fresh each view)
+    // Bind copy/close on the prompt sheet (rendered fresh each view).
+    // Backdrop click and Escape also close it.
     const copyBtn  = document.getElementById('copy-prompt-btn');
     const closeBtn = document.getElementById('close-prompt-btn');
+    const sheet    = document.getElementById('prompt-section');
+    const closeSheet = () => { if (sheet) sheet.style.display = 'none'; };
     if (copyBtn)  copyBtn.addEventListener('click', copyPrompt);
-    if (closeBtn) closeBtn.addEventListener('click', () => {
-        const s = document.getElementById('prompt-section');
-        if (s) s.style.display = 'none';
+    if (closeBtn) closeBtn.addEventListener('click', closeSheet);
+    if (sheet) sheet.addEventListener('mousedown', (e) => { if (e.target === sheet) closeSheet(); });
+    document.addEventListener('keydown', function escSheet(e) {
+        if (e.key === 'Escape' && sheet && sheet.style.display !== 'none') closeSheet();
+        if (!document.getElementById('prompt-section')) document.removeEventListener('keydown', escSheet);
     });
 
     // Segmented size control — toggle .on class + update live hint
@@ -419,7 +409,79 @@ function renderDetail(ctx) {
 
     _initInsightExpand();
     _bindInsightResize();
+    _initDetailTabs();
+    _initConvReader();
+    _initAskBridge(ctx);
     $('#prompt-section').style.display = 'none';
+}
+
+// ─── Tabs: Overview / Conversation / Code ─────────────────────────────
+function _initDetailTabs() {
+    const tabs = Array.from(document.querySelectorAll('#cv-dtabs .cv-dtab'));
+    const panels = Array.from(document.querySelectorAll('.cv-dtab-panel'));
+    tabs.forEach(tab => tab.addEventListener('click', () => {
+        tabs.forEach(t => {
+            t.classList.toggle('on', t === tab);
+            t.setAttribute('aria-selected', String(t === tab));
+        });
+        panels.forEach(p => { p.hidden = p.dataset.dpanel !== tab.dataset.dtab; });
+        // Re-measure insight clamps when returning to Overview (display:none
+        // while hidden means scrollHeight was 0 during the first measure).
+        if (tab.dataset.dtab === 'overview') _initInsightExpand();
+    }));
+    // The tab row picks up the context title once the hero scrolls away.
+    const view = document.getElementById('view-detail');
+    const bar = document.getElementById('cv-dtabs');
+    if (view && bar) view.onscroll = () => bar.classList.toggle('scrolled', view.scrollTop > 140);
+}
+
+// ─── Conversation reader: role filter + turn scrubber ─────────────────
+function _initConvReader() {
+    const box = document.getElementById('original-chat-box');
+    const filter = document.getElementById('cv-conv-filter');
+    if (filter && box) {
+        filter.querySelectorAll('.cv-conv-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                filter.querySelectorAll('.cv-conv-chip').forEach(c => c.classList.toggle('on', c === chip));
+                box.dataset.roleFilter = chip.dataset.role;
+            });
+        });
+    }
+    const scrub = document.getElementById('cv-conv-scrub');
+    if (!box || !scrub) return;
+    const msgs = Array.from(box.querySelectorAll('.cv-msg'));
+    if (msgs.length < 8) { scrub.style.display = 'none'; return; }
+    // Cap the dots so very long chats stay scannable.
+    const step = Math.ceil(msgs.length / 40);
+    const picks = msgs.map((m, i) => ({ m, i })).filter(({ i }) => i % step === 0);
+    scrub.innerHTML = picks.map(({ m, i }) =>
+        `<button class="cv-scrub-dot${m.classList.contains('cv-msg-user') ? ' u' : ''}" data-i="${i}" title="Turn ${i + 1}" aria-label="Jump to turn ${i + 1}"></button>`
+    ).join('');
+    scrub.querySelectorAll('.cv-scrub-dot').forEach(dot => {
+        dot.addEventListener('click', () => {
+            const m = msgs[parseInt(dot.dataset.i, 10)];
+            if (m) m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    });
+}
+
+// ─── Ask-about-this bridge → Ask Vault with a prefilled question ──────
+function _initAskBridge(ctx) {
+    const btn = document.getElementById('cv-askbridge-go');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        navigateTo('ask');
+        // Prefill, don't auto-send — the user supplies the actual question.
+        setTimeout(() => {
+            const input = document.getElementById('ask-input');
+            if (input && !input.disabled) {
+                input.value = `About "${ctx.title || 'this context'}": `;
+                input.focus();
+                input.setSelectionRange(input.value.length, input.value.length);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }, 120);
+    });
 }
 
 function _initInsightExpand() {

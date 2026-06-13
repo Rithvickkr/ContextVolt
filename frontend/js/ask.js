@@ -254,6 +254,10 @@ function _initAskVault() {
                     _askCloseHistoryPanel();
                     return;
                 }
+                if (e.target.closest('#cv-ask-switcher-new')) {
+                    if (!state.askStreaming) { _askResetChat(); _askCloseHistoryPanel(); }
+                    return;
+                }
                 const actBtn = e.target.closest('button[data-act]');
                 if (actBtn) {
                     const row = actBtn.closest('.cv-ask-history-item');
@@ -306,6 +310,41 @@ function _initAskVault() {
             _askRenderSessionList();
         });
     }
+
+    // Switcher keyboard nav: ↑/↓ move a highlight over the rows, ↵ opens.
+    // Bound on the panel so it works from the search field and from rows.
+    if (histPanel) {
+        histPanel.addEventListener('keydown', (e) => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Enter') return;
+            const rows = Array.from(histPanel.querySelectorAll('.cv-ask-history-item'));
+            if (rows.length === 0) return;
+            const cur = rows.findIndex(r => r.classList.contains('kb-on'));
+            if (e.key === 'Enter') {
+                if (cur !== -1) {
+                    e.preventDefault();
+                    const sid = parseInt(rows[cur].getAttribute('data-session-id'), 10);
+                    if (!Number.isNaN(sid)) _askLoadSession(sid);
+                }
+                return;
+            }
+            e.preventDefault();
+            const next = e.key === 'ArrowDown'
+                ? Math.min(rows.length - 1, cur + 1)
+                : Math.max(0, cur === -1 ? 0 : cur - 1);
+            rows.forEach((r, i) => r.classList.toggle('kb-on', i === next));
+            rows[next].scrollIntoView({ block: 'nearest' });
+        });
+    }
+
+    // Ctrl/Cmd+H — summon the session switcher from anywhere on the Ask page.
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'h' || e.key === 'H') && state.view === 'ask') {
+            e.preventDefault();
+            const panel = $('#cv-ask-history-panel');
+            if (panel && panel.hasAttribute('hidden')) _askOpenHistoryPanel();
+            else _askCloseHistoryPanel();
+        }
+    });
 }
 
 // (No wrapper needed — function declarations at script scope are already
@@ -402,35 +441,17 @@ function _askRenderSessionList() {
 
     if (sessions.length === 0) {
         const msg = filter
-            ? `<span>No matches for <b>${escapeHtml(filter)}</b>.</span>`
-            : `<span>No past chats yet.<br>Ask something to start one.</span>`;
-        list.innerHTML = `
-            <div class="cv-ask-history-empty">
-                <span class="cv-ask-history-empty-ic" aria-hidden="true">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                </span>
-                ${msg}
-            </div>`;
+            ? `No matches for “${escapeHtml(filter)}”`
+            : 'No past chats yet — ask something to start one.';
+        list.innerHTML = `<div class="cv-sw-empty">${msg}</div>`;
         return;
     }
 
-    // Bucket by date relative to now: Pinned / Today / Yesterday / Last 7 days / Older.
+    // Two groups only: Pinned + Recent. Each row carries its own date stamp,
+    // so finer date buckets are noise.
     const now = new Date();
-    const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const today = startOfDay(now);
-    const yesterday = today - 86400000;
-    const week = today - 6 * 86400000;
-
-    const groups = { pinned: [], today: [], yesterday: [], week: [], older: [] };
-    for (const s of sessions) {
-        if (s.pinned) { groups.pinned.push(s); continue; }
-        let ts = 0;
-        try { ts = startOfDay(new Date(s.updated_at)); } catch (_) {}
-        if (ts >= today) groups.today.push(s);
-        else if (ts >= yesterday) groups.yesterday.push(s);
-        else if (ts >= week) groups.week.push(s);
-        else groups.older.push(s);
-    }
+    const pinned = sessions.filter(s => s.pinned);
+    const recent = sessions.filter(s => !s.pinned);
 
     const fmt = (iso) => {
         try {
@@ -442,37 +463,25 @@ function _askRenderSessionList() {
         } catch (_) { return ''; }
     };
 
+    // Single-line row: [active dot] title ……… date | hover: pin/rename/delete
     const renderItem = (s) => {
         const active = state.askSessionId === s.id ? ' is-active' : '';
-        const pinned = s.pinned;
-        const count = s.message_count || 0;
-        const pinIcon = pinned
-            ? `<span class="cv-ask-history-item-pin" aria-hidden="true" title="Pinned">
-                   <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76a2 2 0 0 0 .59 1.41l1.59 1.59a1 1 0 0 1-.71 1.71H7.53a1 1 0 0 1-.71-1.71l1.59-1.59A2 2 0 0 0 9 10.76z"/></svg>
-               </span>`
-            : `<span class="cv-ask-history-item-pin" hidden></span>`;
         return `
             <div class="cv-ask-history-item${active}" data-session-id="${s.id}" tabindex="0" role="button" aria-label="${escapeHtml(s.title || 'Untitled')}">
-                ${pinIcon}
-                <div class="cv-ask-history-item-body">
-                    <div class="cv-ask-history-item-title">${escapeHtml(s.title || 'Untitled')}</div>
-                    <div class="cv-ask-history-item-meta">
-                        <span>${fmt(s.updated_at)}</span>
-                        <span>·</span>
-                        <span>${count} msg${count === 1 ? '' : 's'}</span>
-                    </div>
-                </div>
-                <div class="cv-ask-history-item-actions">
-                    <button data-act="pin" class="${pinned ? 'is-pinned' : ''}" title="${pinned ? 'Unpin' : 'Pin'}" aria-label="${pinned ? 'Unpin chat' : 'Pin chat'}">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="${pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76a2 2 0 0 0 .59 1.41l1.59 1.59a1 1 0 0 1-.71 1.71H7.53a1 1 0 0 1-.71-1.71l1.59-1.59A2 2 0 0 0 9 10.76z"/></svg>
+                <span class="cv-sw-dot" aria-hidden="true"></span>
+                <span class="cv-sw-title">${escapeHtml(s.title || 'Untitled')}</span>
+                <span class="cv-sw-meta">${fmt(s.updated_at)}</span>
+                <span class="cv-sw-acts">
+                    <button data-act="pin" class="${s.pinned ? 'is-pinned' : ''}" title="${s.pinned ? 'Unpin' : 'Pin'}" aria-label="${s.pinned ? 'Unpin chat' : 'Pin chat'}">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="${s.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76a2 2 0 0 0 .59 1.41l1.59 1.59a1 1 0 0 1-.71 1.71H7.53a1 1 0 0 1-.71-1.71l1.59-1.59A2 2 0 0 0 9 10.76z"/></svg>
                     </button>
                     <button data-act="rename" title="Rename" aria-label="Rename chat">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
                     </button>
                     <button data-act="delete" title="Delete" aria-label="Delete chat">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                     </button>
-                </div>
+                </span>
             </div>
         `;
     };
@@ -482,11 +491,8 @@ function _askRenderSessionList() {
         : '';
 
     list.innerHTML =
-        renderGroup('Pinned', groups.pinned) +
-        renderGroup('Today', groups.today) +
-        renderGroup('Yesterday', groups.yesterday) +
-        renderGroup('Last 7 days', groups.week) +
-        renderGroup('Older', groups.older);
+        renderGroup('Pinned', pinned) +
+        renderGroup('Recent', recent);
 
     // Click + keyboard activation handled via delegation in _initAskVault.
 }
@@ -576,40 +582,17 @@ function _askRenderHistoricalAssistantMsg(text, citations) {
         const deduped = Array.from(bestByCtx.values());
 
         const body = div.querySelector('.ask-msg-body');
-        const sourcesDiv = document.createElement('div');
-        sourcesDiv.className = 'ask-sources';
-
-        const chipsHtml = deduped.map(s => {
-            const brand = s.source ? _AI_BRAND[s.source] : null;
-            const color = brand ? brand.color : 'var(--cv-volt)';
-            const title = String(s.title || 'Untitled');
-            const short = title.length > 42 ? title.slice(0, 40) + '…' : title;
-            const pct = typeof s.score === 'number' ? Math.round(s.score * 100) : null;
-            const score = pct !== null ? `<span class="ask-source-score">${pct}%</span>` : '';
-            const snippet = s.snippet ? String(s.snippet) : '';
-            const tooltipParts = [title];
-            if (brand) tooltipParts.push(brand.label);
-            if (snippet) tooltipParts.push(snippet);
-            const tooltip = tooltipParts.join(' · ');
-            const snippetLine = snippet
-                ? `<div class="ask-source-snippet">${escapeHtml(snippet)}</div>`
-                : '';
-            const cidAttr = s.context_id != null ? Number(s.context_id) : '';
-            return `<div class="ask-source-card">
-                        <button class="ask-source-chip" style="--src-color:${color}"
-                                onclick="showDetail(${cidAttr})"
-                                title="${escapeHtml(tooltip)}">
-                            <span class="ask-source-dot" aria-hidden="true"></span>
-                            <span class="ask-source-title">${escapeHtml(short)}</span>
-                            ${score}
-                        </button>
-                        ${snippetLine}
-                    </div>`;
-        }).join('');
-
-        sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources</span>${chipsHtml}`;
-        body.appendChild(sourcesDiv);
+        body.appendChild(_askBuildSourcesRow(deduped));
     }
+    // Meta strip leads the answer; model label fills in when resolved.
+    const histBody = div.querySelector('.ask-msg-body');
+    const histStrip = _askBuildMetaStrip('');
+    histBody.insertBefore(histStrip, histBody.querySelector('.ask-msg-content'));
+    _askGetModelLabel().then(label => {
+        const m = histStrip.querySelector('.ask-meta-model');
+        if (m && label) m.textContent = `· ${label}`;
+    });
+    _askAppendAnswerFooter(div, safeText);
 }
 
 async function _askToggleSessionPin(sessionId) {
@@ -822,14 +805,22 @@ window._askRetryMsg = function(btn) {
 };
 
 function _askRenderThinking() {
+    // Same shape as a real reply — identity row + typing dots — so the answer
+    // appears to materialize in place instead of swapping a big banner out.
     const container = $('#ask-messages');
     const div = document.createElement('div');
-    div.className = 'ask-thinking cv-ask-thinking';
+    div.className = 'ask-thinking ask-msg ask-msg-assistant';
     div.id = 'ask-thinking-indicator';
-    div.innerHTML = `
-        <span class="cv-ask-orbit" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span class="cv-ask-thinking-text">Searching your vault…</span>
-    `;
+    const body = document.createElement('div');
+    body.className = 'ask-msg-body';
+    const strip = _askBuildMetaStrip('▍ searching your vault…');
+    strip.querySelector('.ask-meta-model').classList.add('streaming');
+    body.appendChild(strip);
+    const dots = document.createElement('div');
+    dots.className = 'ask-typing';
+    dots.innerHTML = '<i></i><i></i><i></i>';
+    body.appendChild(dots);
+    div.appendChild(body);
     container.appendChild(div);
     _askScrollToBottom();
 }
@@ -940,13 +931,14 @@ function _askRenderAssistantMsg() {
     div.id = 'ask-streaming-msg';
     // Volt bolt avatar to match the sidebar brand mark.
     div.innerHTML = `
-        <div class="ask-msg-avatar" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
-        </div>
         <div class="ask-msg-body">
             <div class="ask-msg-content" id="ask-streaming-content"><span class="ask-cursor"></span></div>
         </div>
     `;
+    const streamBody = div.querySelector('.ask-msg-body');
+    const streamStrip = _askBuildMetaStrip('▍ streaming');
+    streamStrip.querySelector('.ask-meta-model').classList.add('streaming');
+    streamBody.insertBefore(streamStrip, streamBody.firstChild);
     container.appendChild(div);
     _askScrollToBottom();
 }
@@ -1035,10 +1027,25 @@ function _askLinkifyCitations(html, sources) {
         const s = byNum.get(Number(numStr));
         if (!s) return m;
         const title = escapeHtml(String(s.title || 'source'));
+        // Jump to (and flash) the matching source card below the answer;
+        // the card itself opens the context detail.
         return `<sup class="ask-cite"><a href="#" title="${title}" ` +
-               `onclick="showDetail(${Number(s.context_id)});return false;">[${Number(numStr)}]</a></sup>`;
+               `onclick="window._askCiteJump(this, ${Number(numStr)});return false;">[${Number(numStr)}]</a></sup>`;
     });
 }
+
+// Inline [n] click → scroll to the answer's sources row and flash card n.
+window._askCiteJump = function(link, n) {
+    const msg = link.closest('.ask-msg');
+    if (!msg) return;
+    const card = msg.querySelector(`.ask-source-chip[data-n="${n}"]`) ||
+                 msg.querySelector('.ask-sources');
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('flash');
+    requestAnimationFrame(() => card.classList.add('flash'));
+    card.addEventListener('animationend', () => card.classList.remove('flash'), { once: true });
+};
 
 function _askFinalizeMsg(sources) {
     const content = $('#ask-streaming-content');
@@ -1082,41 +1089,117 @@ function _askFinalizeMsg(sources) {
         const deduped = Array.from(bestByCtx.values());
 
         const body = content.parentElement; // .ask-msg-body
-        const sourcesDiv = document.createElement('div');
-        sourcesDiv.className = 'ask-sources';
-
-        const chipsHtml = deduped.map(s => {
-            const brand = s.source ? _AI_BRAND[s.source] : null;
-            const color = brand ? brand.color : 'var(--cv-volt)';
-            const title = String(s.title || 'Untitled');
-            const short = title.length > 42 ? title.slice(0, 40) + '…' : title;
-            const pct = typeof s.score === 'number' ? Math.round(s.score * 100) : null;
-            const score = pct !== null ? `<span class="ask-source-score">${pct}%</span>` : '';
-            const snippet = s.snippet ? String(s.snippet) : '';
-            const tooltipParts = [title];
-            if (brand) tooltipParts.push(brand.label);
-            if (snippet) tooltipParts.push(snippet);
-            const tooltip = tooltipParts.join(' · ');
-            const snippetLine = snippet
-                ? `<div class="ask-source-snippet">${escapeHtml(snippet)}</div>`
-                : '';
-            return `<div class="ask-source-card">
-                        <button class="ask-source-chip" style="--src-color:${color}"
-                                onclick="showDetail(${s.context_id})"
-                                title="${escapeHtml(tooltip)}">
-                            <span class="ask-source-dot" aria-hidden="true"></span>
-                            <span class="ask-source-title">${escapeHtml(short)}</span>
-                            ${score}
-                        </button>
-                        ${snippetLine}
-                    </div>`;
-        }).join('');
-
-        sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources</span>${chipsHtml}`;
-        body.appendChild(sourcesDiv);
+        body.appendChild(_askBuildSourcesRow(deduped));
+    }
+    const finalizedMsg = content.closest('.ask-msg');
+    if (finalizedMsg) {
+        // Streaming state → model attribution in the meta strip.
+        const stripModel = finalizedMsg.querySelector('.ask-meta-model');
+        if (stripModel) {
+            stripModel.classList.remove('streaming');
+            _askGetModelLabel().then(label => { if (label) stripModel.textContent = `· ${label}`; });
+        }
+        _askAppendAnswerFooter(finalizedMsg, raw);
     }
 
     _askScrollToBottom();
+}
+
+// ─── Shared answer-block pieces (sources row + footer) ────────────────
+
+// Build the sources section: label + horizontal card row, placed AFTER the
+// answer. Each card carries the backend's citation number (s.n) so it lines
+// up with the inline [n] superscripts.
+function _askBuildSourcesRow(deduped) {
+    const sourcesDiv = document.createElement('div');
+    sourcesDiv.className = 'ask-sources';
+    const cardsHtml = deduped.map(s => {
+        const brand = s.source ? _AI_BRAND[s.source] : null;
+        const color = brand ? brand.color : 'var(--cv-volt)';
+        const title = String(s.title || 'Untitled');
+        const snippet = s.snippet ? String(s.snippet) : '';
+        const tooltipParts = [title];
+        if (brand) tooltipParts.push(brand.label);
+        if (snippet) tooltipParts.push(snippet);
+        const tooltip = tooltipParts.join(' · ');
+        const n = s.n != null ? Number(s.n) : null;
+        const num = n != null ? `<span class="ask-source-n">${n}</span>` : '';
+        const cidAttr = s.context_id != null ? Number(s.context_id) : '';
+        const short = title.length > 46 ? title.slice(0, 44) + '…' : title;
+        return `<button class="ask-source-chip" style="--src-color:${color}"${n != null ? ` data-n="${n}"` : ''}
+                        onclick="showDetail(${cidAttr})"
+                        title="${escapeHtml(tooltip)}">
+                    ${num}
+                    <span class="ask-source-dot" aria-hidden="true"></span>
+                    <span class="ask-source-title">${escapeHtml(short)}</span>
+                </button>`;
+    }).join('');
+    sourcesDiv.innerHTML = `<span class="ask-sources-label">Sources · ${deduped.length}</span><div class="ask-sources-row">${cardsHtml}</div>`;
+    return sourcesDiv;
+}
+
+// Identity row above each reply: bolt mark + "Vault" + state/model.
+// Doubles as the status line: "▍ streaming" → "· model-name" on finalize.
+function _askBuildMetaStrip(stateText) {
+    const strip = document.createElement('div');
+    strip.className = 'ask-ident';
+    strip.innerHTML = `
+        <span class="ask-ident-bolt" aria-hidden="true">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+        </span>
+        <span class="ask-ident-name">Vault</span>
+        <span class="ask-meta-model">${escapeHtml(stateText || '')}</span>`;
+    return strip;
+}
+
+// Active provider/model label for the footer — fetched once, cached.
+let _askModelLabel = null;
+async function _askGetModelLabel() {
+    if (_askModelLabel) return _askModelLabel;
+    try {
+        const res = await fetch(`${API}/api/setup/config`);
+        if (res.ok) {
+            const d = await res.json();
+            const prov = d.provider || 'ollama';
+            _askModelLabel = prov === 'ollama'
+                ? (d.model || 'local model')
+                : ((d.cloud_models && d.cloud_models[prov]) || prov);
+        }
+    } catch (_) {}
+    return _askModelLabel || '';
+}
+
+// Footer under each finished answer: copy · re-ask · model used.
+function _askAppendAnswerFooter(msgEl, rawText) {
+    const body = msgEl.querySelector('.ask-msg-body');
+    if (!body || body.querySelector('.ask-answer-foot')) return;
+    const foot = document.createElement('div');
+    foot.className = 'ask-answer-foot';
+    foot.innerHTML = `
+        <button class="ask-foot-btn" data-foot="copy">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+        </button>
+        <button class="ask-foot-btn" data-foot="reask">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/></svg>
+            Re-ask
+        </button>
+        `;
+    foot.querySelector('[data-foot="copy"]').addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText(rawText || '');
+            showToast('Answer copied', 'success');
+        } catch (_) { showToast('Copy failed', 'error'); }
+    });
+    foot.querySelector('[data-foot="reask"]').addEventListener('click', () => {
+        if (state.askStreaming) return;
+        // Walk back to the question this answer belongs to and retry it.
+        let el = msgEl.previousElementSibling;
+        while (el && !el.classList.contains('ask-msg-user')) el = el.previousElementSibling;
+        const actionBtn = el && el.querySelector('.ask-msg-action-btn');
+        if (actionBtn) window._askRetryMsg(actionBtn);
+    });
+    body.appendChild(foot);
 }
 
 function _askSetStatus(text) {

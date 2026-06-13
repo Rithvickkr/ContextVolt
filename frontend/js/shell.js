@@ -132,6 +132,9 @@ function _initSidebarTooltips() {
 function toggleSidebar() {
     const app = document.getElementById('app');
     if (!app) return;
+    // A manual toggle is an explicit choice — drop the auto-collapse flag so
+    // widening the window later doesn't override what the user just did.
+    delete app.dataset.autoCollapsed;
     // Mark as animating so CSS can suppress scrollbar flicker during the
     // width transition (which is what makes the collapse feel laggy).
     app.classList.add('sidebar-animating');
@@ -162,8 +165,37 @@ function _restoreSidebarState() {
     }
 }
 
+// ─── Responsive: auto-collapse the sidebar on narrow windows ───────────
+// Below this width the 248px sidebar costs too much of a frameless window.
+// We reuse the existing .sidebar-collapsed styles, but tag the collapse as
+// automatic (dataset.autoCollapsed) so widening the window restores the
+// user's manual preference instead of clobbering it.
+const _narrowSidebarMQ = window.matchMedia('(max-width: 1024px)');
+
+function _syncResponsiveSidebar() {
+    const app = document.getElementById('app');
+    if (!app) return;
+    if (_narrowSidebarMQ.matches) {
+        // Collapse if not already (manual or auto). Tag only auto-collapses.
+        if (!app.classList.contains('sidebar-collapsed')) {
+            app.classList.add('sidebar-collapsed');
+            app.dataset.autoCollapsed = '1';
+        }
+    } else if (app.dataset.autoCollapsed === '1') {
+        // Leaving narrow mode: undo only the automatic collapse, then honour
+        // whatever the user last chose manually.
+        delete app.dataset.autoCollapsed;
+        if (localStorage.getItem('cv-sidebar-collapsed') !== '1') {
+            app.classList.remove('sidebar-collapsed');
+        }
+    }
+}
+
+_narrowSidebarMQ.addEventListener('change', _syncResponsiveSidebar);
+
 // Run immediately
 _restoreSidebarState();
+_syncResponsiveSidebar();
 
 
 

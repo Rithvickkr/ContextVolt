@@ -119,9 +119,9 @@ const CV_ONBOARD_STEPS = [
     },
     {
         view: 'input',
-        target: '#vibeToggle',
-        title: 'Visual vibes',
-        body: 'Three moods: <b>Volt</b> (default), <b>Space</b> (deep cosmic), <b>Noir</b> (minimal). Pick whatever helps you focus.',
+        target: '#modeToggle',
+        title: 'Light & Dark',
+        body: 'Switch between <b>Light</b> and <b>Dark</b> mode anytime — your choice is remembered across sessions.',
         eyebrow: 'Personalize'
     },
     {

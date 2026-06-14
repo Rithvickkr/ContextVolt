@@ -8,6 +8,12 @@ function _applyTheme(theme) {
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-checked', active ? 'true' : 'false');
     });
+    // Keep the topbar Light/Dark pill in sync too (it shares the theme system).
+    document.querySelectorAll('#modeToggle button').forEach(btn => {
+        const active = btn.dataset.mode === theme;
+        btn.classList.toggle('on', active);
+        btn.setAttribute('aria-selected', String(active));
+    });
 }
 
 function setTheme(theme) {

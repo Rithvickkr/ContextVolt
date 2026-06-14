@@ -302,25 +302,21 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => setTheme(btn.dataset.theme));
     });
 
-    // Vibe toggle (Noir / Volt / Space) — Noir is the default
-    const _vibeBtns = document.querySelectorAll('#vibeToggle button');
-    _vibeBtns.forEach(b => b.addEventListener('click', () => {
-        const v = b.dataset.vibe;
-        document.documentElement.setAttribute('data-vibe', v);
-        _vibeBtns.forEach(x => {
-            x.classList.toggle('on', x === b);
-            x.setAttribute('aria-selected', String(x === b));
-        });
-        try { localStorage.setItem('cv-vibe', v); } catch(e) {}
+    // Color mode toggle (Light / Dark) — Noir is the only palette now.
+    const _modeBtns = document.querySelectorAll('#modeToggle button');
+    const _syncModeBtns = (theme) => _modeBtns.forEach(x => {
+        const active = x.dataset.mode === theme;
+        x.classList.toggle('on', active);
+        x.setAttribute('aria-selected', String(active));
+    });
+    _modeBtns.forEach(b => b.addEventListener('click', () => {
+        setTheme(b.dataset.mode);
+        _syncModeBtns(b.dataset.mode);
     }));
-    try {
-        const _savedVibe = localStorage.getItem('cv-vibe') || 'noir';
-        document.documentElement.setAttribute('data-vibe', _savedVibe);
-        _vibeBtns.forEach(x => {
-            x.classList.toggle('on', x.dataset.vibe === _savedVibe);
-            x.setAttribute('aria-selected', String(x.dataset.vibe === _savedVibe));
-        });
-    } catch(e) {}
+    _syncModeBtns(localStorage.getItem('cv-theme') || 'dark');
+    // Frost & Space palettes were removed — pin Noir and drop any saved vibe.
+    document.documentElement.setAttribute('data-vibe', 'noir');
+    try { localStorage.removeItem('cv-vibe'); } catch(e) {}
 
     // Sidebar collapse
     if ($('#sidebar-collapse-btn')) $('#sidebar-collapse-btn').addEventListener('click', toggleSidebar);

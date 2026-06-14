@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'"
         onerror="this.remove()">
-    <link rel="stylesheet" href="/static/css/styles.css?v=responsive-v3">
+    <link rel="stylesheet" href="/static/css/styles.css?v=light-fix-v1">
     <style>
         /* Screen-reader only utility */
         .sr-only {
@@ -61,7 +61,6 @@
 
     <!-- Cinematic ambient layers (z-index below app) -->
     <div class="cv-ambient" aria-hidden="true"></div>
-    <div class="cv-stars" aria-hidden="true"></div>
     <div class="cv-grain" aria-hidden="true"></div>
 
     <!-- Setup Wizard (shown during initialization) -->
@@ -247,18 +246,14 @@
                 <!-- Topbar -->
                 <div class="cv-topbar">
                     <div class="cv-breadcrumb">Workspace / <b>Dashboard</b></div>
-                    <div class="cv-vibe" id="vibeToggle" role="tablist" aria-label="Visual vibe" style="margin-left:auto;">
-                        <button data-vibe="noir" class="on" role="tab" aria-selected="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>
-                            Noir
+                    <div class="cv-vibe" id="modeToggle" role="tablist" aria-label="Color mode" style="margin-left:auto;">
+                        <button data-mode="light" role="tab" aria-selected="false">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                            Light
                         </button>
-                        <button data-vibe="volt" role="tab" aria-selected="false">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
-                            Volt
-                        </button>
-                        <button data-vibe="space" role="tab" aria-selected="false">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-25 12 12)"/></svg>
-                            Space
+                        <button data-mode="dark" class="on" role="tab" aria-selected="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            Dark
                         </button>
                     </div>
                     <div class="cv-notify" id="cv-notify-wrap">

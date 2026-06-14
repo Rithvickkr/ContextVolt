@@ -6935,6 +6935,10 @@ kbd {
   --cv-volt-dim: oklch(0.75 0.18 75 / 0.06);
   --cv-volt-glow:oklch(0.75 0.18 75 / 0.11);
   --cv-plasma:   oklch(0.72 0.18 280);
+  /* Shared card/panel surface — one token so light mode can flip every
+     card at once instead of relying on per-component overrides. */
+  --cv-surface:  linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+  --cv-inset:    rgba(15,15,18,0.6);
   --cv-text-0:   #f4f4f5;
   --cv-text-1:   #d4d4d8;
   --cv-text-2:   #a1a1aa;
@@ -6953,16 +6957,6 @@ kbd {
   --cv-mono:    'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* Space vibe token overrides */
-[data-vibe="space"] {
-  --cv-bg-0: #02030a; --cv-bg-1: #05060f; --cv-bg-2: #08091a;
-  --cv-bg-3: #0d0e24; --cv-bg-4: #14162e;
-  --cv-volt: oklch(0.86 0.14 200); --cv-volt-2: oklch(0.74 0.16 215);
-  --cv-volt-dim: oklch(0.86 0.14 200 / 0.15);
-  --cv-volt-glow: oklch(0.86 0.14 200 / 0.28);
-  --cv-plasma: oklch(0.72 0.2 300);
-}
-
 /* Ambient aurora layer */
 .cv-ambient {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
@@ -6973,32 +6967,6 @@ kbd {
   filter: saturate(0.95);
   transition: background 0.6s var(--cv-ease), opacity 0.6s var(--cv-ease);
 }
-[data-vibe="space"] .cv-ambient {
-  background:
-    radial-gradient(1400px 800px at 82% -10%, color-mix(in oklab, var(--cv-plasma) 22%, transparent) 0%, transparent 55%),
-    radial-gradient(1100px 700px at 12% 10%, color-mix(in oklab, var(--cv-volt) 16%, transparent) 0%, transparent 55%),
-    radial-gradient(900px 700px at 50% 110%, color-mix(in oklab, #3366ff 18%, transparent) 0%, transparent 60%),
-    linear-gradient(180deg, #02030a 0%, #05060f 60%, #02030a 100%);
-  filter: saturate(1.2);
-}
-
-/* Stars layer (visible in space mode) */
-.cv-stars {
-  position: fixed; inset: -10%; pointer-events: none; z-index: 0; opacity: 0;
-  background-image:
-    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.9), transparent 50%),
-    radial-gradient(1px 1px at 34% 40%, rgba(255,255,255,0.85), transparent 50%),
-    radial-gradient(1px 1px at 58% 12%, rgba(255,255,255,0.9), transparent 50%),
-    radial-gradient(1px 1px at 76% 28%, rgba(255,255,255,0.8), transparent 50%),
-    radial-gradient(1.5px 1.5px at 92% 40%, rgba(255,255,255,0.95), transparent 50%),
-    radial-gradient(1.5px 1.5px at 15% 88%, rgba(200,220,255,0.9), transparent 50%),
-    radial-gradient(1.5px 1.5px at 72% 6%, rgba(255,240,220,0.9), transparent 50%);
-  background-repeat: repeat;
-  background-size: 720px 560px, 860px 640px, 540px 420px;
-  transition: opacity 0.5s ease;
-}
-[data-vibe="space"] .cv-stars { opacity: 1; animation: cv-drift 240s linear infinite; }
-@keyframes cv-drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-540px,-420px,0); } }
 
 /* Grain overlay */
 .cv-grain {
@@ -7356,7 +7324,7 @@ kbd {
 .cv-statstrip {
   display: grid; grid-template-columns: 1fr 1fr; overflow: hidden;
   border-radius: var(--cv-r-lg); border: 1px solid var(--cv-line);
-  background: linear-gradient(180deg, rgba(22,22,27,0.6), rgba(14,14,18,0.6));
+  background: var(--cv-surface);
 }
 [data-theme="light"] .cv-statstrip { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
 .cv-statstrip .cv-stat {
@@ -7373,7 +7341,7 @@ kbd {
 
 .cv-stat {
   position: relative; overflow: hidden; padding: 18px 20px 20px; border-radius: var(--cv-r-md);
-  background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(14,14,18,0.7));
+  background: var(--cv-surface);
   border: 1px solid var(--cv-line); transition: all 0.25s var(--cv-ease); cursor: default;
 }
 [data-theme="light"] .cv-stat { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
@@ -7516,7 +7484,7 @@ kbd {
     height: 54px;
     padding: 0 10px 0 16px;
     border-radius: 14px;
-    background: linear-gradient(180deg, rgba(22,22,27,0.75), rgba(12,12,15,0.75));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     transition: border-color 0.2s var(--cv-ease), box-shadow 0.2s var(--cv-ease);
 }
@@ -7574,7 +7542,7 @@ kbd {
 @media (max-width: 1180px) { .cv-dash-bento { grid-template-columns: 1fr; } }
 .cv-dash-panel {
     padding: 16px 16px 14px; border-radius: var(--cv-r-lg);
-    background: linear-gradient(180deg, rgba(22,22,27,0.55), rgba(14,14,18,0.55));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
 }
 [data-theme="light"] .cv-dash-panel { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
@@ -7714,7 +7682,7 @@ kbd {
   --mx: 50%; --my: 50%;
   position: relative; overflow: hidden; padding: 18px 18px 16px; min-height: 172px;
   border-radius: var(--cv-r-lg);
-  background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+  background: var(--cv-surface);
   border: 1px solid var(--cv-line); cursor: pointer;
   transition: transform 0.2s var(--cv-ease), border-color 0.25s var(--cv-ease);
   display: flex; flex-direction: column; gap: 10px;
@@ -8092,7 +8060,7 @@ kbd {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 14px; margin-bottom: 32px;
     border-radius: var(--cv-r-md);
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -8237,7 +8205,7 @@ kbd {
 /* ── Block card ───────────────────────────────────────────── */
 .cv-block {
     padding: 18px 20px; border-radius: var(--cv-r-lg);
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
 }
 [data-theme="light"] .cv-block { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.08); }
@@ -8298,7 +8266,7 @@ kbd {
 }
 
 .cv-block-pinned {
-    background: linear-gradient(180deg, color-mix(in oklab, var(--cv-volt) 6%, rgba(22,22,27,0.7)), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border-color: color-mix(in oklab, var(--cv-volt) 18%, var(--cv-line));
 }
 [data-theme="light"] .cv-block-pinned { background: linear-gradient(180deg, rgba(217,119,6,0.05), rgba(255,255,255,0.9)); border-color: rgba(217,119,6,0.2); }
@@ -8544,7 +8512,7 @@ kbd {
 
 /* ── Prompt builder (aside) ──────────────────────────────── */
 .cv-block-prompt {
-    background: linear-gradient(180deg, color-mix(in oklab, var(--cv-volt) 5%, rgba(22,22,27,0.7)), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border-color: color-mix(in oklab, var(--cv-volt) 15%, var(--cv-line));
 }
 [data-theme="light"] .cv-block-prompt { background: linear-gradient(180deg, rgba(217,119,6,0.04), rgba(255,255,255,0.9)); border-color: rgba(217,119,6,0.18); }
@@ -8588,7 +8556,7 @@ kbd {
     margin-top: 20px !important;
     padding: 18px 20px !important;
     border-radius: var(--cv-r-lg) !important;
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7)) !important;
+    background: var(--cv-surface) !important;
     border: 1px solid var(--cv-line) !important;
 }
 [data-theme="light"] #view-detail .prompt-section { background: rgba(255,255,255,0.9) !important; border-color: rgba(0,0,0,0.08) !important; }
@@ -9127,7 +9095,7 @@ kbd {
     display: flex; align-items: center; gap: 10px;
     padding: 9px 12px 9px 14px;
     border-radius: 12px;
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     transition: all 0.18s var(--cv-ease);
@@ -9194,7 +9162,7 @@ kbd {
 
 .cv-view-seg {
     display: inline-flex; padding: 3px; border-radius: 10px;
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
@@ -9215,7 +9183,7 @@ kbd {
 
 .cv-select {
     font-family: var(--cv-body); font-size: 12.5px;
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     color: var(--cv-text-1);
     padding: 8px 28px 8px 12px; border-radius: 9px;
@@ -9232,7 +9200,7 @@ kbd {
 .cv-select-mode-btn {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 12px; border-radius: 9px;
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     color: var(--cv-text-1); font: 500 12.5px/1 var(--cv-body); cursor: pointer;
     backdrop-filter: blur(14px);
@@ -9248,7 +9216,7 @@ kbd {
 .cv-sort-btn {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 8px 11px 8px 12px; border-radius: 9px;
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     color: var(--cv-text-1);
     font: 500 12.5px/1 var(--cv-body);
@@ -9602,7 +9570,7 @@ kbd {
 .cv-skel {
     padding: 18px 20px;
     border-radius: var(--cv-r-md);
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     min-height: 168px;
     position: relative; overflow: hidden;
@@ -9724,7 +9692,7 @@ kbd {
 #deep-search-results .deep-result-group,
 #deep-search-results .deep-search-group {
     padding: 14px 18px; border-radius: var(--cv-r-md);
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     margin-bottom: 10px;
 }
@@ -9798,7 +9766,7 @@ kbd {
     margin: clamp(20px, 3vw, 36px) clamp(16px, 4vw, 48px) 0;
     padding: 10px 14px;
     border-radius: var(--cv-r-md);
-    background: rgba(15,15,18,0.6);
+    background: var(--cv-inset);
     border: 1px solid var(--cv-line);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     flex-shrink: 0;
@@ -10258,7 +10226,7 @@ kbd {
     display: flex; flex-direction: column; align-items: stretch; gap: 18px;
     padding: 18px 18px 16px;
     border-radius: var(--cv-r-md);
-    background: linear-gradient(180deg, rgba(22,22,27,0.7), rgba(12,12,15,0.7));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     color: var(--cv-text-1);
     font: 500 13px/1.4 var(--cv-body);
@@ -10471,7 +10439,7 @@ kbd {
     flex: 1; min-width: 0; max-width: 720px;
 }
 #view-ask .ask-msg.ask-msg-assistant .ask-msg-content {
-    background: linear-gradient(180deg, rgba(22,22,27,0.72), rgba(12,12,15,0.72));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     color: var(--cv-text-0);
     border-radius: 18px 18px 18px 4px;
@@ -11366,8 +11334,6 @@ kbd {
   filter: none;
 }
 
-[data-vibe="noir"] .cv-stars { opacity: 0; animation: none; }
-
 [data-vibe="noir"] #app.app-container {
   background: transparent;
   position: relative;
@@ -11834,224 +11800,6 @@ kbd {
 }
 
 /* ================================================================
-   Glass morphism for Volt & Space vibes
-   Brings the noir-grade frosted-glass surface treatment to the
-   other two dark vibes: translucent layered-gradient fills, a
-   top highlight hairline, layered depth shadows, and a frosted
-   blur so the ambient backdrop reads through the surface. Accent
-   washes use each vibe's own token (amber for volt, cyan for
-   space) instead of noir's violet/white so each keeps its identity.
-   Dark vibes only — light mode keeps its existing flat surfaces.
-   ================================================================ */
-
-/* Frosted topbar (mirrors noir's floating bar) */
-[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar,
-[data-vibe="space"]:not([data-theme="light"]) .cv-topbar {
-  background: linear-gradient(180deg, rgba(22,22,30,0.78), rgba(12,12,18,0.78));
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 8px 32px -16px rgba(0,0,0,0.6);
-  position: relative;
-}
-[data-vibe="volt"]:not([data-theme="light"]) .cv-topbar::after,
-[data-vibe="space"]:not([data-theme="light"]) .cv-topbar::after {
-  content: "";
-  position: absolute;
-  left: 14%;
-  right: 14%;
-  bottom: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
-  pointer-events: none;
-}
-
-/* Glass surfaces — stat cards, recent cards, pipeline panel */
-[data-vibe="volt"]:not([data-theme="light"]) .cv-stat,
-[data-vibe="space"]:not([data-theme="light"]) .cv-stat,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-pipeline,
-[data-vibe="space"]:not([data-theme="light"]) .cv-pipeline {
-  background:
-    radial-gradient(360px 120px at 0% 0%, var(--cv-volt-glow), transparent 60%),
-    radial-gradient(280px 200px at 100% 100%, color-mix(in oklab, var(--cv-plasma) 8%, transparent), transparent 65%),
-    linear-gradient(180deg, rgba(255,255,255,0.028) 0%, rgba(255,255,255,0.008) 100%);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.05) inset,
-    0 1px 2px rgba(0,0,0,0.35),
-    0 18px 44px -22px rgba(0,0,0,0.78),
-    0 0 0 1px rgba(255,255,255,0.02);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Top highlight hairline */
-[data-vibe="volt"]:not([data-theme="light"]) .cv-stat::after,
-[data-vibe="space"]:not([data-theme="light"]) .cv-stat::after,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article::before,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card::before,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 16%;
-  right: 16%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  pointer-events: none;
-  opacity: 0.65;
-  z-index: 1;
-}
-
-/* Hover lift + deepen */
-[data-vibe="volt"]:not([data-theme="light"]) .cv-stat:hover,
-[data-vibe="space"]:not([data-theme="light"]) .cv-stat:hover,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover {
-  border-color: rgba(255,255,255,0.16);
-  transform: translateY(-2px);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.07) inset,
-    0 26px 56px -22px rgba(0,0,0,0.9),
-    0 0 0 1px rgba(255,255,255,0.05);
-}
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > article:hover::before,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .ctx-card:hover::before,
-[data-vibe="volt"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before,
-[data-vibe="space"]:not([data-theme="light"]) .cv-recent-grid > .cv-card:hover::before { opacity: 1; }
-
-/* Glass chips */
-[data-vibe="volt"]:not([data-theme="light"]) .cv-chip,
-[data-vibe="space"]:not([data-theme="light"]) .cv-chip {
-  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.012));
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-color: rgba(255,255,255,0.07);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
-}
-
-/* ================================================================
-   Space vibe + Light mode
-   Space only changes cv-* tokens (deep navy/cyan palette) — the
-   ambient gradient is the biggest visual problem; white stars on
-   light bg are invisible (harmless). Cyan volt needs darkening so
-   it's readable on a white surface.
-   ================================================================ */
-
-[data-theme="light"][data-vibe="space"] {
-  --cv-volt:      #0e7490;
-  --cv-volt-2:    #0c4a6e;
-  --cv-volt-dim:  rgba(14,116,144,0.1);
-  --cv-volt-glow: rgba(14,116,144,0.2);
-}
-
-/* Ambient: replace deep-space dark with a light sky wash */
-[data-theme="light"][data-vibe="space"] .cv-ambient {
-  background:
-    radial-gradient(1200px 600px at 70% -10%, rgba(14,116,144,0.07) 0%, transparent 55%),
-    radial-gradient(800px 500px at 10% 100%, rgba(59,130,246,0.05) 0%, transparent 55%);
-  filter: none;
-}
-
-/* Stars: white dots on white = invisible but harmless; hide explicitly */
-[data-theme="light"][data-vibe="space"] .cv-stars { opacity: 0; }
-
-/* Eyebrow dot */
-[data-theme="light"][data-vibe="space"] .cv-hero-eyebrow::before {
-  background: #0e7490;
-  box-shadow: 0 0 8px rgba(14,116,144,0.35);
-}
-
-/* Voltword */
-[data-theme="light"][data-vibe="space"] .cv-hero h1 .voltword,
-[data-theme="light"][data-vibe="space"] .voltword {
-  background: linear-gradient(180deg, #0e7490, #0c4a6e 100%);
-  -webkit-background-clip: text; background-clip: text;
-}
-[data-theme="light"][data-vibe="space"] .cv-hero h1 .voltword::after,
-[data-theme="light"][data-vibe="space"] .cv-capture-title .voltword::after {
-  background: linear-gradient(90deg, transparent, #0e7490 20%, #0e7490 80%, transparent);
-}
-
-/* Primary button */
-[data-theme="light"][data-vibe="space"] .cv-primary {
-  background: linear-gradient(180deg, #22d3ee, #0e7490);
-  color: #ffffff;
-  border-color: rgba(0,0,0,0.12);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 4px 16px -4px rgba(14,116,144,0.4);
-}
-[data-theme="light"][data-vibe="space"] .cv-primary:hover {
-  box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 28px -4px rgba(14,116,144,0.5);
-}
-
-/* Active nav icon */
-[data-theme="light"][data-vibe="space"] .nav-item.cv-nav.active .cv-nav-ic { color: #0e7490; }
-
-/* Side icon btn */
-[data-theme="light"][data-vibe="space"] .cv-side-iconbtn:hover {
-  color: #0e7490;
-  border-color: rgba(14,116,144,0.3);
-  background: rgba(14,116,144,0.07);
-}
-
-/* Vibe toggle active */
-[data-theme="light"][data-vibe="space"] .cv-vibe button.on {
-  background: rgba(14,116,144,0.08);
-  color: #0e7490;
-  box-shadow: inset 0 0 0 1px rgba(14,116,144,0.25);
-}
-
-/* Stat dot 1 */
-[data-theme="light"][data-vibe="space"] .cv-stat:nth-child(1) .k .dot {
-  background: #0e7490;
-  box-shadow: 0 0 6px rgba(14,116,144,0.3);
-}
-
-/* Pipeline status badge */
-[data-theme="light"][data-vibe="space"] .cv-pipe-status {
-  color: #0e7490;
-  background: rgba(14,116,144,0.08);
-  border-color: rgba(14,116,144,0.2);
-}
-[data-theme="light"][data-vibe="space"] .cv-pipe-status::before {
-  background: #0e7490;
-  box-shadow: 0 0 8px rgba(14,116,144,0.4);
-  animation: cv-blink 1.2s infinite;
-}
-
-/* Summarize progress */
-[data-theme="light"][data-vibe="space"] .summarize-progress-fill {
-  background: linear-gradient(90deg, #22d3ee, #0e7490);
-  box-shadow: 0 0 6px rgba(14,116,144,0.3);
-}
-
-/* Capture orb */
-[data-theme="light"][data-vibe="space"] .cv-capture-orb {
-  border-color: rgba(14,116,144,0.25);
-  box-shadow: 0 0 32px rgba(14,116,144,0.18);
-  color: #0e7490;
-}
-
-/* ================================================================
    Noir vibe + Light mode
    Noir uses all-white gradients, rgba(255,255,255,x) backgrounds,
    and white glow effects — every one of those is invisible on a
@@ -12286,13 +12034,60 @@ kbd {
    badges (#34d399 on rgba(52,211,153,0.12)) are light-on-light.
    ================================================================ */
 
-/* Re-map the cv-text scale for light mode so any rule using
-   --cv-text-0/1/2/3 stays readable (hover states especially). */
+/* Re-map the core cv-* surface + text scale for light mode. Without the
+   --cv-bg-* flip, #app.app-container (and every token-driven surface) stayed
+   dark on a light page — the root cause of "light mode is broken". This block
+   is later in source than [data-vibe="noir"] (same specificity), so its
+   values win; the more-specific [data-theme="light"][data-vibe="noir"] block
+   still overrides accent/line tokens on top. */
 [data-theme="light"] {
+  --cv-bg-0: #f4f4f6;   /* page / app canvas */
+  --cv-bg-1: #ffffff;   /* sidebar, panels, primary cards */
+  --cv-bg-2: #f1f2f5;   /* inputs, insets, secondary surfaces */
+  --cv-bg-3: #e8e9ee;   /* hovered / tertiary surfaces */
+  --cv-bg-4: #dfe0e6;   /* elevated chips, pressed states */
+
   --cv-text-0: #111113;
   --cv-text-1: #2e2e33;
   --cv-text-2: #52525b;
   --cv-text-3: #71717a;
+  --cv-text-4: #a1a1aa;
+
+  --cv-line:   rgba(0,0,0,0.09);
+  --cv-line-2: rgba(0,0,0,0.14);
+
+  --cv-surface: #ffffff;
+  --cv-inset:   rgba(0,0,0,0.04);
+}
+
+/* ── Light mode — flip the remaining hardcoded-dark surfaces the token
+   system can't reach. Some come from [data-vibe="noir"] rules that
+   out-specify a plain [data-theme="light"] selector, so those are matched
+   at equal-or-higher specificity here (vibe is always noir). ── */
+[data-theme="light"] .sidebar.cv-side {
+  background: var(--cv-bg-1);
+  border-right-color: var(--cv-line);
+}
+[data-theme="light"][data-vibe="noir"] .cv-topbar {
+  background: rgba(252,252,253,0.96);
+}
+[data-theme="light"] .cv-pipeline,
+[data-theme="light"] .cv-action,
+[data-theme="light"] .cv-aside-card,
+[data-theme="light"] .cv-onboard-card {
+  background: var(--cv-surface);
+}
+[data-theme="light"] .cv-status-menu,
+[data-theme="light"] .cv-export-menu,
+[data-theme="light"] .cv-sort-menu,
+[data-theme="light"] .cv-ask-scope-menu,
+[data-theme="light"] .cv-notify-panel,
+[data-theme="light"] .cv-ask-history-panel,
+[data-theme="light"] .cv-bulk-pill {
+  background: #ffffff;
+}
+[data-theme="light"] .ask-msg-edit-input {
+  background: var(--cv-inset);
 }
 
 /* Hover states that bumped icons toward white now bump toward dark */
@@ -12343,12 +12138,6 @@ kbd {
 }
 
 /* Vibe-specific badge tinting so the accent stays consistent */
-[data-theme="light"][data-vibe="space"] .settings-model-badge,
-[data-theme="light"][data-vibe="space"] .settings-installed-badge {
-  background: rgba(14,116,144,0.1);
-  color: #0e7490;
-  border-color: rgba(14,116,144,0.3);
-}
 [data-theme="light"][data-vibe="noir"] .settings-model-badge,
 [data-theme="light"][data-vibe="noir"] .settings-installed-badge {
   background: rgba(39,39,42,0.08);
@@ -12443,11 +12232,6 @@ kbd {
 
 /* Live "summarizing"/"failed" pill — make sure noir/space variants are
    not stuck on volt-orange when those vibes don't use it */
-[data-theme="light"][data-vibe="space"] .cv-card-live {
-  color: #0e7490;
-  border-color: rgba(14,116,144,0.4);
-  background: rgba(255,255,255,0.92);
-}
 [data-theme="light"][data-vibe="noir"] .cv-card-live {
   color: #27272a;
   border-color: rgba(39,39,42,0.35);
@@ -13566,16 +13350,12 @@ a { transition: color 0.16s ease; }
 
 /* 3. Compact single-line greeting — wins over vibe-level hero rules */
 .cv-dash-hero .cv-hero h1,
-[data-vibe="noir"] .cv-dash-hero .cv-hero h1,
-[data-vibe="space"] .cv-dash-hero .cv-hero h1,
-[data-vibe="volt"] .cv-dash-hero .cv-hero h1 {
+[data-vibe="noir"] .cv-dash-hero .cv-hero h1 {
     font-size: clamp(28px, 2.6vw, 44px);
     line-height: 1.12;
 }
 .cv-dash-hero .cv-hero,
-[data-vibe="noir"] .cv-dash-hero .cv-hero,
-[data-vibe="space"] .cv-dash-hero .cv-hero,
-[data-vibe="volt"] .cv-dash-hero .cv-hero {
+[data-vibe="noir"] .cv-dash-hero .cv-hero {
     border-bottom: 0;
     margin-bottom: 0;
     padding: 6px 4px 0;
@@ -13953,7 +13733,7 @@ body.cv-dash-settled .cv-recent-ask {
     position: sticky; top: 158px;
     max-height: calc(100vh - 190px); overflow-y: auto;
     padding: 18px; border-radius: var(--cv-r-lg);
-    background: linear-gradient(180deg, rgba(22,22,27,0.55), rgba(14,14,18,0.55));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 18px 44px -24px rgba(0,0,0,0.7);
 }
@@ -14589,7 +14369,7 @@ body[data-view="detail"] .cv-lights::before { opacity: 1; }
 
 /* ── Answer = card ── */
 .ask-msg-assistant {
-    background: linear-gradient(180deg, rgba(22,22,27,0.55), rgba(14,14,18,0.55));
+    background: var(--cv-surface);
     border: 1px solid var(--cv-line);
     border-radius: var(--cv-r-lg);
     padding: 14px 16px;

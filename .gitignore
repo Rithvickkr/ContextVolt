@@ -59,6 +59,9 @@ backend/_*_smoke_test.py
 # ─── Marketing landing page (separate concern) ───
 landing/
 
+# ─── Design scratch (docs/ holds committed release notes; HTML is local-only) ───
+docs/*.html
+
 # ─── Eval harness reports (regeneration artifacts) ───────
 # Already-committed Phase 1 baselines stay tracked; new runs are ignored.
 backend/eval/baselines/*.json

@@ -162,7 +162,7 @@ const _TUNNEL_PLATFORM_CONFIGS = {
             steps: [
                 'Open <b>claude.ai</b> → avatar → <b>Settings</b> → <b>Integrations</b>',
                 'Click <b>Add integration</b> and paste the MCP URL below',
-                'Claude.ai will redirect you to a ConVX "Allow Access" page — click <b>Allow</b>',
+                'Claude.ai will redirect you to a ContextVolt "Allow Access" page — click <b>Allow</b>',
             ],
             snippet: null,
             snippetLabel: null,
@@ -435,9 +435,48 @@ function _showSettingsSkeletons() {
     embedGrid.innerHTML = skels(4);
 }
 
+// ─── Profile avatar (initial letter + chosen color) ─────────────────────
+const AVATAR_KEY = 'cv-avatar-color';
+const AVATAR_DEFAULT = '#6366f1';
+let _avatarPickerBound = false;
+
+function _applyAvatarColor(color) {
+    document.documentElement.style.setProperty('--cv-avatar-color', color);
+    document.querySelectorAll('.settings-avatar-swatch').forEach(sw => {
+        sw.classList.toggle('selected', sw.dataset.avatarColor === color);
+    });
+}
+
+function _updateAvatarFace() {
+    const nm = (($('#profile-name-input') || {}).value || (_settingsConfig || {}).user_name || '').trim();
+    const av = $('#settings-avatar');
+    const nameEl = $('#settings-avatar-name');
+    if (av) av.textContent = (nm[0] || 'U').toUpperCase();
+    if (nameEl) nameEl.textContent = nm || 'Your profile';
+}
+
+function _initProfileAvatar() {
+    _applyAvatarColor(localStorage.getItem(AVATAR_KEY) || AVATAR_DEFAULT);
+    _updateAvatarFace();
+    if (_avatarPickerBound) return;
+    _avatarPickerBound = true;
+    document.querySelectorAll('.settings-avatar-swatch').forEach(sw => {
+        sw.addEventListener('click', () => {
+            const color = sw.dataset.avatarColor;
+            localStorage.setItem(AVATAR_KEY, color);
+            _applyAvatarColor(color);
+        });
+    });
+    const nameInput = $('#profile-name-input');
+    if (nameInput) nameInput.addEventListener('input', _updateAvatarFace);
+}
+
 async function openSettingsModal() {
     const modal = $('#settings-modal');
     modal.style.display = 'flex';
+
+    // Profile avatar (initial + saved color) + swatch handlers
+    _initProfileAvatar();
 
     // Reset warning
     $('#settings-embed-warning').classList.remove('visible');
@@ -1015,6 +1054,7 @@ function _renderSettingsCards() {
     const aboutInput = $('#profile-about-input');
     if (nameInput)  nameInput.value  = _settingsConfig.user_name  || '';
     if (aboutInput) aboutInput.value = _settingsConfig.user_about || '';
+    _updateAvatarFace();
 
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');

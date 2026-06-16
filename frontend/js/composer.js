@@ -1,22 +1,246 @@
 // ContextVolt — Chat input + summarize pipeline.
 import { $, API } from './core.js';
-import { showDetail } from './detail.js';
 import { showToast } from './dialogs.js';
+import { navigateTo } from './nav.js';
+import { _kickGlobalPoll } from './polling.js';
 // â”€â”€â”€ Chat Input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function initChatInput() {
     const textarea = $('#chat-textarea');
-    const charCount = $('#char-count');
     const summarizeBtn = $('#summarize-btn');
+    if (!textarea || !summarizeBtn) return;
 
-    textarea.addEventListener('input', () => {
-        const len = textarea.value.length;
-        const tokens = Math.round(len / 4);
-        const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
-        charCount.textContent = `${len.toLocaleString()} chars · ${tokenStr} tokens`;
-        summarizeBtn.disabled = len < 20;
+    const refresh = () => {
+        _updateCaptureStats();
+        summarizeBtn.disabled = textarea.value.trim().length < 20;
+        const drop = document.getElementById('cap-drophint');
+        if (drop) drop.hidden = textarea.value.length > 0;
+        _autoDetectSource(textarea.value);
+    };
+
+    textarea.addEventListener('input', refresh);
+
+    // Paste from clipboard (toolbar button + empty-state CTA)
+    const doPaste = async () => {
+        try {
+            const txt = await navigator.clipboard.readText();
+            if (txt) { textarea.value = txt; refresh(); }
+            textarea.focus();
+        } catch {
+            showToast('Clipboard blocked — paste with Ctrl+V instead', 'error');
+            textarea.focus();
+        }
+    };
+    document.getElementById('cap-paste-btn')?.addEventListener('click', doPaste);
+    document.getElementById('cap-paste-cta')?.addEventListener('click', doPaste);
+
+    // Clear
+    document.getElementById('cap-clear-btn')?.addEventListener('click', () => {
+        textarea.value = ''; refresh(); textarea.focus();
     });
 
+    // Drag & drop a .txt / .md / .json export
+    const zone = document.getElementById('cap-dropzone');
+    if (zone) {
+        ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, (e) => {
+            e.preventDefault(); zone.classList.add('dragover');
+        }));
+        zone.addEventListener('dragleave', (e) => { if (e.target === zone) zone.classList.remove('dragover'); });
+        zone.addEventListener('drop', async (e) => {
+            e.preventDefault(); zone.classList.remove('dragover');
+            const file = e.dataTransfer?.files?.[0];
+            if (!file) return;
+            try { textarea.value = await file.text(); refresh(); }
+            catch { showToast('Could not read that file', 'error'); }
+        });
+    }
+
+    // Source select — once the user picks, stop auto-detect from overriding it
+    // Custom dropdowns (source + collection) — replace native <select>s.
+    _initCapDropdown('cap-source-dd', (val) => {
+        const v = document.getElementById('cap-source');
+        if (v) v.dataset.manual = val ? '1' : '';
+    });
+    _initCapDropdown('cap-collection-dd');
+
+    _initTagInput();
+    _loadCollections();
+
     summarizeBtn.addEventListener('click', () => summarizeAndSave());
+    refresh();
+}
+
+// Lightweight custom dropdown: button toggles a themed menu; selecting sets the
+// hidden <input> value + label and fires onChange. Click-outside / Esc dismiss.
+function _initCapDropdown(rootId, onChange) {
+    const root = document.getElementById(rootId);
+    if (!root || root._cvBound) return;
+    root._cvBound = true;
+    const btn = root.querySelector('.cv-cap3-dd-btn');
+    const menu = root.querySelector('.cv-cap3-dd-menu');
+    const label = root.querySelector('.cv-cap3-dd-label');
+    const valueEl = root.querySelector('input[type="hidden"]');
+    if (!btn || !menu || !valueEl) return;
+
+    const onOutside = (e) => { if (!root.contains(e.target)) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') { close(); btn.focus(); } };
+    function close() {
+        if (menu.hidden) return;
+        menu.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('mousedown', onOutside, true);
+        document.removeEventListener('keydown', onKey, true);
+    }
+    function open() {
+        menu.hidden = false;
+        btn.setAttribute('aria-expanded', 'true');
+        document.addEventListener('mousedown', onOutside, true);
+        document.addEventListener('keydown', onKey, true);
+    }
+    btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+    menu.addEventListener('click', (e) => {
+        const opt = e.target.closest('.cv-cap3-dd-opt');
+        if (!opt) return;
+        const val = opt.dataset.val || '';
+        valueEl.value = val;
+        if (label) {
+            label.textContent = opt.textContent.trim();
+            label.classList.toggle('cv-cap3-dd-label-muted', val === '');
+        }
+        menu.querySelectorAll('.cv-cap3-dd-opt').forEach(o => o.setAttribute('aria-selected', String(o === opt)));
+        close();
+        onChange?.(val);
+    });
+}
+
+// ─── Capture studio: live helpers ────────────────────────────────
+function _updateCaptureStats() {
+    const ta = document.getElementById('chat-textarea');
+    if (!ta) return;
+    const len = ta.value.length;
+    const tokens = Math.round(len / 4);
+    const chunks = len ? Math.max(1, Math.round(len / 2200)) : 0;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('cap-chars', len.toLocaleString());
+    set('cap-tokens', tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens));
+    set('cap-chunks', String(chunks));
+    const hint = document.getElementById('cap-chunk-hint');
+    if (hint) hint.textContent = chunks ? `· ~${chunks}` : '';
+    const cc = document.getElementById('char-count');
+    if (cc) cc.textContent = len ? `${len.toLocaleString()} characters ready` : 'Nothing saved until you summarize';
+
+    // v3 surface: live meter fill, morphing status, "filled" state (green dot + glow)
+    const fill = document.getElementById('cap-meter-fill');
+    if (fill) fill.style.width = `${Math.min(100, Math.round(tokens / 16000 * 100))}%`;
+    const surf = document.getElementById('cap-dropzone');
+    if (surf) surf.classList.toggle('cv-cap3-filled', len > 0);
+    const status = document.getElementById('cap-status-text');
+    if (status) {
+        if (!len) status.textContent = 'Empty — paste to begin';
+        else {
+            const s = _detectSource(ta.value);
+            status.innerHTML = s ? `<b>${s}</b> conversation · ready` : 'Conversation · ready';
+        }
+    }
+}
+
+function _detectSource(text) {
+    const t = (text || '').slice(0, 4000).toLowerCase();
+    if (/chatgpt|chat\.openai\.com|openai|gpt-4|gpt-5|you said:|chatgpt said:/.test(t)) return 'ChatGPT';
+    if (/claude|claude\.ai|anthropic/.test(t)) return 'Claude';
+    if (/gemini|gemini\.google|\bbard\b/.test(t)) return 'Gemini';
+    if (/\bgrok\b|x\.ai/.test(t)) return 'Grok';
+    if (/deepseek/.test(t)) return 'DeepSeek';
+    return '';
+}
+
+function _autoDetectSource(text) {
+    const valueEl = document.getElementById('cap-source');
+    if (!valueEl) return;
+    const detected = _detectSource(text);
+    if (valueEl.dataset.manual) return; // user picked — don't override
+    valueEl.value = detected || '';
+    const label = document.getElementById('cap-source-label');
+    if (label) {
+        label.textContent = detected || 'Auto-detect';
+        label.classList.toggle('cv-cap3-dd-label-muted', !detected);
+    }
+    document.getElementById('cap-source-menu')
+        ?.querySelectorAll('.cv-cap3-dd-opt')
+        .forEach(o => o.setAttribute('aria-selected', String((o.dataset.val || '') === (detected || ''))));
+}
+
+function _initTagInput() {
+    const input = document.getElementById('cap-tag-input');
+    const wrap = document.getElementById('cap-tags');
+    if (!input || !wrap) return;
+    const addTag = (raw) => {
+        const val = (raw || '').replace(/,+$/, '').trim();
+        if (!val) return;
+        if (_collectTags().some(t => t.toLowerCase() === val.toLowerCase())) { input.value = ''; return; }
+        const chip = document.createElement('span');
+        chip.className = 'cv-cap2-tag';
+        const label = document.createTextNode(val + ' ');
+        const x = document.createElement('button');
+        x.type = 'button'; x.setAttribute('aria-label', 'Remove tag'); x.textContent = '×';
+        x.addEventListener('click', () => chip.remove());
+        chip.append(label, x);
+        wrap.insertBefore(chip, input);
+        input.value = '';
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(input.value); }
+        else if (e.key === 'Backspace' && !input.value) {
+            const chips = wrap.querySelectorAll('.cv-cap2-tag');
+            if (chips.length) chips[chips.length - 1].remove();
+        }
+    });
+    input.addEventListener('blur', () => addTag(input.value));
+}
+
+function _collectTags() {
+    return [...document.querySelectorAll('#cap-tags .cv-cap2-tag')]
+        .map(c => (c.firstChild?.textContent || '').trim())
+        .filter(Boolean);
+}
+
+async function _loadCollections() {
+    const menu = document.getElementById('cap-collection-menu');
+    if (!menu || menu.dataset.loaded) return;
+    try {
+        const res = await fetch(`${API}/api/collections`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const cols = Array.isArray(data) ? data : (data.collections || []);
+        for (const c of cols) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'cv-cap3-dd-opt'; b.setAttribute('role', 'option');
+            b.setAttribute('aria-selected', 'false'); b.dataset.val = String(c.id);
+            b.textContent = c.name || `Collection ${c.id}`;
+            menu.appendChild(b);
+        }
+        menu.dataset.loaded = '1';
+    } catch { /* offline / no collections — leave "No collection" */ }
+}
+
+function _resetCaptureForm() {
+    const ta = document.getElementById('chat-textarea'); if (ta) ta.value = '';
+    const title = document.getElementById('cap-title'); if (title) title.value = '';
+    document.querySelectorAll('#cap-tags .cv-cap2-tag').forEach(c => c.remove());
+    // Reset source dropdown
+    const src = document.getElementById('cap-source'); if (src) { src.value = ''; src.dataset.manual = ''; }
+    const srcLbl = document.getElementById('cap-source-label');
+    if (srcLbl) { srcLbl.textContent = 'Auto-detect'; srcLbl.classList.add('cv-cap3-dd-label-muted'); }
+    document.getElementById('cap-source-menu')?.querySelectorAll('.cv-cap3-dd-opt')
+        .forEach(o => o.setAttribute('aria-selected', String((o.dataset.val || '') === '')));
+    // Reset collection dropdown
+    const col = document.getElementById('cap-collection'); if (col) col.value = '';
+    const colLbl = document.getElementById('cap-collection-label');
+    if (colLbl) { colLbl.textContent = 'No collection'; colLbl.classList.add('cv-cap3-dd-label-muted'); }
+    document.getElementById('cap-collection-menu')?.querySelectorAll('.cv-cap3-dd-opt')
+        .forEach(o => o.setAttribute('aria-selected', String((o.dataset.val || '') === '')));
+    const drop = document.getElementById('cap-drophint'); if (drop) drop.hidden = false;
+    _updateCaptureStats();
+    const btn = document.getElementById('summarize-btn'); if (btn) btn.disabled = true;
 }
 
 // ─── Pipeline UI helpers ─────────────────────────────────────────
@@ -64,146 +288,75 @@ function _pipelineAppendToken(token) {
 }
 
 let _summarizing = false;
+
+// In-app Quick Capture now mirrors the browser extension: the conversation is
+// saved as a "summarizing" context and the LLM work happens in a background
+// worker. The new card shows up in the Library with a "Summarizing" badge that
+// clears when it's done — no blocking dashboard pipeline.
 async function summarizeAndSave() {
-    if (_summarizing) { console.warn('[ConVX] already in flight — bailing'); return; }
+    if (_summarizing) return;
     const textarea = $('#chat-textarea');
     const btn = $('#summarize-btn');
     const text = textarea.value.trim();
-    if (!text) { console.warn('[ConVX] empty text — bailing'); return; }
+    if (text.length < 20) return;
 
     _summarizing = true;
-    // Show loading
-    btn.querySelector('.btn-text').style.display = 'none';
-    btn.querySelector('.btn-loader').style.display = 'inline-flex';
-    btn.disabled = true;
+    _setSubmitState(btn, 'busy');
 
-    // Show pipeline on dashboard
-    const _firstLine = text.split('\n').find(l => l.trim()) || 'Processing conversation…';
-    _pipelineShow(_firstLine.slice(0, 80));
+    const source = (document.getElementById('cap-source')?.value || _detectSource(text) || 'Manual').trim();
+    const title = (document.getElementById('cap-title')?.value || '').trim();
+    const tags = _collectTags();
+    const colRaw = document.getElementById('cap-collection')?.value;
+    const collection_id = colRaw ? Number(colRaw) : null;
 
     try {
-        // Step 1: Summarize via Ollama (streaming progress)
-        const _setProgress = (msg, pct = null) => {
-            const textEl = document.getElementById('summarize-progress-text');
-            const fillEl = document.getElementById('summarize-progress-fill');
-            if (textEl) textEl.textContent = ' ' + msg;
-            if (fillEl && pct !== null) fillEl.style.width = pct + '%';
-        };
-        _setProgress('Summarizing…', 5);
-
-        const summaryRes = await fetch(`${API}/api/summarize/stream`, {
+        const res = await fetch(`${API}/api/capture`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ text, source, method: 'Quick Capture', title: title || null, tags, collection_id }),
         });
-
-        if (!summaryRes.ok) {
-            const err = await summaryRes.json().catch(() => ({}));
-            throw new Error(err.detail || 'Summarization failed');
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Capture failed');
         }
+        await res.json();
 
-        // Read NDJSON stream for progress
-        let summary = null;
-        const reader = summaryRes.body.getReader();
-        const decoder = new TextDecoder();
-        let streamBuf = '';
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            streamBuf += decoder.decode(value, { stream: true });
-            const lines = streamBuf.split('\n');
-            streamBuf = lines.pop();
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const evt = JSON.parse(line);
-                    if (evt.error) throw new Error(evt.error);
-                    if (evt.step) {
-                        const pct = evt.total > 0 ? Math.round((evt.done / evt.total) * 85) : 0;
-                        _setProgress(evt.step, pct);
-                        _pipelineSetStep(1, 'active', evt.step.slice(0, 40));
-                    }
-                    if (evt.token) _pipelineAppendToken(evt.token);
-                    if (evt.result) summary = evt.result;
-                } catch (e) { if (e.message !== line) throw e; }
-            }
-        }
+        _setSubmitState(btn, 'done');
+        _resetCaptureForm();
+        showToast('Saved — summarizing in the background', 'success');
+        try { _kickGlobalPoll(); } catch {}
 
-        if (!summary) throw new Error('Summarization produced no result');
-        _pipelineSetStep(1, 'done', 'Summary ready');
-
-        // Create title + tags
-        const title = summary.main_topic || 'Untitled Context';
-        const tags = generateTags(summary);
-
-        // Save to database
-        _pipelineSetStep(2, 'active', 'Storing to vault…');
-        _setProgress('Saving…', 90);
-        const createRes = await fetch(`${API}/api/contexts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title,
-                summary,
-                tags,
-                original_chat: text,
-            }),
-        });
-
-        if (!createRes.ok) {
-            throw new Error('Failed to save context');
-        }
-
-        const created = await createRes.json();
-        _pipelineSetStep(2, 'done', 'Saved to vault');
-        _pipelineSetStep(3, 'active', 'Splitting chunks…');
-
-        // Chunk and embed
-        _setProgress('Embedding…', 97);
-        try {
-            const chunkRes = await fetch(`${API}/api/contexts/chunk-all?force=false`, { method: 'POST' });
-            if (chunkRes.ok) {
-                // Consume the NDJSON stream to completion
-                const reader = chunkRes.body.getReader();
-                const decoder = new TextDecoder();
-                let buf = '';
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    buf += decoder.decode(value, { stream: true });
-                }
-            }
-        } catch {
-            showToast('Context saved, but chunking failed — use Rebuild Embeddings later', 'error');
-        }
-
-        _pipelineSetStep(3, 'done', 'Chunks ready');
-        _pipelineSetStep(4, 'done', 'Vectors indexed');
-
-        // Clear textarea
-        textarea.value = '';
-        $('#char-count').textContent = '0 characters';
-        btn.disabled = true;
-
-        showToast('Context summarized & saved', 'success');
-
-        // Navigate to detail view
-        setTimeout(() => showDetail(created.id), 500);
-
+        // Land in the Library so the new "Summarizing" card is visible (like an extension capture).
+        setTimeout(() => { navigateTo('library'); _setSubmitState(btn, 'idle'); }, 650);
     } catch (err) {
-        console.error('[ConVX] summarize failed', err);
-        showToast(`Summarization failed: ${err.message}`, 'error');
-        _pipelineHide();
+        console.error('[ConVX] capture failed', err);
+        showToast(`Capture failed: ${err.message}`, 'error');
+        _setSubmitState(btn, 'idle');
     } finally {
         _summarizing = false;
-        btn.querySelector('.btn-text').style.display = 'inline-flex';
-        btn.querySelector('.btn-loader').style.display = 'none';
-        btn.disabled = false;
-        // Reset progress bar
-        const fillEl = document.getElementById('summarize-progress-fill');
-        if (fillEl) fillEl.style.width = '0%';
-        // Hide pipeline after a beat
-        setTimeout(_pipelineHide, 3000);
+    }
+}
+
+// Submit button states: idle · busy (spinner) · done (✓ Saved)
+function _setSubmitState(btn, state) {
+    if (!btn) return;
+    const txt = btn.querySelector('.btn-text');
+    const loader = btn.querySelector('.btn-loader');
+    btn.classList.remove('is-busy', 'is-done');
+    if (state === 'busy') {
+        btn.classList.add('is-busy');
+        btn.disabled = true;
+        if (txt) txt.style.display = 'none';
+        if (loader) loader.style.display = 'inline-flex';
+    } else if (state === 'done') {
+        btn.classList.add('is-done');
+        btn.disabled = true;
+        if (loader) loader.style.display = 'none';
+        if (txt) { txt.style.display = 'inline-flex'; txt.textContent = '✓ Saved'; }
+    } else {
+        btn.disabled = (document.getElementById('chat-textarea')?.value.trim().length || 0) < 20;
+        if (loader) loader.style.display = 'none';
+        if (txt) { txt.style.display = 'inline-flex'; txt.textContent = 'Summarize & Save'; }
     }
 }
 

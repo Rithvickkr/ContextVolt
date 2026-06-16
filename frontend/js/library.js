@@ -309,16 +309,27 @@ function _renderLibrary() {
         // Time-grouped sections only make sense on newest-first; other sorts flat.
         if (state.sortOrder === 'newest' || !state.sortOrder) {
             let html = '';
+            let idx = 0;
+
+            // Pinned contexts get their own section at the top — not split by date.
+            const pinned = list.filter(c => c.starred);
+            const rest = list.filter(c => !c.starred);
+            if (pinned.length) {
+                const star = `<svg class="cv-lib-group-pin" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+                const cards = pinned.map(ctx => _renderContextCard(ctx, idx++)).join('');
+                html += `<div class="cv-lib-group cv-lib-group-pinned"><span class="cv-lib-group-label">${star}Pinned</span><span class="cv-lib-group-rule"></span><span class="cv-lib-group-count">${pinned.length}</span></div>
+                         <div class="cv-lib-groupgrid">${cards}</div>`;
+            }
+
             let currentGroup = null;
             let groupCards = [];
-            let idx = 0;
             const flush = () => {
                 if (!currentGroup) return;
                 html += `<div class="cv-lib-group"><span class="cv-lib-group-label">${currentGroup}</span><span class="cv-lib-group-rule"></span><span class="cv-lib-group-count">${groupCards.length}</span></div>
                          <div class="cv-lib-groupgrid">${groupCards.join('')}</div>`;
                 groupCards = [];
             };
-            for (const ctx of list) {
+            for (const ctx of rest) {
                 const g = _groupLabel(ctx.created_at);
                 if (g !== currentGroup) { flush(); currentGroup = g; }
                 groupCards.push(_renderContextCard(ctx, idx++));

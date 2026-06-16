@@ -11,7 +11,7 @@ import { _initNotifCenter } from './notifications.js';
 import { _deleteCloudKey, _initMcpServerPanelHandlers, _initSettingsHint, _initTunnelPanelHandlers, _validateCloudKey, closeSettingsModal, openSettingsModal, saveSettings } from './settings.js';
 import { checkSetup, setupInterval, startSetupPolling, transitionToApp } from './setup.js';
 import { _initSidebarTooltips, setTheme, toggleSidebar } from './shell.js';
-import { _switchSystemTab, closeSystemModal, downloadBackup, loadSystemLogs, openSystemModal, rebuildEmbeddings, restartBackend, updateStatusIndicator } from './system.js';
+import { _switchSystemTab, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, setLogLevel, updateStatusIndicator } from './system.js';
 import { _initUpdatePanel } from './updates.js';
 
 // â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
@@ -95,41 +95,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Backfill embeddings & chunks
     if ($('#btn-rebuild-embeddings')) $('#btn-rebuild-embeddings').addEventListener('click', rebuildEmbeddings);
     if ($('#btn-load-more')) $('#btn-load-more').addEventListener('click', loadMoreContexts);
-    if ($('#btn-restart')) $('#btn-restart').addEventListener('click', restartBackend);
     if ($('#btn-backup')) $('#btn-backup').addEventListener('click', downloadBackup);
 
-    // Status row → System / Restart popover menu (replaces the old sidebar buttons)
+    // Sidebar status badge → opens the System status & logs modal directly.
+    // (The old System / Restart popover is gone — the modal already covers both.)
     const _statusBtn = $('#status-indicator');
-    const _statusMenu = $('#cv-status-menu');
-    if (_statusBtn && _statusMenu) {
-        const onOutside = (e) => {
-            if (!_statusMenu.contains(e.target) && !_statusBtn.contains(e.target)) closeStatusMenu();
-        };
-        const onEsc = (e) => { if (e.key === 'Escape') { closeStatusMenu(); _statusBtn.focus(); } };
-        function closeStatusMenu() {
-            if (_statusMenu.hidden) return;
-            _statusMenu.hidden = true;
-            _statusBtn.setAttribute('aria-expanded', 'false');
-            document.removeEventListener('mousedown', onOutside, true);
-            document.removeEventListener('keydown', onEsc, true);
-        }
-        function openStatusMenu() {
-            _statusMenu.hidden = false;
-            _statusBtn.setAttribute('aria-expanded', 'true');
-            document.addEventListener('mousedown', onOutside, true);
-            document.addEventListener('keydown', onEsc, true);
-        }
-        const toggle = () => (_statusMenu.hidden ? openStatusMenu() : closeStatusMenu());
-        _statusBtn.addEventListener('click', toggle);
+    if (_statusBtn) {
+        _statusBtn.addEventListener('click', openSystemModal);
         _statusBtn.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSystemModal(); }
         });
-        // Close after choosing an item (the item's own handler still fires).
-        _statusMenu.addEventListener('click', (e) => { if (e.target.closest('.cv-util')) closeStatusMenu(); });
     }
 
     // System modal
-    if ($('#btn-system'))       $('#btn-system').addEventListener('click', openSystemModal);
     if ($('#system-modal-close')) $('#system-modal-close').addEventListener('click', closeSystemModal);
     if ($('#system-modal'))     $('#system-modal').addEventListener('click', e => { if (e.target === $('#system-modal')) closeSystemModal(); });
     document.querySelectorAll('.system-tab').forEach(tab => {
@@ -137,9 +115,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     if ($('#btn-refresh-logs'))  $('#btn-refresh-logs').addEventListener('click', loadSystemLogs);
     if ($('#logs-lines-select')) $('#logs-lines-select').addEventListener('change', loadSystemLogs);
+    // Log level filter chips
+    if ($('#log-filters')) {
+        $('#log-filters').addEventListener('click', e => {
+            const b = e.target.closest('.log-filter');
+            if (b) setLogLevel(b.dataset.lvl);
+        });
+    }
+    // Log search box
+    if ($('#logs-search')) $('#logs-search').addEventListener('input', filterLogs);
     if ($('#btn-copy-logs')) {
         $('#btn-copy-logs').addEventListener('click', () => {
-            const text = Array.from($('#logs-viewer').querySelectorAll('.log-line')).map(el => el.textContent).join('\n');
+            const text = Array.from($('#logs-viewer').querySelectorAll('.log-line'))
+                .map(el => el.dataset.raw || el.textContent).join('\n');
             navigator.clipboard.writeText(text).then(() => showToast('Logs copied', 'success')).catch(() => showToast('Copy failed', 'error'));
         });
     }
@@ -313,7 +301,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setTheme(b.dataset.mode);
         _syncModeBtns(b.dataset.mode);
     }));
-    _syncModeBtns(localStorage.getItem('cv-theme') || 'dark');
+    // Resolve "system" to the actual palette so the topbar pill highlights correctly.
+    const _savedTheme = localStorage.getItem('cv-theme') || 'dark';
+    _syncModeBtns(_savedTheme === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+        : _savedTheme);
     // Frost & Space palettes were removed — pin Noir and drop any saved vibe.
     document.documentElement.setAttribute('data-vibe', 'noir');
     try { localStorage.removeItem('cv-vibe'); } catch(e) {}
@@ -337,7 +329,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === $('#settings-modal')) closeSettingsModal();
     });
 
-    // Settings sidebar nav — switch active panel
+    // Settings sidebar nav — switch active panel + sync the content header/footer
+    const SETTINGS_HEADERS = {
+        profile:    ['Profile', 'Used to personalise greetings and give the AI context about who you are.'],
+        appearance: ['Appearance', 'Choose how ContextVolt looks. Applies across the entire app.'],
+        models:     ['AI Models', 'Pick where your AI runs and which models handle summarization and search.'],
+        mcp:        ['MCP Server', 'Expose your saved vault to external LLMs over Model Context Protocol.'],
+        updates:    ['Updates', 'Keep ContextVolt current. Updates download and install in the background.'],
+        tools:      ['Tools', 'Maintenance helpers, backups, and reference.'],
+    };
+    // Tabs where the Save / Cancel footer is meaningful.
+    const SETTINGS_SAVE_TABS = new Set(['profile', 'appearance', 'models']);
     document.querySelectorAll('.settings-nav-item').forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.settingsTab;
@@ -349,6 +351,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.settings-panel').forEach(p => {
                 p.classList.toggle('active', p.dataset.settingsPanel === tab);
             });
+            const head = SETTINGS_HEADERS[tab];
+            if (head) {
+                const t = $('#settings-head-title');
+                const s = $('#settings-head-sub');
+                if (t) t.textContent = head[0];
+                if (s) s.textContent = head[1];
+            }
+            const footer = $('#settings-footer');
+            if (footer) footer.style.display = SETTINGS_SAVE_TABS.has(tab) ? '' : 'none';
+            const privacy = $('#settings-privacy-notice');
+            if (privacy) privacy.style.display = tab === 'models' ? '' : 'none';
             const body = document.querySelector('.settings-modal-body');
             if (body) body.scrollTop = 0;
         });

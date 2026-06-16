@@ -171,13 +171,18 @@ function renderDetail(ctx) {
             <div class="cv-dhero-meta">
                 <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
                 ${starred ? `<span class="cv-dhero-pin">★ pinned</span>` : ''}
-                <span class="cv-collection-inline">
-                    <select id="detail-collection-select" onchange="handleDetailCollectionChange(${ctx.id}, this.value)">
-                        <option value="">Collection: None</option>
+                <span class="cv-collection-inline cv-coll-dd${ctx.collection_id ? ' has-coll' : ''}" data-ctx="${ctx.id}">
+                    <button type="button" class="cv-coll-dd-btn" aria-haspopup="listbox" aria-expanded="false" title="Move to a collection">
+                        <svg class="cv-coll-dd-ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+                        <span class="cv-coll-dd-label">${ctx.collection_id ? escapeHtml((state.collections.find(c => c.id === ctx.collection_id) || {}).name || 'Collection') : 'No collection'}</span>
+                        <svg class="cv-coll-dd-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="cv-coll-dd-menu" role="listbox" aria-label="Collection" hidden>
+                        <button type="button" class="cv-coll-dd-opt" role="option" data-val="" aria-selected="${!ctx.collection_id}">No collection</button>
                         ${state.collections.map(c =>
-                            `<option value="${c.id}"${ctx.collection_id === c.id ? ' selected' : ''}>${escapeHtml(c.name)}</option>`
+                            `<button type="button" class="cv-coll-dd-opt" role="option" data-val="${c.id}" aria-selected="${ctx.collection_id === c.id}">${escapeHtml(c.name)}</button>`
                         ).join('')}
-                    </select>
+                    </div>
                 </span>
                 ${heroTagsHtml}
                 <span class="cv-dhero-facts">captured ${escapeHtml(date)}${aiModel && aiModel !== source ? ` · ${escapeHtml(aiModel)}` : ''}${turnCount ? ` · ${turnCount} turns` : ''}${wordCount ? ` · ${wordCount.toLocaleString()} words` : ''}</span>
@@ -1123,6 +1128,48 @@ async function handleDetailCollectionChange(contextId, value) {
         showToast(col ? `Moved to "${col.name}"` : 'Removed from collection', 'success');
     }
 }
+
+// Custom collection dropdown on the detail hero — delegated once, survives re-renders.
+let _collDdBound = false;
+function _initDetailCollDd() {
+    if (_collDdBound) return;
+    _collDdBound = true;
+    const closeAll = (except) => {
+        document.querySelectorAll('.cv-coll-dd-menu:not([hidden])').forEach(m => {
+            if (m.parentElement === except) return;
+            m.hidden = true;
+            m.parentElement.querySelector('.cv-coll-dd-btn')?.setAttribute('aria-expanded', 'false');
+        });
+    };
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.cv-coll-dd-btn');
+        const opt = e.target.closest('.cv-coll-dd-opt');
+        const root = e.target.closest('.cv-coll-dd');
+        closeAll(root);
+        if (btn) {
+            const dd = btn.closest('.cv-coll-dd');
+            const menu = dd.querySelector('.cv-coll-dd-menu');
+            const willOpen = menu.hidden;
+            menu.hidden = !willOpen;
+            btn.setAttribute('aria-expanded', String(willOpen));
+            return;
+        }
+        if (opt) {
+            const dd = opt.closest('.cv-coll-dd');
+            const ctxId = Number(dd.dataset.ctx);
+            const val = opt.dataset.val || '';
+            dd.querySelector('.cv-coll-dd-menu').hidden = true;
+            dd.querySelector('.cv-coll-dd-btn')?.setAttribute('aria-expanded', 'false');
+            dd.querySelectorAll('.cv-coll-dd-opt').forEach(o => o.setAttribute('aria-selected', String(o === opt)));
+            const lbl = dd.querySelector('.cv-coll-dd-label');
+            if (lbl) lbl.textContent = opt.textContent.trim();
+            dd.classList.toggle('has-coll', !!val);
+            await handleDetailCollectionChange(ctxId, val);
+        }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAll(null); });
+}
+_initDetailCollDd();
 
 // â”€â”€â”€ Retry Summarization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function retrySummarize() {

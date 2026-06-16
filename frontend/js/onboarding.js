@@ -135,7 +135,7 @@ const CV_ONBOARD_STEPS = [
         view: 'input',
         target: '#status-indicator',
         title: 'System & health',
-        body: 'The pulsing dot shows live backend status. Click it to open <b>System</b> (Ollama connection, live logs) or <b>Restart Backend</b>.',
+        body: 'The pulsing dot shows live backend status. Click it to open <b>System</b> — Ollama connection, health, live logs, and a Restart Backend button.',
         eyebrow: 'Health'
     },
     {

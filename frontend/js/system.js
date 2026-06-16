@@ -71,8 +71,10 @@ async function rebuildEmbeddings() {
 }
 
 // â”€â”€â”€ Restart Backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-async function restartBackend() {
-    const btn = $('#btn-restart');
+async function restartBackend(btnEl) {
+    // Bound as a click handler (receives an Event) and also called explicitly
+    // with the hero button — fall back to the sidebar restart button otherwise.
+    const btn = (btnEl instanceof HTMLElement) ? btnEl : $('#btn-restart');
     if (!btn || btn.disabled) return;
     btn.disabled = true;
     btn.classList.add('restarting');
@@ -143,6 +145,44 @@ function _fmtUptime(s) {
     return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
 }
 
+// SVG glyphs for the health cards / hero (kept tiny & inline)
+const _SYS_ICONS = {
+    backend:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+    ollama:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>',
+    llm:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4 4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4z"/><path d="M5 22v-5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v5"/></svg>',
+    embed:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+    database: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>',
+    models:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>',
+    bolt:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
+    warn:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    restart:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
+};
+
+function _sysCard({ icon, label, dot, value, sub, mono = false, wide = false, bodyHtml = null }) {
+    return `
+        <div class="sys-card${wide ? ' wide' : ''}">
+            <span class="sys-card-ic">${_SYS_ICONS[icon] || ''}</span>
+            <div class="sys-card-body">
+                ${bodyHtml !== null ? bodyHtml : `
+                <div class="sys-card-header">
+                    <span class="sys-card-label">${escapeHtml(label)}</span>
+                    ${dot ? `<span class="sys-dot ${dot}"></span>` : ''}
+                </div>
+                <div class="sys-card-value${mono ? ' mono' : ''}">${escapeHtml(value)}</div>
+                ${sub ? `<div class="sys-card-sub">${escapeHtml(sub)}</div>` : ''}`}
+            </div>
+        </div>`;
+}
+
+function _setOverall(state, text) {
+    const pill = $('#sys-overall-pill');
+    const txt  = $('#sys-overall-text');
+    const hero = $('#sys-health-hero');
+    if (pill) pill.dataset.state = state;
+    if (txt)  txt.textContent = text;
+    if (hero) hero.dataset.state = state;
+}
+
 async function loadSystemHealth() {
     const grid = $('#sys-status-grid');
     if (!grid) return;
@@ -151,65 +191,148 @@ async function loadSystemHealth() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const d = await res.json();
 
-        const ollamaDot  = d.ollama.running  ? 'ok'   : 'err';
-        const modelDot   = d.model.ready     ? 'ok'   : (d.ollama.running ? 'warn' : 'err');
-        const modelSub   = d.model.ready     ? 'Ready' : (d.ollama.running ? 'Not downloaded' : 'Ollama offline');
+        const isCloud = d.active_provider?.is_cloud;
+        const ollamaDot = d.ollama.running ? 'ok' : 'err';
+        const modelReady = d.model.ready;
+        const modelDot  = modelReady ? 'ok' : (d.ollama.running ? 'warn' : 'err');
+        const modelSub  = modelReady ? 'Ready' : (d.ollama.running ? 'Not downloaded' : 'Ollama offline');
+
+        // ── Overall verdict ──
+        let state = 'ok', verdict = "Everything's running", pillText = 'All systems operational';
+        if (isCloud) {
+            state = 'ok'; verdict = 'Running on cloud provider'; pillText = 'All systems operational';
+        } else if (!d.ollama.running) {
+            state = 'err'; verdict = 'Ollama is offline'; pillText = 'Service offline';
+        } else if (!modelReady) {
+            state = 'warn'; verdict = 'Model not downloaded'; pillText = 'Needs attention';
+        }
+        _setOverall(state, pillText);
+
+        const heroEl = $('#sys-health-hero');
+        if (heroEl) {
+            const bits = [`Backend up ${_fmtUptime(d.backend.uptime_s)}`];
+            bits.push(d.ollama.running ? 'Ollama connected' : 'Ollama offline');
+            bits.push(`${d.database.contexts} contexts indexed`);
+            heroEl.hidden = false;
+            heroEl.innerHTML = `
+                <span class="sys-hero-ring">${state === 'ok' ? _SYS_ICONS.bolt : _SYS_ICONS.warn}</span>
+                <div class="sys-hero-text">
+                    <div class="sys-hero-title">${escapeHtml(verdict)}</div>
+                    <div class="sys-hero-sub">${escapeHtml(bits.join(' · '))}</div>
+                </div>
+                <button class="sys-hero-restart" id="sys-hero-restart" type="button">${_SYS_ICONS.restart}Restart backend</button>`;
+            const rb = $('#sys-hero-restart');
+            if (rb) rb.addEventListener('click', () => restartBackend(rb));
+        }
 
         const modelsHtml = d.installed_models.length
-            ? `<ul class="sys-models-list">${d.installed_models.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`
-            : `<span style="color:var(--text-faint);font-size:11px;">None installed</span>`;
+            ? `<div class="sys-models">${d.installed_models.map(m => `<span class="sys-model-chip"><span class="d"></span>${escapeHtml(m)}</span>`).join('')}</div>`
+            : `<div class="sys-card-value" style="font-size:12px;color:var(--text-faint);font-weight:400;">None installed</div>`;
 
         grid.innerHTML = `
-            <div class="sys-card">
-                <div class="sys-card-header">
-                    <span class="sys-card-label">Backend</span>
-                    <span class="sys-dot ok"></span>
+            <div class="sys-grouplabel">Services</div>
+            ${_sysCard({ icon: 'backend', label: 'Backend', dot: 'ok', value: 'Online', sub: `Uptime: ${_fmtUptime(d.backend.uptime_s)}` })}
+            ${_sysCard({ icon: 'ollama', label: 'Ollama', dot: ollamaDot,
+                         bodyHtml: `<div class="sys-card-header"><span class="sys-card-label">Ollama</span><span class="sys-dot ${ollamaDot}"></span></div>
+                                    <div class="sys-card-value">${d.ollama.running ? 'Running' : 'Offline'}</div>
+                                    <div class="sys-card-sub" style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(d.ollama.url)}</div>` })}
+
+            <div class="sys-grouplabel">Models</div>
+            ${_sysCard({ icon: 'llm', label: 'LLM Model', dot: modelDot, value: d.model.name, sub: modelSub, mono: true })}
+            ${_sysCard({ icon: 'embed', label: 'Embed Model', dot: 'ok', value: d.embed.name, sub: 'local · always private', mono: true })}
+
+            <div class="sys-grouplabel">Storage</div>
+            ${_sysCard({ icon: 'database', label: 'Vault Database', dot: 'ok', wide: true,
+                         bodyHtml: `<div class="sys-card-header"><span class="sys-card-label">Vault Database</span><span class="sys-dot ok"></span></div>
+                                    <div class="sys-card-value">${d.database.contexts} contexts</div>
+                                    <div class="sys-card-sub">${d.database.chunks} chunks · ${d.database.collections} collections · ${d.database.size_mb} MB on disk</div>` })}
+            <div class="sys-card wide">
+                <span class="sys-card-ic">${_SYS_ICONS.models}</span>
+                <div class="sys-card-body">
+                    <div class="sys-card-header"><span class="sys-card-label">Installed Ollama Models</span></div>
+                    ${modelsHtml}
                 </div>
-                <div class="sys-card-value">Online</div>
-                <div class="sys-card-sub">Uptime: ${_fmtUptime(d.backend.uptime_s)}</div>
-            </div>
-            <div class="sys-card">
-                <div class="sys-card-header">
-                    <span class="sys-card-label">Ollama</span>
-                    <span class="sys-dot ${ollamaDot}"></span>
-                </div>
-                <div class="sys-card-value">${d.ollama.running ? 'Running' : 'Offline'}</div>
-                <div class="sys-card-sub">${escapeHtml(d.ollama.url)}</div>
-            </div>
-            <div class="sys-card">
-                <div class="sys-card-header">
-                    <span class="sys-card-label">LLM Model</span>
-                    <span class="sys-dot ${modelDot}"></span>
-                </div>
-                <div class="sys-card-value" style="font-size:13px;line-height:1.3">${escapeHtml(d.model.name)}</div>
-                <div class="sys-card-sub">${modelSub}</div>
-            </div>
-            <div class="sys-card">
-                <div class="sys-card-header">
-                    <span class="sys-card-label">Embed Model</span>
-                    <span class="sys-dot ok"></span>
-                </div>
-                <div class="sys-card-value" style="font-size:13px;line-height:1.3">${escapeHtml(d.embed.name)}</div>
-                <div class="sys-card-sub">Embedding model</div>
-            </div>
-            <div class="sys-card">
-                <div class="sys-card-header">
-                    <span class="sys-card-label">Database</span>
-                    <span class="sys-dot ok"></span>
-                </div>
-                <div class="sys-card-value">${d.database.contexts}</div>
-                <div class="sys-card-sub">${d.database.chunks} chunks · ${d.database.collections} collections · ${d.database.size_mb} MB</div>
-            </div>
-            <div class="sys-card" style="grid-column: span 2;">
-                <div class="sys-card-header" style="margin-bottom:6px;">
-                    <span class="sys-card-label">Installed Ollama Models</span>
-                </div>
-                ${modelsHtml}
             </div>`;
     } catch (e) {
+        _setOverall('err', 'Unreachable');
+        const hero = $('#sys-health-hero');
+        if (hero) hero.hidden = true;
         grid.innerHTML = `<div class="sys-status-loading" style="color:var(--danger)">Could not reach backend: ${escapeHtml(e.message)}</div>`;
     }
 }
+
+// \u2500\u2500\u2500 Logs \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+let _logEntries = [];
+let _logLevel = 'all';
+
+function _logClass(level) {
+    switch ((level || '').toUpperCase()) {
+        case 'ERROR':   case 'CRITICAL': return 'log-error';
+        case 'WARNING': case 'WARN':     return 'log-warning';
+        case 'DEBUG':                    return 'log-debug';
+        default:                         return 'log-info';
+    }
+}
+function _logShortLevel(level) {
+    const u = (level || 'INFO').toUpperCase();
+    return u === 'WARNING' ? 'WARN' : (u.length > 5 ? u.slice(0, 5) : u);
+}
+
+function _renderLogs() {
+    const viewer = $('#logs-viewer');
+    if (!viewer) return;
+    const term = ($('#logs-search')?.value || '').trim().toLowerCase();
+
+    const matches = _logEntries.filter(e => {
+        const u = (e.level || '').toUpperCase();
+        if (_logLevel === 'info'    && u !== 'INFO') return false;
+        if (_logLevel === 'warning' && u !== 'WARNING' && u !== 'WARN') return false;
+        if (_logLevel === 'error'   && u !== 'ERROR' && u !== 'CRITICAL') return false;
+        if (term && !(`${e.ts} ${e.level} ${e.msg}`.toLowerCase().includes(term))) return false;
+        return true;
+    });
+
+    if (!matches.length) {
+        viewer.innerHTML = '<div class="log-empty">No matching log entries.</div>';
+        return;
+    }
+
+    viewer.innerHTML = matches.map(e => {
+        const raw = `${e.ts ? e.ts + ' ' : ''}[${e.level}] ${e.msg}`;
+        const rawAttr = escapeHtml(raw).replace(/"/g, '&quot;');
+        return `<div class="log-line ${_logClass(e.level)}" data-raw="${rawAttr}">` +
+               `<span class="log-ts">${escapeHtml(e.ts || '')}</span>` +
+               `<span class="log-lvl">${escapeHtml(_logShortLevel(e.level))}</span>` +
+               `<span class="log-msg">${escapeHtml(e.msg)}</span></div>`;
+    }).join('');
+
+    if ($('#logs-autoscroll')?.checked) viewer.scrollTop = viewer.scrollHeight;
+}
+
+function _updateLogCounts(entries, counts) {
+    const lvl = (k) => counts?.[k] || 0;
+    const setN = (id, n) => { const el = $(id); if (el) el.textContent = n; };
+    setN('#logcnt-all', entries.length);
+    setN('#logcnt-info', lvl('INFO'));
+    setN('#logcnt-warning', lvl('WARNING') + lvl('WARN'));
+    setN('#logcnt-error', lvl('ERROR') + lvl('CRITICAL'));
+
+    const errBadge = $('#logs-error-count');
+    const errN = lvl('ERROR') + lvl('CRITICAL');
+    if (errBadge) {
+        errBadge.hidden = errN === 0;
+        errBadge.textContent = errN === 1 ? '1 error' : `${errN} errors`;
+    }
+}
+
+// Wired in main.js \u2014 filter chips + search box.
+function setLogLevel(level) {
+    _logLevel = level;
+    document.querySelectorAll('#log-filters .log-filter').forEach(b =>
+        b.classList.toggle('on', b.dataset.lvl === level));
+    _renderLogs();
+}
+function filterLogs() { _renderLogs(); }
 
 async function loadSystemLogs() {
     const viewer = $('#logs-viewer');
@@ -220,21 +343,13 @@ async function loadSystemLogs() {
         const res = await fetch(`${API}/api/debug/logs?lines=${lines}`);
         if (!res.ok) throw new Error();
         const d = await res.json();
-        if (!d.exists || !d.lines.length) {
+        _logEntries = Array.isArray(d.entries) ? d.entries : [];
+        _updateLogCounts(_logEntries, d.counts || {});
+        if (!d.exists || !_logEntries.length) {
             viewer.innerHTML = '<div class="log-empty">No log entries found.</div>';
             return;
         }
-        viewer.innerHTML = d.lines.map(line => {
-            const l = line.trimEnd();
-            let cls = 'log-line';
-            const u = l.toUpperCase();
-            if (u.includes('[ERROR]')   || u.includes('ERROR:'))   cls += ' log-error';
-            else if (u.includes('[WARNING]') || u.includes('WARNING:')) cls += ' log-warning';
-            else if (u.includes('[DEBUG]'))                              cls += ' log-debug';
-            else                                                          cls += ' log-info';
-            return `<div class="${cls}">${escapeHtml(l)}</div>`;
-        }).join('');
-        if ($('#logs-autoscroll')?.checked) viewer.scrollTop = viewer.scrollHeight;
+        _renderLogs();
     } catch {
         viewer.innerHTML = '<div class="sys-status-loading" style="color:var(--danger)">Failed to load logs.</div>';
     }
@@ -268,4 +383,4 @@ async function downloadBackup() {
 }
 
 
-export { _switchSystemTab, closeSystemModal, downloadBackup, loadSystemLogs, openSystemModal, rebuildEmbeddings, restartBackend, updateStatusIndicator };
+export { _switchSystemTab, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, restartBackend, setLogLevel, updateStatusIndicator };

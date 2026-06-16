@@ -876,7 +876,7 @@ def api_capture(req: CaptureRequest):
             detail="No conversation content beyond the imported context brief",
         )
 
-    def _bg_summarize(cid: int, text: str, snippets: list) -> None:
+    def _bg_summarize(cid: int, text: str, snippets: list, preserve_title: bool = False) -> None:
         # Serialise local LLM work so concurrent captures don't contend on the GPU
         _local_llm_lock.acquire()
         try:
@@ -912,7 +912,8 @@ def api_capture(req: CaptureRequest):
 
             new_title = real_summary.get("main_topic", "")
             update_kwargs: dict = {"summary": real_summary}
-            if new_title and new_title not in ("No topic extracted", "N/A"):
+            # Keep a user-provided title; otherwise adopt the summarized topic.
+            if not preserve_title and new_title and new_title not in ("No topic extracted", "N/A"):
                 update_kwargs["title"] = new_title
             update_context(cid, **update_kwargs, status="completed")
             _try_embed_context(cid, real_summary)
@@ -975,26 +976,35 @@ def api_capture(req: CaptureRequest):
         # No existing context — create a new one
         user_parts = _USER_TURN.split(text)
         first_user_msg = user_parts[1].strip()[:100] if len(user_parts) > 1 else text.strip()[:100]
-        title = first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "..."
+        user_title = (req.title or "").strip()
+        title = user_title or (first_user_msg if len(first_user_msg) < 50 else first_user_msg[:47] + "...")
         summary: dict = {
-            "main_topic": first_user_msg,
+            "main_topic": title,
             "key_ideas": [], "snapshot": "", "vitals": [],
             "conclusions": [], "unresolved_questions": [],
         }
+        # Merge user tags with the source + capture-method tags (de-duped, order kept).
+        method_tag = req.method or "Extension"
+        tags = list(dict.fromkeys([*(req.tags or []), req.source, method_tag]))
         result = create_context(
             title=title,
             summary=summary,
-            tags=[req.source, "Extension"],
+            tags=tags,
             original_chat=text,
             important_notes=req.important_snippets or [],
             status="summarizing",
             conversation_url=req.conversation_url or None,
         )
         context_id = result.get("id")
+        if req.collection_id:
+            try:
+                set_context_collection(context_id, req.collection_id)
+            except Exception:
+                pass
         # All Ollama work (chunk, embed, summarize) happens in the background
         threading.Thread(
             target=_bg_summarize,
-            args=(context_id, text, req.important_snippets or []),
+            args=(context_id, text, req.important_snippets or [], bool(user_title)),
             daemon=True,
         ).start()
         return {"success": True, "id": context_id, "updated": False}
@@ -2573,14 +2583,43 @@ def api_debug_ollama():
 
 @app.get("/api/debug/logs")
 def api_debug_logs(lines: int = 100):
-    """Return the last N lines of contextvolt.log for in-app debugging."""
+    """Return the last N lines of contextvolt.log for in-app debugging.
+
+    Provides both the raw ``lines`` (backward compatible) and ``entries`` —
+    structured records parsed from the ``HH:MM:SS [LEVEL] message`` log format
+    used by the file handler — so the System → Logs view can render a
+    timestamp / level / message layout with per-level filtering. ``counts``
+    gives a tally per level for the filter chips.
+    """
+    import re as _re
     from backend.paths import app_log_path as _app_log_path
+
     log_path = str(_app_log_path())
     if not os.path.exists(log_path):
-        return {"lines": [], "path": log_path, "exists": False}
+        return {"lines": [], "entries": [], "counts": {}, "path": log_path, "exists": False}
+
     with open(log_path, "r", encoding="utf-8", errors="replace") as f:
         all_lines = f.readlines()
-    return {"lines": all_lines[-lines:], "path": log_path, "exists": True}
+    tail = all_lines[-lines:]
+
+    line_re = _re.compile(r"^(\d{2}:\d{2}:\d{2})\s+\[(\w+)\]\s*(.*)$")
+    entries: list[dict] = []
+    for raw in tail:
+        line = raw.rstrip("\n")
+        m = line_re.match(line)
+        if m:
+            entries.append({"ts": m.group(1), "level": m.group(2).upper(), "msg": m.group(3)})
+        elif entries:
+            # Continuation of a multi-line message (e.g. a traceback).
+            entries[-1]["msg"] += "\n" + line
+        elif line.strip():
+            entries.append({"ts": "", "level": "INFO", "msg": line})
+
+    counts: dict[str, int] = {}
+    for e in entries:
+        counts[e["level"]] = counts.get(e["level"], 0) + 1
+
+    return {"lines": tail, "entries": entries, "counts": counts, "path": log_path, "exists": True}
 
 
 @app.get("/api/system/status")

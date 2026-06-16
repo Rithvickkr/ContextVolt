@@ -3,7 +3,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
 
 /* ─── Design tokens · noir glass ───────────────────────────────── */
-#cv-btn-container,
+#cv-ball,
+#cv-ball-menu,
 #cv-import-panel,
 #cv-preview-tooltip,
 .cv-badge,
@@ -64,115 +65,167 @@
     --transition:  0.2s var(--ease);
 }
 
-/* ─── Button Container ──────────────────────────────────────────── */
-#cv-btn-container {
+/* ─── Floating Ball launcher ────────────────────────────────────── */
+#cv-ball {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
     z-index: 999999;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+#cv-ball:active,
+#cv-ball.cv-dragging { cursor: grabbing; }
+
+#cv-ball .cv-ball-core {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--edge-strong);
+    box-shadow: var(--shadow-glass), 0 8px 28px rgba(0,0,0,0.55);
+    transition: transform 0.2s var(--ease), box-shadow 0.25s var(--ease),
+                border-color 0.2s var(--ease);
+}
+#cv-ball .cv-ball-core img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    pointer-events: none;
+}
+#cv-ball:hover .cv-ball-core {
+    transform: scale(1.06);
+    border-color: rgba(255, 255, 255, 0.32);
+    box-shadow: var(--shadow-glass), 0 12px 34px rgba(0,0,0,0.6), 0 0 22px var(--violet-glow);
+}
+#cv-ball.cv-open .cv-ball-core { transform: scale(0.94); }
+
+#cv-ball .cv-ball-pulse {
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    animation: cv-ball-pulse 2.8s ease-out infinite;
+    pointer-events: none;
+}
+#cv-ball.cv-dragging .cv-ball-pulse { animation: none; opacity: 0; }
+
+@keyframes cv-ball-pulse {
+    0%   { transform: scale(0.9);  opacity: 0.6; }
+    100% { transform: scale(1.55); opacity: 0; }
+}
+
+/* ─── Ball Menu · attached panel ────────────────────────────────── */
+#cv-ball-menu {
+    position: fixed;
+    z-index: 999999;
+    min-width: 244px;
+    padding: 7px;
     display: flex;
     flex-direction: column;
-    gap: 9px;
-    align-items: flex-end;
-}
-
-/* ─── Shared Button Styles · glass pills ────────────────────────── */
-#cv-export-button,
-#cv-import-button {
-    position: relative;
-    padding: 10px 18px;
-    border-radius: var(--radius-pill);
-    background: linear-gradient(180deg, rgba(28,28,34,0.72) 0%, rgba(12,12,16,0.78) 100%);
-    color: #f4f4f5;
-    border: 1px solid var(--edge);
-    box-shadow: var(--shadow-glass);
-    font-family: var(--font-body);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    transition: transform 0.18s var(--ease), box-shadow 0.25s var(--ease),
-                background 0.25s var(--ease), border-color 0.25s var(--ease);
-    letter-spacing: -0.01em;
+    gap: 3px;
+    background: var(--glass);
+    border: 1px solid var(--edge-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-panel);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
+    font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow: hidden;
-}
-
-/* Sheen sweep that lights up on hover */
-#cv-export-button::before,
-#cv-import-button::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.10) 50%, transparent 65%);
     opacity: 0;
-    transform: translateX(-60%);
-    transition: opacity 0.4s var(--ease), transform 0.6s var(--ease);
+    transform: scale(0.86);
+    transform-origin: var(--cv-origin, left center);
     pointer-events: none;
+    transition: opacity 0.18s var(--ease), transform 0.26s var(--ease-spring);
 }
-
-#cv-export-button:hover,
-#cv-import-button:hover {
-    box-shadow: 0 10px 36px rgba(0,0,0,0.55), 0 0 18px var(--violet-glow),
-                inset 0 1px 0 rgba(255,255,255,0.14);
-    background: linear-gradient(180deg, rgba(36,36,44,0.8) 0%, rgba(18,18,24,0.82) 100%);
-    border-color: var(--edge-strong);
-    transform: translateY(-1px);
-}
-
-#cv-export-button:hover::before,
-#cv-import-button:hover::before {
+#cv-ball-menu.cv-menu-open {
     opacity: 1;
-    transform: translateX(60%);
+    transform: scale(1);
+    pointer-events: auto;
 }
 
-#cv-export-button:active,
-#cv-import-button:active {
-    transform: translateY(0) scale(0.97);
+.cv-ball-menu-head {
+    font-family: var(--font-display);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 6px 12px 5px;
 }
 
-/* ─── Export Button States ──────────────────────────────────────── */
-#cv-export-button .cv-icon {
-    font-size: 14px;
-    color: var(--violet);
-    text-shadow: 0 0 10px var(--violet-glow);
+.cv-ball-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    width: 100%;
+    text-align: left;
+    padding: 9px 16px 9px 9px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 0.15s var(--ease);
+    -webkit-font-smoothing: antialiased;
+}
+.cv-ball-row:hover { background: var(--glass-hover); }
+.cv-ball-row:active { background: var(--glass-active); }
+.cv-ball-row.cv-row-busy { pointer-events: none; }
+
+.cv-ball-row-ic {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--glass-faint);
+    border: 1px solid var(--edge);
+    color: var(--text-primary);
+    transition: background 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.cv-ball-row-ic svg { width: 16px; height: 16px; }
+
+.cv-ball-row-txt {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+.cv-ball-row-txt small {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 11px;
+    margin-top: 1px;
 }
 
-#cv-export-button.cv-success {
-    background: linear-gradient(180deg, rgba(52,211,153,0.22), rgba(52,211,153,0.10));
-    color: #6ee7b7;
-    border-color: rgba(52, 211, 153, 0.35);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 0 20px rgba(52,211,153,0.18);
+.cv-ball-divider {
+    height: 1px;
+    background: var(--edge);
+    margin: 2px 10px;
 }
 
-#cv-export-button.cv-error {
-    background: linear-gradient(180deg, rgba(248,113,113,0.22), rgba(248,113,113,0.10));
-    color: #fca5a5;
-    border-color: rgba(248, 113, 113, 0.35);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 0 20px rgba(248,113,113,0.16);
+.cv-ball-row.cv-row-ok .cv-ball-row-ic {
+    background: rgba(52, 211, 153, 0.14);
+    border-color: rgba(52, 211, 153, 0.3);
+    color: var(--success);
 }
-
-#cv-export-button.cv-sending {
-    background: linear-gradient(180deg, rgba(167,139,250,0.20), rgba(167,139,250,0.08));
-    color: #c4b5fd;
-    border-color: rgba(167, 139, 250, 0.3);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 0 22px var(--violet-glow);
-    pointer-events: none;
-}
-
-/* ─── Import Button ─────────────────────────────────────────────── */
-#cv-import-button .cv-icon { font-size: 13px; }
-#cv-import-button {
-    background: linear-gradient(180deg, rgba(20,20,26,0.7) 0%, rgba(9,9,12,0.8) 100%);
-}
-#cv-import-button:hover {
-    color: #ffffff;
+.cv-ball-row.cv-row-err .cv-ball-row-ic {
+    background: rgba(248, 113, 113, 0.14);
+    border-color: rgba(248, 113, 113, 0.3);
+    color: var(--danger);
 }
 
 /* ─── Spinner ───────────────────────────────────────────────────── */

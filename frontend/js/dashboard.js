@@ -137,6 +137,49 @@ function _renderPinnedRail(pinned) {
     row.innerHTML = pinned.map((ctx, i) => _renderPinnedCard(ctx, i)).join('');
 }
 
+// ─── Processing panel — what's summarizing in the background ──────────
+// Driven by /api/contexts/summarizing (same source as the Library badge).
+// Polls lightly while the dashboard is the active view; self-stops on leave.
+let _procTimer = null;
+async function _renderProcessing() {
+    const panel = document.getElementById('dashboard-proc-panel');
+    const list  = document.getElementById('dashboard-proc-list');
+    const count = document.getElementById('cv-proc-count');
+    if (!panel || !list) return;
+    let items = [];
+    try {
+        const res = await fetch(`${API}/api/contexts/summarizing`);
+        if (res.ok) { const d = await res.json(); items = d.contexts || []; }
+        else return;
+    } catch { return; }
+    if (!items.length) {
+        panel.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    panel.style.display = '';
+    if (count) count.textContent = String(items.length);
+    list.innerHTML = items.map(it => {
+        const title = escapeHtml(it.title || 'Untitled context');
+        return `<button type="button" class="cv-proc-item" onclick="showDetail(${it.id})" title="${title}">
+            <span class="cv-proc-spin" aria-hidden="true"></span>
+            <span class="cv-proc-info">
+                <span class="cv-proc-title">${title}</span>
+                <span class="cv-proc-stage">Summarizing in the background…</span>
+            </span>
+        </button>`;
+    }).join('');
+}
+
+function _startProcessingPoll() {
+    _renderProcessing();
+    if (_procTimer) return;
+    _procTimer = setInterval(() => {
+        if (state.view !== 'input') { clearInterval(_procTimer); _procTimer = null; return; }
+        _renderProcessing();
+    }, 5000);
+}
+
 // Activity sparkline — stacked capture/ask bars, one per day.
 function _renderActivity(activity) {
     const el = document.getElementById('dashboard-activity');
@@ -310,6 +353,8 @@ async function loadDashboard() {
 
     // System panel loads independently — never blocks the main paint.
     _renderSystem();
+    // Background-summarization panel — independent poll, shows only when active.
+    _startProcessingPoll();
 
     // Fetch user name in background — does not block stats fetch
     const nameEl = document.getElementById('cv-greeting-name');

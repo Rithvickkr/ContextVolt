@@ -543,105 +543,284 @@ function pasteIntoInput(text) {
     return _injectIntoElement(input, text);
 }
 
-// ─── Inject floating buttons ─────────────────────────────────────
+// ─── Floating Ball launcher ──────────────────────────────────────
+// A draggable orb the user can slide anywhere on screen. Clicking it
+// reveals an attached menu with the two vault actions.
+const CV_BALL_SIZE = 56;
+const CV_POS_KEY = "cv_ball_pos";
+const CV_SEND_SUB_DEFAULT = "Save this conversation";
+
+const CV_IMPORT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>`;
+const CV_SEND_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></svg>`;
+const CV_CHECK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+const CV_X_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+
+let cvMenuOpen = false;
+let _cvSending = false;
+
+function _loadBallPos() {
+    try {
+        const raw = localStorage.getItem(CV_POS_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+}
+
+function _saveBallPos(x, y) {
+    try { localStorage.setItem(CV_POS_KEY, JSON.stringify({ x, y })); } catch (_) {}
+}
+
+function _clampBall(x, y) {
+    const m = 8;
+    x = Math.max(m, Math.min(x, window.innerWidth - CV_BALL_SIZE - m));
+    y = Math.max(m, Math.min(y, window.innerHeight - CV_BALL_SIZE - m));
+    return { x, y };
+}
+
+function positionBallMenu() {
+    const ball = document.getElementById("cv-ball");
+    const menu = document.getElementById("cv-ball-menu");
+    if (!ball || !menu) return;
+    const r = ball.getBoundingClientRect();
+    const gap = 12;
+    const mw = menu.offsetWidth || 244;
+    const mh = menu.offsetHeight || 120;
+    const onLeft = (r.left + r.width / 2) < window.innerWidth / 2;
+    let left = onLeft ? r.right + gap : r.left - mw - gap;
+    left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+    let top = r.top + r.height / 2 - mh / 2;
+    top = Math.max(8, Math.min(top, window.innerHeight - mh - 8));
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    menu.style.setProperty("--cv-origin", onLeft ? "left center" : "right center");
+}
+
+function openBallMenu() {
+    const ball = document.getElementById("cv-ball");
+    const menu = document.getElementById("cv-ball-menu");
+    if (!ball || !menu) return;
+    positionBallMenu();
+    menu.classList.add("cv-menu-open");
+    ball.classList.add("cv-open");
+    cvMenuOpen = true;
+}
+
+function closeBallMenu() {
+    const ball = document.getElementById("cv-ball");
+    const menu = document.getElementById("cv-ball-menu");
+    if (menu) menu.classList.remove("cv-menu-open");
+    if (ball) ball.classList.remove("cv-open");
+    cvMenuOpen = false;
+}
+
+function toggleBallMenu() {
+    cvMenuOpen ? closeBallMenu() : openBallMenu();
+}
+
 function injectButton() {
-    if (document.getElementById("cv-btn-container")) return;
+    if (document.getElementById("cv-ball")) return;
 
-    // Container for both buttons
-    const container = document.createElement("div");
-    container.id = "cv-btn-container";
+    // ── Ball ──
+    const ball = document.createElement("div");
+    ball.id = "cv-ball";
+    ball.setAttribute("role", "button");
+    ball.setAttribute("tabindex", "0");
+    ball.setAttribute("aria-label", "ContextVolt — vault actions");
+    ball.innerHTML = `
+        <span class="cv-ball-pulse" aria-hidden="true"></span>
+        <span class="cv-ball-core"><img src="${chrome.runtime.getURL('icon.png')}" alt="ContextVolt" draggable="false"></span>`;
 
-    // Export button (Send to Vault)
-    const exportBtn = document.createElement("button");
-    exportBtn.id = "cv-export-button";
-    exportBtn.innerHTML = `<span class="cv-icon">✦</span> Send to Vault`;
+    // ── Attached menu (the two emerging options) ──
+    const menu = document.createElement("div");
+    menu.id = "cv-ball-menu";
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = `
+        <div class="cv-ball-menu-head">ContextVolt Vault</div>
+        <button class="cv-ball-row" data-cv-action="import" type="button" role="menuitem">
+            <span class="cv-ball-row-ic">${CV_IMPORT_SVG}</span>
+            <span class="cv-ball-row-txt">Import from Vault<small>Bring saved context into this chat</small></span>
+        </button>
+        <div class="cv-ball-divider"></div>
+        <button class="cv-ball-row" data-cv-action="send" type="button" role="menuitem">
+            <span class="cv-ball-row-ic">${CV_SEND_SVG}</span>
+            <span class="cv-ball-row-txt">Send to Vault<small>${CV_SEND_SUB_DEFAULT}</small></span>
+        </button>`;
 
-    exportBtn.addEventListener("click", () => {
-        exportBtn.innerHTML = `<span class="cv-spinner"></span> Extracting…`;
-        exportBtn.classList.add("cv-sending");
-        exportBtn.disabled = true;
+    document.body.appendChild(ball);
+    document.body.appendChild(menu);
 
-        setTimeout(() => {
-            const chatText = extractChatContent();
+    // Initial position (saved, else bottom-right)
+    const saved = _loadBallPos();
+    const init = saved
+        ? _clampBall(saved.x, saved.y)
+        : _clampBall(window.innerWidth - CV_BALL_SIZE - 24, window.innerHeight - CV_BALL_SIZE - 110);
+    ball.style.left = init.x + "px";
+    ball.style.top = init.y + "px";
 
-            if (!chatText || chatText.length < 20) {
-                exportBtn.innerHTML = `No chat found!`;
-                exportBtn.classList.remove("cv-sending");
-                setTimeout(() => { exportBtn.innerHTML = `<span class="cv-icon">✦</span> Send to Vault`; exportBtn.disabled = false; }, 2000);
-                return;
+    // ── Drag vs click ──
+    let dragging = false, moved = false, sx = 0, sy = 0, bx = 0, by = 0;
+
+    ball.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        moved = false;
+        sx = e.clientX; sy = e.clientY;
+        bx = ball.offsetLeft; by = ball.offsetTop;
+        try { ball.setPointerCapture(e.pointerId); } catch (_) {}
+        ball.style.transition = "none";
+        e.preventDefault();
+    });
+
+    ball.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+            moved = true;
+            ball.classList.add("cv-dragging");
+            if (cvMenuOpen) closeBallMenu();
+        }
+        if (moved) {
+            const p = _clampBall(bx + dx, by + dy);
+            ball.style.left = p.x + "px";
+            ball.style.top = p.y + "px";
+        }
+    });
+
+    ball.addEventListener("pointerup", (e) => {
+        if (!dragging) return;
+        dragging = false;
+        try { ball.releasePointerCapture(e.pointerId); } catch (_) {}
+        if (moved) {
+            ball.classList.remove("cv-dragging");
+            // Snap to the nearest left/right edge, keep vertical position.
+            const r = ball.getBoundingClientRect();
+            const snapX = (r.left + r.width / 2) < window.innerWidth / 2
+                ? 18 : window.innerWidth - CV_BALL_SIZE - 18;
+            const p = _clampBall(snapX, ball.offsetTop);
+            ball.style.transition = "left 0.3s var(--ease-spring), top 0.2s var(--ease)";
+            ball.style.left = p.x + "px";
+            ball.style.top = p.y + "px";
+            _saveBallPos(p.x, p.y);
+        } else {
+            ball.style.transition = "";
+            toggleBallMenu();
+        }
+    });
+
+    ball.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleBallMenu(); }
+        else if (e.key === "Escape") closeBallMenu();
+    });
+
+    // ── Menu actions ──
+    menu.querySelectorAll(".cv-ball-row").forEach((row) => {
+        row.addEventListener("click", () => {
+            const action = row.getAttribute("data-cv-action");
+            if (action === "import") {
+                closeBallMenu();
+                toggleImportPanel();
+            } else if (action === "send") {
+                runSendToVault(row);
             }
-
-            exportBtn.innerHTML = `<span class="cv-spinner"></span> Contextualizing…`;
-            const stateTimer = setTimeout(() => {
-                exportBtn.innerHTML = `<span class="cv-spinner"></span> Summarizing…`;
-            }, 2500);
-
-            let source = "Unknown";
-            const h = window.location.hostname;
-            if (h.includes("chatgpt.com")) source = "ChatGPT";
-            else if (h.includes("claude.ai")) source = "Claude";
-            else if (h.includes("gemini.google.com")) source = "Gemini";
-            else if (h.includes("grok.com") || h.includes("x.com") || h.includes("x.ai")) source = "Grok";
-            else if (h.includes("deepseek.com")) source = "DeepSeek";
-            else if (h.includes("perplexity.ai")) source = "Perplexity";
-            else if (h.includes("copilot.microsoft.com")) source = "Copilot";
-
-            const marker = _readImportMarker();
-            const importedContextId =
-                marker && marker.href === location.href ? marker.id : null;
-
-            chrome.runtime.sendMessage({
-                action: "save_chat",
-                payload: {
-                    text: chatText,
-                    source: source,
-                    important_snippets: Array.from(_markedSnippets.values()),
-                    conversation_url: window.location.href,
-                    imported_context_id: importedContextId,
-                }
-            }, (response) => {
-                clearTimeout(stateTimer);
-                exportBtn.classList.remove("cv-sending");
-
-                if (chrome.runtime.lastError) {
-                    const msg = chrome.runtime.lastError.message || "Extension error";
-                    exportBtn.title = msg;
-                    exportBtn.innerHTML = `❌ ${msg.length > 30 ? msg.substring(0, 30) + "…" : msg}`;
-                    exportBtn.classList.add("cv-error");
-                } else if (response && response.success) {
-                    // The backend re-keyed the context to this conversation's
-                    // URL, so future saves match directly — drop the marker.
-                    if (importedContextId) _clearImportMarker();
-                    exportBtn.innerHTML = `✅ Saved!`;
-                    exportBtn.classList.add("cv-success");
-                } else {
-                    const errMsg = (response && response.error) || "Unknown error";
-                    exportBtn.title = errMsg;
-                    exportBtn.innerHTML = `❌ ${errMsg.length > 30 ? errMsg.substring(0, 30) + "…" : errMsg}`;
-                    exportBtn.classList.add("cv-error");
-                }
-
-                setTimeout(() => {
-                    exportBtn.innerHTML = `<span class="cv-icon">✦</span> Send to Vault`;
-                    exportBtn.classList.remove("cv-success", "cv-error");
-                    exportBtn.disabled = false;
-                }, 3000);
-            });
-        }, 300);
+        });
     });
 
-    // Import button (Pull from Vault)
-    const importBtn = document.createElement("button");
-    importBtn.id = "cv-import-button";
-    importBtn.innerHTML = `<span class="cv-icon">📥</span> From Vault`;
-
-    importBtn.addEventListener("click", () => {
-        toggleImportPanel();
+    // ── Outside click / Escape closes the menu ──
+    document.addEventListener("pointerdown", (e) => {
+        if (!cvMenuOpen) return;
+        if (ball.contains(e.target) || menu.contains(e.target)) return;
+        closeBallMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && cvMenuOpen) closeBallMenu();
     });
 
-    container.appendChild(importBtn);
-    container.appendChild(exportBtn);
-    document.body.appendChild(container);
+    // ── Keep on-screen and re-anchored on resize ──
+    window.addEventListener("resize", () => {
+        const p = _clampBall(ball.offsetLeft, ball.offsetTop);
+        ball.style.left = p.x + "px";
+        ball.style.top = p.y + "px";
+        if (cvMenuOpen) positionBallMenu();
+    });
+}
+
+// ─── Send to Vault (triggered from the ball menu) ────────────────
+function runSendToVault(row) {
+    if (_cvSending) return;
+    _cvSending = true;
+
+    const icoEl = row.querySelector(".cv-ball-row-ic");
+    const subEl = row.querySelector(".cv-ball-row-txt small");
+    const origIco = icoEl.innerHTML;
+    row.classList.add("cv-row-busy");
+    icoEl.innerHTML = `<span class="cv-spinner"></span>`;
+    subEl.textContent = "Extracting…";
+
+    setTimeout(() => {
+        const chatText = extractChatContent();
+
+        if (!chatText || chatText.length < 20) {
+            _finishSend(row, icoEl, subEl, origIco, false, "No conversation found");
+            return;
+        }
+
+        subEl.textContent = "Contextualizing…";
+        const stateTimer = setTimeout(() => { subEl.textContent = "Summarizing…"; }, 2500);
+
+        let source = "Unknown";
+        const h = window.location.hostname;
+        if (h.includes("chatgpt.com")) source = "ChatGPT";
+        else if (h.includes("claude.ai")) source = "Claude";
+        else if (h.includes("gemini.google.com")) source = "Gemini";
+        else if (h.includes("grok.com") || h.includes("x.com") || h.includes("x.ai")) source = "Grok";
+        else if (h.includes("deepseek.com")) source = "DeepSeek";
+        else if (h.includes("perplexity.ai")) source = "Perplexity";
+        else if (h.includes("copilot.microsoft.com")) source = "Copilot";
+
+        const marker = _readImportMarker();
+        const importedContextId =
+            marker && marker.href === location.href ? marker.id : null;
+
+        chrome.runtime.sendMessage({
+            action: "save_chat",
+            payload: {
+                text: chatText,
+                source: source,
+                important_snippets: Array.from(_markedSnippets.values()),
+                conversation_url: window.location.href,
+                imported_context_id: importedContextId,
+            }
+        }, (response) => {
+            clearTimeout(stateTimer);
+
+            if (chrome.runtime.lastError) {
+                _finishSend(row, icoEl, subEl, origIco, false,
+                    chrome.runtime.lastError.message || "Extension error");
+            } else if (response && response.success) {
+                // Backend re-keyed the context to this conversation's URL,
+                // so future saves match directly — drop the marker.
+                if (importedContextId) _clearImportMarker();
+                _finishSend(row, icoEl, subEl, origIco, true, "Saved to your vault");
+            } else {
+                _finishSend(row, icoEl, subEl, origIco, false,
+                    (response && response.error) || "Unknown error");
+            }
+        });
+    }, 300);
+}
+
+function _finishSend(row, icoEl, subEl, origIco, ok, msg) {
+    row.classList.remove("cv-row-busy");
+    row.classList.add(ok ? "cv-row-ok" : "cv-row-err");
+    icoEl.innerHTML = ok ? CV_CHECK_SVG : CV_X_SVG;
+    subEl.textContent = msg;
+    showBriefToast((ok ? "✅ " : "❌ ") + msg);
+
+    setTimeout(() => {
+        row.classList.remove("cv-row-ok", "cv-row-err");
+        icoEl.innerHTML = origIco;
+        subEl.textContent = CV_SEND_SUB_DEFAULT;
+        _cvSending = false;
+        if (ok) closeBallMenu();
+    }, ok ? 1600 : 3200);
 }
 
 // ─── Import Panel ────────────────────────────────────────────────

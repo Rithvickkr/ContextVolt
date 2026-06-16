@@ -1,25 +1,136 @@
 // ContextVolt — App shell: theme, frameless title bar, sidebar collapse + tooltips.
 
 // â”€â”€â”€ Theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function _applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
+// Resolve the user's *choice* to a concrete palette. 'system' follows the OS.
+function _resolveTheme(choice) {
+    if (choice === 'system') {
+        return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    return choice === 'light' ? 'light' : 'dark';
+}
+
+// `choice` is the user's selection: 'light' | 'dark' | 'system'.
+function _applyTheme(choice) {
+    const resolved = _resolveTheme(choice);
+    document.documentElement.setAttribute('data-theme', resolved);
+    // Settings segmented control highlights the *choice* (so "System" stays lit).
     document.querySelectorAll('.settings-theme-opt').forEach(btn => {
-        const active = btn.dataset.theme === theme;
+        const active = btn.dataset.theme === choice;
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-checked', active ? 'true' : 'false');
     });
-    // Keep the topbar Light/Dark pill in sync too (it shares the theme system).
+    // Topbar Light/Dark pill reflects the *resolved* theme (no System option there).
     document.querySelectorAll('#modeToggle button').forEach(btn => {
-        const active = btn.dataset.mode === theme;
+        const active = btn.dataset.mode === resolved;
         btn.classList.toggle('on', active);
         btn.setAttribute('aria-selected', String(active));
     });
+    // Slide the active "thumb" under the newly-selected option.
+    _positionThumb(document.getElementById('modeToggle'));
+    _positionThumb(document.querySelector('.settings-theme-segmented'));
 }
 
+// Re-resolve live when the OS palette flips and the user picked "System".
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if ((localStorage.getItem('cv-theme') || 'dark') === 'system') _applyTheme('system');
+});
+
+// ─── Segmented-control sliding thumb (color-mode + settings theme) ───
+// A real element overlays the active button; its position is measured in JS
+// so it lines up exactly, and it carries a view-transition-name so it morphs
+// smoothly as part of the liquid theme transition.
+function _ensureThumb(container) {
+    if (!container || container.querySelector('.cv-seg-thumb')) return;
+    const thumb = document.createElement('span');
+    thumb.className = 'cv-seg-thumb';
+    thumb.setAttribute('aria-hidden', 'true');
+    container.insertBefore(thumb, container.firstChild);
+}
+
+function _positionThumb(container) {
+    if (!container) return;
+    _ensureThumb(container);
+    const active = container.querySelector('button.on, button.active');
+    const thumb = container.querySelector('.cv-seg-thumb');
+    if (!active || !thumb || !active.offsetWidth) return;
+    thumb.style.width = `${active.offsetWidth}px`;
+    thumb.style.height = `${active.offsetHeight}px`;
+    thumb.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+    container.classList.add('cv-seg-ready');
+}
+
+(function _initSegThumbs() {
+    const containers = [
+        document.getElementById('modeToggle'),
+        document.querySelector('.settings-theme-segmented'),
+    ].filter(Boolean);
+    const reposition = () => containers.forEach(_positionThumb);
+    containers.forEach(c => {
+        _positionThumb(c);
+        // Reposition when the control gains/changes size (e.g. its view becomes
+        // visible, or the window resizes the topbar).
+        if (window.ResizeObserver) {
+            new ResizeObserver(() => _positionThumb(c)).observe(c);
+        }
+    });
+    window.addEventListener('resize', reposition);
+
+    // The topbar toggle (#modeToggle) lives inside #app, which starts hidden, so
+    // its first measure is 0px and the thumb never becomes "ready" → it snaps.
+    // Re-measure once the app is revealed (and on the next frame) so the toggle
+    // slides as smoothly as the settings segmented control.
+    window.addEventListener('load', () => requestAnimationFrame(reposition));
+    const app = document.getElementById('app');
+    if (app && window.MutationObserver) {
+        new MutationObserver(() => {
+            if (app.style.display !== 'none') {
+                requestAnimationFrame(reposition);
+                requestAnimationFrame(() => requestAnimationFrame(reposition));
+            }
+        }).observe(app, { attributes: true, attributeFilter: ['style'] });
+    }
+})();
+
+// Remember where the user last clicked so the theme animation can bloom from there.
+let _themeOrigin = { x: null, y: null };
+document.addEventListener('pointerdown', (e) => {
+    _themeOrigin = { x: e.clientX, y: e.clientY };
+}, true);
+
+// Flip to `true` to bring back the iOS liquid-glass theme reveal.
+// (Temporarily off — the sliding selector thumb still animates.)
+const LIQUID_THEME_TRANSITION = false;
+
 function setTheme(theme) {
-    if (theme !== 'light' && theme !== 'dark') return;
-    _applyTheme(theme);
-    localStorage.setItem('cv-theme', theme);
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') return;
+
+    const commit = () => {
+        _applyTheme(theme);
+        localStorage.setItem('cv-theme', theme);
+    };
+
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Disabled, no-op switch, no View Transitions support, or reduced-motion → just apply.
+    if (!LIQUID_THEME_TRANSITION || current === _resolveTheme(theme) || reduce || !document.startViewTransition) {
+        commit();
+        return;
+    }
+
+    // iOS "liquid glass" reveal: the incoming theme blooms out of the toggle
+    // as an expanding, frosted circle. Origin = last click, fall back to top-right.
+    const root = document.documentElement;
+    const x = _themeOrigin.x != null ? _themeOrigin.x : window.innerWidth - 48;
+    const y = _themeOrigin.y != null ? _themeOrigin.y : 44;
+    const r = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    root.style.setProperty('--cv-theme-x', `${x}px`);
+    root.style.setProperty('--cv-theme-y', `${y}px`);
+    root.style.setProperty('--cv-theme-r', `${r}px`);
+    root.classList.add('cv-theme-anim');
+
+    const t = document.startViewTransition(commit);
+    t.finished.finally(() => root.classList.remove('cv-theme-anim'));
 }
 
 function toggleTheme() {

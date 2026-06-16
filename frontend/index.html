@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Geist+Mono:wght@400;500&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'"
         onerror="this.remove()">
-    <link rel="stylesheet" href="/static/css/styles.css?v=light-fix-v1">
+    <link rel="stylesheet" href="/static/css/styles.css?v=porcelain-v24">
     <style>
         /* Screen-reader only utility */
         .sr-only {
@@ -214,20 +214,10 @@
             <div class="cv-side-settings-anchor">
                 <div class="cv-status-wrap" id="cv-status-wrap">
                     <div class="cv-status cv-status-btn" id="status-indicator" role="button" tabindex="0"
-                         aria-haspopup="menu" aria-expanded="false" aria-label="Backend status — open system menu">
+                         aria-haspopup="dialog" aria-label="Open system status &amp; logs" title="System status &amp; logs">
                         <span class="pulse status-dot offline" aria-hidden="true"></span>
                         <span class="status-text" aria-live="polite">Offline</span>
-                        <svg class="cv-status-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"/></svg>
-                    </div>
-                    <div class="cv-status-menu" id="cv-status-menu" role="menu" aria-label="System" hidden>
-                        <button class="cv-util" id="btn-system" role="menuitem" aria-haspopup="dialog" aria-label="System status and logs">
-                            <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
-                            <span>System</span>
-                        </button>
-                        <button class="cv-util cv-util-danger" id="btn-restart" role="menuitem" aria-label="Restart the backend server">
-                            <span class="cv-util-ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
-                            <span>Restart Backend</span>
-                        </button>
+                        <svg class="cv-status-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                     </div>
                 </div>
                 <button class="cv-util cv-util-settings" id="btn-settings" aria-haspopup="dialog" aria-label="Open settings and model selection">
@@ -388,6 +378,15 @@
                     </section>
 
                     <aside class="cv-dash-rail">
+                        <!-- Background summarization in progress (extension + quick capture) -->
+                        <section class="cv-dash-panel cv-proc-panel" id="dashboard-proc-panel" style="display:none;" aria-label="Summarizing in the background">
+                            <div class="cv-rail-head">
+                                <h2><span class="cv-proc-livedot" aria-hidden="true"></span>Processing</h2>
+                                <span class="cv-rail-meta" id="cv-proc-count"></span>
+                            </div>
+                            <div class="cv-proc-list" id="dashboard-proc-list"></div>
+                        </section>
+
                         <section class="cv-dash-panel" id="dashboard-pinned-panel" style="display:none;" aria-label="Pinned contexts">
                             <div class="cv-rail-head" id="dashboard-pinned-head">
                                 <h2>Pinned</h2>
@@ -423,99 +422,132 @@
 
             <!-- Quick Capture View (separate page) -->
             <div class="view cv-capture-shell" id="view-capture" style="display:none;" role="region" aria-labelledby="view-capture-heading">
-                <!-- Top rail -->
-                <div class="cv-capture-rail">
-                    <div class="cv-capture-rail-meta">
-                        <span>Workspace</span>
-                        <span class="cv-rail-sep">·</span>
-                        <b>Quick Capture</b>
-                        <span class="cv-rail-sep">·</span>
-                        <span>summarize + embed</span>
-                    </div>
+                <!-- Top rail — same anatomy as the dashboard / library topbar -->
+                <div class="cv-topbar cv-capture-rail">
+                    <div class="cv-breadcrumb">Workspace / <b>Quick Capture</b></div>
                     <div class="cv-capture-rail-actions">
-                        <button class="btn btn-ghost capture-back-btn" id="capture-back-btn" aria-label="Back to Library">
+                        <button class="cv-back capture-back-btn" id="capture-back-btn" aria-label="Back to Library">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                             Library
                         </button>
                     </div>
                 </div>
 
-                <!-- Scroll area -->
+                <!-- Capture: Ask-Vault-consistent layout -->
                 <div class="cv-capture-scroll">
-                    <div class="cv-capture-inner">
+                  <div class="cv-cap3">
 
-                        <!-- Hero -->
-                        <div class="cv-capture-hero">
-                            <div class="cv-capture-orb" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5" opacity="0.6"/></svg>
-                            </div>
+                    <!-- Hero head: intro (left) + orb (right) — same anatomy as Ask Vault -->
+                    <div class="cv-ask-whead">
+                        <div class="cv-ask-wintro">
                             <div class="cv-ask-eyebrow">
-                                <span class="cv-ebadge">Vault</span>
-                                <span class="cv-dot"></span>
-                                <span>Quick Capture</span>
-                            </div>
-                            <h1 id="view-capture-heading" class="cv-capture-title">Save to your <span class="voltword">vault</span>.</h1>
-                            <p class="cv-capture-desc" id="chat-textarea-desc">Paste any AI conversation — it'll be summarized, chunked, and embedded so you can search and ask questions later.</p>
-                        </div>
-
-                        <!-- Input card -->
-                        <div class="cv-capture-card">
-                            <div class="cv-capture-card-head">
-                                <span class="cv-capture-card-label">Conversation</span>
-                                <div class="cv-capture-hints">
-                                    <span>ChatGPT</span>
-                                    <span class="cv-rail-sep">·</span>
-                                    <span>Claude</span>
-                                    <span class="cv-rail-sep">·</span>
-                                    <span>Gemini</span>
-                                    <span class="cv-rail-sep">·</span>
-                                    <span>Any AI</span>
-                                </div>
-                            </div>
-                            <label for="chat-textarea" class="sr-only">Conversation text</label>
-                            <textarea id="chat-textarea" class="cv-capture-textarea chat-textarea"
-                                placeholder="Paste your AI conversation here…"
-                                aria-describedby="chat-textarea-desc char-count"
-                                spellcheck="false"></textarea>
-                            <div class="cv-capture-footer">
-                                <span class="cv-capture-count" id="char-count" aria-live="polite" aria-atomic="true">0 characters</span>
-                                <button class="cv-primary cv-capture-submit" id="summarize-btn" disabled
-                                        aria-disabled="true" aria-busy="false"
-                                        aria-describedby="chat-textarea-desc">
-                                    <span class="btn-text">Summarize &amp; Save</span>
-                                    <span class="btn-loader" style="display:none;" aria-hidden="true">
-                                        <span class="summarize-progress-bar">
-                                            <span class="summarize-progress-fill" id="summarize-progress-fill"></span>
-                                        </span>
-                                        <span class="summarize-progress-text" id="summarize-progress-text"> Starting…</span>
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Feature pills -->
-                        <div class="cv-capture-tips">
-                            <div class="cv-capture-tip">
-                                <span class="cv-capture-tip-ic">
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                <span class="cv-ebadge">
+                                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+                                    Quick Capture
                                 </span>
-                                <span>Auto-summarized with AI</span>
+                                <span>Summarize · Chunk · Embed</span>
                             </div>
-                            <div class="cv-capture-tip">
-                                <span class="cv-capture-tip-ic">
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                                </span>
-                                <span>Embedded for semantic search</span>
-                            </div>
-                            <div class="cv-capture-tip">
-                                <span class="cv-capture-tip-ic">
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                                </span>
-                                <span>Queryable via Ask Vault</span>
-                            </div>
+                            <h1 id="view-capture-heading" class="cv-ask-title">Save to your<br><span class="voltword">vault.</span></h1>
+                            <p class="cv-ask-desc" id="chat-textarea-desc">Paste any AI conversation — summarized, chunked and embedded locally, so every idea stays searchable in your library.</p>
                         </div>
-
+                        <div class="cv-ask-orb" aria-hidden="true">
+                            <span class="cv-ask-orb-core">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            </span>
+                        </div>
                     </div>
+
+                    <!-- Section label + paste surface -->
+                    <div class="cv-ask-seclabel"><span class="cv-ask-seclabel-dot" aria-hidden="true"></span>Paste a conversation</div>
+                    <section class="cv-cap3-surface" id="cap-dropzone">
+                        <div class="cv-cap3-head">
+                            <span class="cv-cap3-status">
+                                <span class="cv-cap3-dot"></span>
+                                <span id="cap-status-text">Empty — paste to begin</span>
+                            </span>
+                            <span class="cv-cap3-detected" id="cap-detected" hidden><span class="d"></span><b id="cap-detected-name">ChatGPT</b></span>
+                            <div class="cv-cap3-head-right">
+                                <span class="cv-cap3-meter" title="Estimated size">
+                                    <span class="cv-cap3-meter-bar"><i id="cap-meter-fill"></i></span>
+                                    <span class="cv-cap3-meter-lbl"><b id="cap-tokens">0</b> tokens · <b id="cap-chars">0</b> chars</span>
+                                </span>
+                                <span class="cv-cap3-tools">
+                                    <button type="button" class="cv-cap3-tool" id="cap-paste-btn" title="Paste from clipboard">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+                                        Paste
+                                    </button>
+                                    <button type="button" class="cv-cap3-tool" id="cap-clear-btn" title="Clear">Clear</button>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="cv-cap3-body">
+                            <label for="chat-textarea" class="sr-only">Conversation text</label>
+                            <textarea id="chat-textarea" class="chat-textarea cv-cap3-textarea"
+                                placeholder="" aria-describedby="chat-textarea-desc char-count" spellcheck="false"></textarea>
+                            <span id="char-count" class="sr-only" aria-live="polite" aria-atomic="true">Nothing saved until you summarize</span>
+                            <div class="cv-cap3-empty" id="cap-drophint">
+                                <div class="cv-cap3-ring">
+                                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                </div>
+                                <div class="cv-cap3-empty-t">Paste your conversation</div>
+                                <div class="cv-cap3-empty-s">ContextVolt detects the source automatically</div>
+                                <button type="button" class="cv-cap3-cta" id="cap-paste-cta">Paste from clipboard <span class="cv-cap3-kbd">Ctrl V</span></button>
+                                <div class="cv-cap3-alt">or drop a .txt · .md · .json export anywhere here</div>
+                            </div>
+                        </div>
+
+                        <div class="cv-cap3-foot">
+                            <div class="cv-cap3-sentence">
+                                <span class="w">Save</span>
+                                <span class="cv-cap3-token cv-cap3-title-tok">
+                                    <input type="text" id="cap-title" placeholder="untitled — auto from summary" autocomplete="off" spellcheck="false">
+                                </span>
+                                <span class="w">from</span>
+                                <span class="cv-cap3-token cv-cap3-src-tok cv-cap3-dd" id="cap-source-dd">
+                                    <span class="cv-cap3-src-dot"></span>
+                                    <button type="button" class="cv-cap3-dd-btn" id="cap-source-btn" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="cv-cap3-dd-label" id="cap-source-label">Auto-detect</span>
+                                        <svg class="cv-cap3-tchev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                    </button>
+                                    <input type="hidden" id="cap-source" value="">
+                                    <div class="cv-cap3-dd-menu" id="cap-source-menu" role="listbox" aria-label="Source" hidden>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="" aria-selected="true">Auto-detect</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="ChatGPT">ChatGPT</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="Claude">Claude</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="Gemini">Gemini</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="Grok">Grok</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="DeepSeek">DeepSeek</button>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="Other">Other</button>
+                                    </div>
+                                </span>
+                                <span class="w">into</span>
+                                <span class="cv-cap3-token cv-cap3-col-tok cv-cap3-dd" id="cap-collection-dd">
+                                    <button type="button" class="cv-cap3-dd-btn" id="cap-collection-btn" aria-haspopup="listbox" aria-expanded="false">
+                                        <span class="cv-cap3-dd-label cv-cap3-dd-label-muted" id="cap-collection-label">No collection</span>
+                                        <svg class="cv-cap3-tchev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                    </button>
+                                    <input type="hidden" id="cap-collection" value="">
+                                    <div class="cv-cap3-dd-menu" id="cap-collection-menu" role="listbox" aria-label="Collection" hidden>
+                                        <button type="button" class="cv-cap3-dd-opt" role="option" data-val="" aria-selected="true">No collection</button>
+                                    </div>
+                                </span>
+                                <span class="cv-cap3-token cv-cap3-tags-tok" id="cap-tags">
+                                    <input type="text" id="cap-tag-input" placeholder="+ tag" autocomplete="off" spellcheck="false">
+                                </span>
+                            </div>
+                            <button class="cv-primary cv-capture-submit cv-cap3-go" id="summarize-btn" disabled
+                                    aria-disabled="true" aria-busy="false" aria-describedby="chat-textarea-desc">
+                                <span class="btn-text">Summarize &amp; Save</span>
+                                <span class="btn-loader" style="display:none;" aria-hidden="true">
+                                    <span class="cv-cap3-spin"></span> Saving…
+                                </span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <div class="cv-cap3-note"><b>Saved locally.</b> Nothing leaves your machine.</div>
+                  </div>
                 </div>
             </div>
 
@@ -897,49 +929,84 @@
 
     <!-- Settings Modal -->
     <div class="settings-modal-overlay" id="settings-modal" style="display:none;"
-         role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+         role="dialog" aria-modal="true" aria-labelledby="settings-head-title">
         <div class="settings-modal">
-            <div class="settings-modal-header">
-                <span class="settings-modal-title" id="settings-modal-title">⚙ Settings &amp; Models</span>
-                <button class="settings-modal-close" id="settings-modal-close"
-                        aria-label="Close settings">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                </button>
-            </div>
-            <div class="settings-shell">
+            <aside class="settings-rail">
+                <div class="settings-rail-brand">
+                    <span class="settings-rail-logo"><img src="/static/CVsvg.svg" width="30" height="30" alt="ContextVolt"></span>
+                    <span class="settings-rail-brand-t">Settings<small>ContextVolt</small></span>
+                </div>
                 <nav class="settings-nav" role="tablist" aria-label="Settings sections">
-                    <button type="button" class="settings-nav-item active" role="tab" data-settings-tab="profile" aria-selected="true">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <span>Profile</span>
-                    </button>
-                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="appearance" aria-selected="false">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-                        <span>Appearance</span>
-                    </button>
-                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="models" aria-selected="false">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4z"/><path d="M5 22v-5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v5"/><circle cx="12" cy="6" r="1"/></svg>
-                        <span>AI Models</span>
-                    </button>
-                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="mcp" aria-selected="false">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="12" cy="19" r="2"/></svg>
-                        <span>MCP Server</span>
-                    </button>
-                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="updates" aria-selected="false" id="settings-tab-updates">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <span>Updates</span>
-                        <span class="update-nav-dot" id="update-nav-dot" style="display:none;"></span>
-                    </button>
-                    <button type="button" class="settings-nav-item" role="tab" data-settings-tab="tools" aria-selected="false">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                        <span>Tools</span>
-                    </button>
+                    <div class="settings-nav-group">
+                        <div class="settings-nav-grouplabel">General</div>
+                        <button type="button" class="settings-nav-item active" role="tab" data-settings-tab="profile" aria-selected="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            <span>Profile</span>
+                        </button>
+                        <button type="button" class="settings-nav-item" role="tab" data-settings-tab="appearance" aria-selected="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                            <span>Appearance</span>
+                        </button>
+                    </div>
+                    <div class="settings-nav-group">
+                        <div class="settings-nav-grouplabel">Intelligence</div>
+                        <button type="button" class="settings-nav-item" role="tab" data-settings-tab="models" aria-selected="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4 4 4 0 0 1-4-4 4 4 0 0 1 4-4z"/><path d="M5 22v-5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v5"/><circle cx="12" cy="6" r="1"/></svg>
+                            <span>AI Models</span>
+                        </button>
+                        <button type="button" class="settings-nav-item" role="tab" data-settings-tab="mcp" aria-selected="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                            <span>MCP Server</span>
+                            <span class="settings-nav-dot" id="mcp-nav-dot" title="Server running"></span>
+                        </button>
+                    </div>
+                    <div class="settings-nav-group">
+                        <div class="settings-nav-grouplabel">System</div>
+                        <button type="button" class="settings-nav-item" role="tab" data-settings-tab="updates" aria-selected="false" id="settings-tab-updates">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            <span>Updates</span>
+                            <span class="update-nav-dot" id="update-nav-dot" style="display:none;"></span>
+                        </button>
+                        <button type="button" class="settings-nav-item" role="tab" data-settings-tab="tools" aria-selected="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                            <span>Tools</span>
+                        </button>
+                    </div>
                 </nav>
+                <div class="settings-rail-foot">
+                    <span class="settings-rail-foot-dot" aria-hidden="true"></span>
+                    <span id="settings-rail-version">ContextVolt</span>
+                </div>
+            </aside>
+            <section class="settings-content">
+                <div class="settings-content-head">
+                    <div class="settings-content-head-text">
+                        <h2 class="settings-content-title" id="settings-head-title">Profile</h2>
+                        <p class="settings-content-sub" id="settings-head-sub">Used to personalise greetings and give the AI context about who you are.</p>
+                    </div>
+                    <button class="settings-modal-close" id="settings-modal-close" aria-label="Close settings">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
             <div class="settings-modal-body">
 
                 <!-- User Profile -->
                 <div class="settings-profile-section settings-panel active" data-settings-panel="profile">
-                    <div class="settings-section-label">Your Profile</div>
-                    <p class="settings-section-hint">Used to personalise greetings and give the AI context about who you are.</p>
+                    <div class="settings-profile-head">
+                        <div class="settings-avatar" id="settings-avatar" aria-hidden="true">R</div>
+                        <div class="settings-profile-head-meta">
+                            <div class="settings-profile-head-name" id="settings-avatar-name">Your profile</div>
+                            <div class="settings-profile-head-sub" id="settings-avatar-sub">Local vault</div>
+                            <div class="settings-avatar-swatches" id="settings-avatar-swatches" role="radiogroup" aria-label="Avatar color">
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#6366f1" style="--sw:#6366f1" aria-label="Indigo"></button>
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#10b981" style="--sw:#10b981" aria-label="Emerald"></button>
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#f59e0b" style="--sw:#f59e0b" aria-label="Amber"></button>
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#ec4899" style="--sw:#ec4899" aria-label="Pink"></button>
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#06b6d4" style="--sw:#06b6d4" aria-label="Cyan"></button>
+                                <button type="button" class="settings-avatar-swatch" data-avatar-color="#a1a1aa" style="--sw:#a1a1aa" aria-label="Slate"></button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="settings-profile-fields">
                         <div class="settings-profile-field">
                             <label class="settings-profile-label" for="profile-name-input">Display name</label>
@@ -957,8 +1024,7 @@
 
                 <!-- Appearance -->
                 <div class="settings-appearance-section settings-panel" data-settings-panel="appearance">
-                    <div class="settings-section-label">Appearance</div>
-                    <p class="settings-section-hint">Choose how ContextVolt looks. Applies across the entire app.</p>
+                    <div class="settings-section-label">Color theme</div>
                     <div class="settings-theme-segmented" role="radiogroup" aria-label="Color theme">
                         <button type="button" class="settings-theme-opt" data-theme="light" id="theme-opt-light" role="radio" aria-checked="false">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
@@ -968,30 +1034,41 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                             <span>Dark</span>
                         </button>
+                        <button type="button" class="settings-theme-opt" data-theme="system" id="theme-opt-system" role="radio" aria-checked="false">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                            <span>System</span>
+                        </button>
                     </div>
+                    <p class="settings-section-hint" style="margin-top:14px;">System follows your operating system's light/dark preference automatically.</p>
                 </div>
 
                 <!-- Tools / maintenance (moved out of the sidebar) -->
                 <div class="settings-panel" data-settings-panel="tools">
-                    <div class="settings-section-label">Tools</div>
-                    <p class="settings-section-hint">Maintenance helpers and reference.</p>
-                    <div class="settings-tools">
-                        <button class="cv-util" id="btn-rebuild-embeddings" aria-label="Rebuild embeddings">
-                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
-                            <span>Rebuild Embeddings</span>
+                    <div class="settings-section-label">Maintenance</div>
+                    <div class="settings-tool-rows">
+                        <button class="settings-tool-row" id="btn-rebuild-embeddings" type="button" aria-label="Rebuild embeddings">
+                            <span class="settings-tool-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4zM4 12h10v4H4zM4 20h16"/></svg></span>
+                            <span class="settings-tool-tx"><b>Rebuild Embeddings</b><small>Re-index all contexts after switching embed model</small></span>
+                            <span class="settings-tool-act">Run</span>
                         </button>
-                        <button class="cv-util" id="btn-onboard-replay" aria-label="Replay onboarding tour">
-                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
-                            <span>Take the Tour</span>
+                        <button class="settings-tool-row" id="btn-backup" type="button" aria-label="Download a backup of your vault">
+                            <span class="settings-tool-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+                            <span class="settings-tool-tx"><b>Backup Vault</b><small>Download a full snapshot of your contexts &amp; settings</small></span>
+                            <span class="settings-tool-act">Download</span>
                         </button>
-                        <button class="cv-util" id="btn-shortcuts" aria-label="Keyboard shortcuts">
-                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
-                            <span>Shortcuts</span>
-                            <kbd class="cv-nav-kbd">?</kbd>
+                    </div>
+
+                    <div class="settings-section-label" style="margin-top:24px;">Help &amp; reference</div>
+                    <div class="settings-tool-rows">
+                        <button class="settings-tool-row" id="btn-onboard-replay" type="button" aria-label="Replay onboarding tour">
+                            <span class="settings-tool-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+                            <span class="settings-tool-tx"><b>Take the Tour</b><small>Replay the onboarding walkthrough</small></span>
+                            <span class="settings-tool-act">Start</span>
                         </button>
-                        <button class="cv-util" id="btn-backup" aria-label="Download a backup of your vault">
-                            <span class="cv-util-ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
-                            <span>Backup Vault</span>
+                        <button class="settings-tool-row" id="btn-shortcuts" type="button" aria-label="Keyboard shortcuts">
+                            <span class="settings-tool-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg></span>
+                            <span class="settings-tool-tx"><b>Keyboard Shortcuts</b><small>View all available shortcuts</small></span>
+                            <span class="settings-tool-act settings-tool-act-kbd">?</span>
                         </button>
                     </div>
                 </div>
@@ -1062,10 +1139,10 @@
 
                 </div><!-- /models panel -->
 
-                <!-- ── ConVX as MCP Server ─────────────────────────────────── -->
+                <!-- ── ContextVolt as MCP Server ─────────────────────────────────── -->
                 <div class="settings-section settings-mcp-section settings-panel" data-settings-panel="mcp">
                     <div class="settings-section-label">
-                        ConVX as MCP Server
+                        ContextVolt as MCP Server
                         <span class="settings-mcp-status" id="settings-mcp-status" data-state="loading">checking…</span>
                     </div>
                     <p class="settings-section-hint">
@@ -1258,18 +1335,18 @@
                     </div>
                 </div>
 
-            </div><!-- /settings-modal-body -->
-            </div><!-- /settings-shell -->
-            <div class="settings-modal-footer">
-                <div class="settings-privacy-notice" id="settings-privacy-notice">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    <span>API keys are stored locally on your machine. Never sent anywhere except the provider's official API.</span>
+                </div><!-- /settings-modal-body -->
+                <div class="settings-modal-footer" id="settings-footer">
+                    <div class="settings-privacy-notice" id="settings-privacy-notice" style="display:none;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span>API keys are stored locally on your machine. Never sent anywhere except the provider's official API.</span>
+                    </div>
+                    <div class="settings-modal-footer-actions">
+                        <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
+                        <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
+                    </div>
                 </div>
-                <div class="settings-modal-footer-actions">
-                    <button class="btn btn-ghost" id="settings-cancel-btn">Cancel</button>
-                    <button class="btn btn-primary" id="settings-save-btn">Save Changes</button>
-                </div>
-            </div>
+            </section><!-- /settings-content -->
         </div>
     </div>
 
@@ -1327,18 +1404,28 @@
          role="dialog" aria-modal="true" aria-labelledby="system-modal-title">
         <div class="system-modal">
             <div class="system-modal-header">
-                <span class="system-modal-title" id="system-modal-title">System Status</span>
+                <span class="system-modal-hic" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                </span>
+                <div class="system-modal-htext">
+                    <span class="system-modal-title" id="system-modal-title">System</span>
+                    <span class="system-modal-sub">Live health of your local stack &amp; recent backend logs</span>
+                </div>
+                <span class="sys-overall-pill" id="sys-overall-pill" data-state="loading">
+                    <span class="blip"></span><span id="sys-overall-text">Checking…</span>
+                </span>
                 <button class="system-modal-close" id="system-modal-close" aria-label="Close">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
                 </button>
             </div>
             <div class="system-tabs">
                 <button class="system-tab active" data-tab="health" id="tab-health">Health</button>
-                <button class="system-tab" data-tab="logs" id="tab-logs">Logs</button>
+                <button class="system-tab" data-tab="logs" id="tab-logs">Logs<span class="sys-tab-cnt" id="logs-error-count" hidden></span></button>
             </div>
 
             <!-- Health tab -->
             <div class="system-tab-panel" id="panel-health">
+                <div class="sys-health-hero" id="sys-health-hero" hidden></div>
                 <div class="sys-status-grid" id="sys-status-grid">
                     <div class="sys-status-loading"><div class="sys-loader-spinner" aria-hidden="true"></div><span class="sys-loader-text">Loading status…</span></div>
                 </div>
@@ -1347,6 +1434,16 @@
             <!-- Logs tab -->
             <div class="system-tab-panel" id="panel-logs" style="display:none;">
                 <div class="logs-toolbar">
+                    <div class="log-filters" id="log-filters" role="group" aria-label="Filter logs by level">
+                        <button class="log-filter on" data-lvl="all" type="button">All <span class="n" id="logcnt-all">0</span></button>
+                        <button class="log-filter" data-lvl="info" type="button">Info <span class="n" id="logcnt-info">0</span></button>
+                        <button class="log-filter lvl-warn" data-lvl="warning" type="button">Warn <span class="n" id="logcnt-warning">0</span></button>
+                        <button class="log-filter lvl-err" data-lvl="error" type="button">Error <span class="n" id="logcnt-error">0</span></button>
+                    </div>
+                    <div class="log-search">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                        <input type="text" id="logs-search" placeholder="Filter logs…" autocomplete="off" spellcheck="false" aria-label="Search logs">
+                    </div>
                     <select class="logs-lines-select" id="logs-lines-select" aria-label="Number of log lines to show">
                         <option value="50">Last 50 lines</option>
                         <option value="100" selected>Last 100 lines</option>
@@ -1407,7 +1504,7 @@
 
     <!-- ES module entry point — imports the rest of frontend/js/. The backend
          serves /static with Cache-Control: no-store, so no ?v= busting needed. -->
-    <script type="module" src="/static/js/main.js?v=dash-redesign-v1"></script>
+    <script type="module" src="/static/js/main.js?v=proc-panel-v1"></script>
 </body>
 
 </html>

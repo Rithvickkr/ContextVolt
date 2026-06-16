@@ -11,7 +11,7 @@ class SummarizeRequest(BaseModel):
 
 
 class CaptureRequest(BaseModel):
-    """Request body for the /api/capture endpoint from the browser extension."""
+    """Request body for the /api/capture endpoint (browser extension + in-app Quick Capture)."""
     text: str
     source: str = "Extension"
     important_snippets: list[str] = []
@@ -19,6 +19,11 @@ class CaptureRequest(BaseModel):
     # Context the user pasted into this conversation via "From Vault" — lets a
     # save from a different conversation URL update that context in place.
     imported_context_id: int | None = None
+    # In-app Quick Capture extras (extension leaves these at defaults).
+    method: str = "Extension"          # capture-method tag ("Extension" | "Quick Capture")
+    title: str | None = None           # user-provided title (else auto from summary)
+    tags: list[str] = []               # user tags, merged with source/method
+    collection_id: int | None = None   # assign to a collection on create
 
 
 class SummaryData(BaseModel):

@@ -17,13 +17,19 @@
 </p>
 
 <p align="center">
-  <a href="#-features">Features</a> ·
-  <a href="#-install">Install</a> ·
-  <a href="#-browser-extension">Browser Extension</a> ·
-  <a href="#-ask-your-vault-rag">Ask Your Vault</a> ·
-  <a href="#-mcp-server">MCP Server</a> ·
-  <a href="#-api-reference">API</a> ·
-  <a href="#-tech-stack">Tech Stack</a>
+  <a href="#features">Features</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#browser-extension">Browser Extension</a> ·
+  <a href="#ask-your-vault-rag">Ask Your Vault</a> ·
+  <a href="#mcp-server">MCP Server</a> ·
+  <a href="#api-reference">API</a> ·
+  <a href="#troubleshooting--faq">Troubleshooting</a> ·
+  <a href="#tech-stack">Tech Stack</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/hero.png" width="820" alt="ContextVolt main window" />
 </p>
 
 ---
@@ -83,6 +89,37 @@ No accounts. No API keys required. Everything runs on your machine.
 - **Guided onboarding** — first-run tour walks through the real pages live; replayable from Settings
 - **In-app updater** — checks GitHub Releases and applies updates from inside the app
 - **Model manager** — pull, switch, and delete Ollama chat/embed models from Settings, with GPU-aware recommendations
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/capture.png" alt="Quick Capture — paste any AI conversation; summarized, chunked and embedded locally" /></td>
+    <td width="50%"><img src="docs/images/library.png" alt="Library — your saved conversations" /></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Quick Capture — paste any chat; summarized &amp; embedded locally</em></td>
+    <td align="center"><em>Library — your saved conversations</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/ask_home.png" alt="Ask Your Vault — local RAG, streaming, cited" /></td>
+    <td width="50%"><img src="docs/images/ask.png" alt="Ask Your Vault — answer with inline citations and sources" /></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Ask Your Vault — local RAG, streaming, cited</em></td>
+    <td align="center"><em>…answers with inline <code>[n]</code> citations back to sources</em></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/detail.png" alt="Context detail — summary and continuation prompt" /></td>
+    <td width="50%"><img src="docs/images/settings.png" alt="Settings — models, providers, MCP server" /></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Context detail — summary &amp; continuation prompt</em></td>
+    <td align="center"><em>Settings — models, providers &amp; cloud routing</em></td>
+  </tr>
+</table>
 
 ---
 
@@ -150,7 +187,7 @@ cd ~/.contextvolt && bash start.sh
 #### macOS notes
 
 - **Homebrew is the smoothest path** (Option A) — the cask clears Gatekeeper quarantine automatically, so there is no warning. The `.dmg` (Option B) is the same ad-hoc-signed build but, downloaded manually, it keeps the quarantine flag and needs the one-time **System Settings → Privacy & Security → "Open Anyway"** step. Notarization is on the roadmap.
-- **User data lives at** `~/Library/Application Support/ContextVolt/` — config, database, logs, and downloaded models. Removing the `.app` does not delete this directory; use `brew uninstall --zap contextvolt` (Homebrew) or `rm -rf ~/Library/Application\ Support/ContextVolt` for a full uninstall.
+- **User data** lives outside the `.app` and isn't removed by deleting it — see [Data Location & Uninstall](#data-location--uninstall) for the path and full-removal steps.
 - **Apple Silicon** is the supported architecture for Homebrew and the `.dmg`. Intel Macs work via source install (Option C) — `pyobjc`, `sqlite-vec`, `numpy` all ship x86_64 wheels. CI smoke-tests run on Apple Silicon; Intel coverage relies on community testers — please [open an issue](https://github.com/Rithvickkr/ContextVolt/issues) if anything breaks.
 - **Prerequisites you may need to install first:**
   ```bash
@@ -171,6 +208,19 @@ cd ~/.contextvolt && bash start.sh
 | **Embed model** | Auto-installed | `qwen3-embedding:0.6b` (~640 MB) for local vector search |
 
 > Cloud providers (OpenAI, Anthropic, Google) are optional — configure them in-app after setup.
+
+---
+
+## Quick Start
+
+Once installed, you're a few clicks from your first saved context:
+
+1. **Launch ContextVolt.** On first run, a setup wizard installs Ollama (if missing) and downloads a chat model — Qwen 2.5 3B by default (~2 GB). Pick a smaller or larger model based on your hardware.
+2. **Install the browser extension** (see [Browser Extension](#browser-extension)) — Load Unpacked → select the `extension/` folder. No configuration needed; it auto-finds the running app.
+3. **Capture a conversation.** Open any supported chat (ChatGPT, Claude, Gemini, Grok, DeepSeek, Perplexity) and click the ContextVolt toolbar button. The chat is summarized and indexed into your library.
+4. **Search, Ask, or Continue.** Search your library, open **Ask Your Vault** to query across everything with citations, or generate a **continuation prompt** to resume a conversation in any AI tool.
+
+The first-run tour walks you through these pages live, and is replayable any time from **Settings → Onboarding**.
 
 ---
 
@@ -222,6 +272,10 @@ Under the hood:
 ## MCP Server
 
 ContextVolt ships a **Model Context Protocol** server so external AI tools can search and read your vault directly. It is strictly **read-only** — MCP clients can never modify or delete your contexts.
+
+<p align="center">
+  <img src="docs/images/settings_mcp.png" width="820" alt="MCP Server panel — stdio + HTTP transports, Cloudflare tunnel, bearer-token auth" />
+</p>
 
 **Exposed tools:** `search_vault`, `get_context`, `get_chunks`, `get_chunk_neighbors`, `list_recent_contexts`, `search_contexts`, `find_related_contexts`, `list_starred_contexts`, `list_collections`, `list_contexts_by_tag`, `vault_stats`.
 
@@ -391,6 +445,48 @@ ContextVolt/
 ├── installer/                 # Windows .exe build artifacts (Inno Setup)
 └── tests/                     # Pytest suite
 ```
+
+---
+
+## Troubleshooting & FAQ
+
+**The browser extension can't find the app.**
+Make sure ContextVolt is running. The extension probes ports 8000–8009 automatically; if you pinned a port outside that range with `CONVX_PORT`, the extension won't find it — use a port in 8000–8009.
+
+**"Port already in use" / the app won't bind.**
+ContextVolt picks the first free port in 8000–8009. If all are taken, free one or pin a specific port with the `CONVX_PORT` environment variable.
+
+**Ollama isn't found or won't start.**
+The app installs Ollama on first run, but you can install it manually from [ollama.com](https://ollama.com). Confirm it's running with `ollama list`. On Linux/macOS the installer can also fetch it for you.
+
+**Model download is slow or fails.**
+Models are large (a chat model is ~2 GB). Downloads resume on retry. Pick a smaller model (`qwen2.5:1.5b`) from **Settings → Models** on limited bandwidth or RAM.
+
+**macOS: "ContextVolt can't be opened" on first launch.**
+The build is ad-hoc signed. Open **System Settings → Privacy & Security**, scroll down, and click **"Open Anyway"** (or right-click the app → **Open** on older macOS). One time only. Homebrew installs skip this.
+
+**Is my data sent anywhere?**
+No. Conversations, summaries, embeddings, and indexes stay in a local SQLite database. Embeddings are always computed locally. Cloud providers are opt-in and only receive the text being summarized or the question being asked. See [Privacy](#privacy).
+
+---
+
+## Data Location & Uninstall
+
+All your data — database, config, logs, and downloaded models — lives in one per-platform directory:
+
+| Platform | Data location |
+|---|---|
+| **Windows** | The ContextVolt folder itself (next to the app) |
+| **macOS** | `~/Library/Application Support/ContextVolt/` |
+| **Linux** | `$XDG_DATA_HOME/ContextVolt/` or `~/.local/share/ContextVolt/` |
+
+**Back up** your vault from **Settings** (or `GET /api/backup/download`) — it exports the full database you can restore later.
+
+**Uninstall:**
+
+- **Windows** — uninstall from *Add or Remove Programs* (installer build), or delete the ContextVolt folder (from-source). This removes your data too.
+- **macOS** — `brew uninstall --zap contextvolt` (Homebrew), or delete the `.app` and `rm -rf ~/Library/Application\ Support/ContextVolt` for a full removal.
+- **Linux** — remove the `contextvolt` command and delete `~/.local/share/ContextVolt` (and `~/.contextvolt` if installed from source).
 
 ---
 

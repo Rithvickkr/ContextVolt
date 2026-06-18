@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://github.com/Rithvickkr/ContextVolt/releases"><img src="https://img.shields.io/github/v/release/Rithvickkr/ContextVolt?style=flat-square&color=4f46e5" alt="Latest Release" /></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/macOS-beta-orange?style=flat-square" alt="macOS beta" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
   <img src="https://img.shields.io/badge/python-3.10%2B-yellow?style=flat-square" alt="Python 3.10+" />
 </p>

@@ -34,6 +34,18 @@
 
 ---
 
+## Demo
+
+<p align="center">
+  <img src="docs/images/demo.gif" width="860" alt="ContextVolt in action — capture a chat with the floating ball, generate a continuation prompt, and resume the conversation in any AI tool" />
+</p>
+
+<p align="center">
+  <em>Capture any chat with one click → summarized &amp; indexed locally → generate a continuation prompt → resume the conversation in any AI tool.</em>
+</p>
+
+---
+
 ## What is ContextVolt?
 
 ContextVolt is a **local-first context manager for AI conversations**. Every chat you have with ChatGPT, Claude, Gemini, Grok, DeepSeek, or Perplexity is a piece of context you usually lose. ContextVolt captures those conversations with one click, summarizes them with a local (or optional cloud) LLM, indexes them for hybrid semantic + keyword search, and turns them into a personal knowledge vault you can:
@@ -74,14 +86,14 @@ No accounts. No API keys required. Everything runs on your machine.
 - **Export & backup** — download any context as Markdown, or export a full vault backup
 
 ### Find & reuse
-- **Ask Your Vault** — RAG-powered chat over all your saved conversations, with inline numbered citations linking back to sources, an LLM reranker, and per-collection scoping (see [details](#-ask-your-vault-rag))
+- **Ask Your Vault** — RAG-powered chat over all your saved conversations, with inline numbered citations linking back to sources, an LLM reranker, and per-collection scoping (see [details](#ask-your-vault-rag))
 - **Hybrid search** — vector embeddings + FTS5/BM25 keyword index + entity lookup, fused for retrieval
 - **Continuation prompts** — generate a structured prompt grounded in a saved context to resume the conversation in any AI tool
 - **Saved Ask sessions** — every vault Q&A session is kept and revisitable
 
 ### Integrate
-- **MCP server** — expose your vault read-only to Claude Desktop, Claude Code, Cursor, or any MCP host — over stdio locally, or over HTTPS via a one-click Cloudflare tunnel with OAuth + bearer-token auth (see [details](#-mcp-server))
-- **Local REST API** — full FastAPI surface at `http://127.0.0.1:8000` (see [API Reference](#-api-reference))
+- **MCP server** — expose your vault read-only to Claude Desktop, Claude Code, Cursor, or any MCP host — over stdio locally, or over HTTPS via a one-click Cloudflare tunnel with OAuth + bearer-token auth (see [details](#mcp-server))
+- **Local REST API** — full FastAPI surface at `http://127.0.0.1:8000` (see [API Reference](#api-reference))
 
 ### Desktop experience
 - **Frameless native window** — custom title bar, edge-resize, Aero Snap (via PyWebView)

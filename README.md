@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="main%20icon/CVsvg.svg" width="90" alt="ContextVolt Logo" />
+  <img src="docs/images/logo.png" width="104" alt="ContextVolt Logo" />
 </p>
 
 <h1 align="center">ContextVolt</h1>

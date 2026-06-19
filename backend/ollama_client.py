@@ -11,7 +11,12 @@ import re
 import time
 import requests
 
-OLLAMA_BASE = "http://localhost:11434"
+# Default to the IPv4 loopback literal, NOT "localhost". On Windows, Python's
+# requests/urllib3 resolves "localhost" to the IPv6 ::1 first and waits ~2s for
+# that connect to fail before falling back to IPv4 — Ollama binds 127.0.0.1 only.
+# That dead 2s was paid on EVERY Ollama call (chat, summarize, embed, search).
+# Override via OLLAMA_HOST for non-default setups (remote/containerised Ollama).
+OLLAMA_BASE = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 
 # File logger — writes to the platform user-data dir with rotation (max 5 MB, 2 backups)
 from backend.paths import app_log_path as _app_log_path, config_path as _config_path
@@ -1954,12 +1959,18 @@ def generate_continuation_prompt(
     return "\n".join(sections)
 
 
-def embed_text(text: str, model: str | None = None, is_query: bool = True) -> list[float] | None:
+def embed_text(text: str, model: str | None = None, is_query: bool = True,
+               keep_alive: str = "30m") -> list[float] | None:
     """Generate an embedding vector via Ollama's /api/embed endpoint.
 
     `is_query` selects the task prefix (see _embed_prefix). Search queries must
     pass is_query=True (default); stored documents/contexts pass is_query=False
     so the asymmetric retrieval models encode them correctly.
+
+    `keep_alive` is forwarded to Ollama so the embed model stays resident instead
+    of being unloaded after the default 5-minute idle window. Cold-loading this
+    model costs several seconds, so eviction is what makes the first search after
+    an idle period feel frozen — keeping it warm is the whole latency win.
 
     Returns None if the embed model is not installed or any error occurs —
     callers must handle None gracefully (fall back to keyword search).
@@ -1972,7 +1983,7 @@ def embed_text(text: str, model: str | None = None, is_query: bool = True) -> li
     try:
         r = _ollama_post(
             f"{OLLAMA_BASE}/api/embed",
-            json={"model": _model, "input": payload},
+            json={"model": _model, "input": payload, "keep_alive": keep_alive},
             timeout=30,
         )
         r.raise_for_status()
@@ -1982,6 +1993,15 @@ def embed_text(text: str, model: str | None = None, is_query: bool = True) -> li
         return None
     except Exception:
         return None
+
+
+def warm_embed_model() -> bool:
+    """Pre-load the embed model into Ollama so the first real search isn't cold.
+
+    Best-effort and safe to call from a background thread at startup: returns
+    False (without raising) if Ollama is down or the model isn't installed.
+    """
+    return embed_text("warmup", is_query=True) is not None
 
 
 _THINK_BLOCK_RE = re.compile(r'<think>[\s\S]*?</think>\s*', re.IGNORECASE)

@@ -86,6 +86,7 @@ from backend.ollama_client import (
     check_ollama_running,
     check_model_available,
     DEFAULT_MODEL,
+    OLLAMA_BASE,
     _USER_TURN,
 )
 from backend.llm_router import (
@@ -182,6 +183,14 @@ async def _lifespan(_app: "FastAPI"):
     # is the only surface the Cloudflare tunnel exposes. This app — the full REST
     # API + frontend — is bound to loopback and never tunneled, so it does not
     # carry the MCP session manager.
+    #
+    # Warm the embed model in the background so the first library search isn't
+    # paying a multi-second cold load. Best-effort and non-blocking: if Ollama
+    # is down or the model is missing, warm_embed_model() just returns False and
+    # search falls back to keyword as usual.
+    import threading as _threading
+    from backend.ollama_client import warm_embed_model as _warm_embed_model
+    _threading.Thread(target=_warm_embed_model, daemon=True).start()
     yield
 
 
@@ -446,7 +455,7 @@ def get_config():
     if ollama_ok:
         try:
             import requests as _req
-            r = _req.get("http://localhost:11434/api/tags", timeout=4)
+            r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=4)
             if r.status_code == 200:
                 installed_names = [m.get("name", "") for m in r.json().get("models", [])]
         except Exception:
@@ -595,7 +604,7 @@ def pull_model_stream(body: ModelSelect):
     def _stream():
         try:
             resp = _req.post(
-                "http://localhost:11434/api/pull",
+                f"{OLLAMA_BASE}/api/pull",
                 json={"model": body.model, "name": body.model, "stream": True},
                 stream=True,
                 timeout=600,
@@ -628,7 +637,7 @@ def delete_ollama_model(model_id: str):
         # Resolve actual installed name that matches the requested model_id
         actual_name = model_id
         try:
-            r = _req.get("http://localhost:11434/api/tags", timeout=4)
+            r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=4)
             if r.status_code == 200:
                 installed = [m.get("name", "") for m in r.json().get("models", [])]
                 for n in installed:
@@ -642,7 +651,7 @@ def delete_ollama_model(model_id: str):
             pass
 
         resp = _req.delete(
-            "http://localhost:11434/api/delete",
+            f"{OLLAMA_BASE}/api/delete",
             json={"name": actual_name, "model": actual_name},
             timeout=30,
         )
@@ -1153,7 +1162,9 @@ def api_list_contexts(
 ):
     """List contexts with pagination. Uses semantic search when query provided."""
     if q:
-        vec = embed_text(q)
+        # Single-character queries aren't worth a semantic embed (which would cost
+        # an Ollama round-trip for no ranking benefit) — go straight to keyword.
+        vec = embed_text(q) if len(q.strip()) >= 2 else None
         if vec:
             results = search_contexts_semantic(vec)
             if results:
@@ -2576,7 +2587,7 @@ def api_debug_ollama():
     """Show installed models and the model name ContextVolt is configured to use."""
     import requests as _req
     try:
-        r = _req.get("http://localhost:11434/api/tags", timeout=5)
+        r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
         models = [m.get("name") for m in r.json().get("models", [])]
     except Exception as e:
         models = [f"ERROR: {e}"]
@@ -2655,7 +2666,7 @@ def api_system_status():
     installed_models: list[str] = []
     if ollama_running:
         try:
-            r = _req.get("http://localhost:11434/api/tags", timeout=5)
+            r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
             installed_models = [m.get("name", "") for m in r.json().get("models", [])]
         except Exception:
             pass
@@ -2669,7 +2680,7 @@ def api_system_status():
 
     return {
         "backend":          {"status": "ok", "uptime_s": uptime_s},
-        "ollama":           {"running": ollama_running, "url": "http://localhost:11434"},
+        "ollama":           {"running": ollama_running, "url": OLLAMA_BASE},
         "model":            {"name": current_model, "ready": model_ready},
         "embed":            {"name": embed_model},
         "installed_models": installed_models,

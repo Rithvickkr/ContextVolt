@@ -58,7 +58,7 @@ jobs:
         shell: powershell
         run: |
           $ver = "${{ steps.version.outputs.VERSION }}"
-          $path = "RELEASE_NOTES_v$ver.md"
+          $path = "docs/releases/RELEASE_NOTES_v$ver.md"
           if (Test-Path $path) {
             Write-Host "Using release notes file: $path"
           } else {

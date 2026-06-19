@@ -271,6 +271,10 @@ The extension adds a toolbar button. Click it while viewing a supported conversa
 
 Ask Your Vault is a chat interface over everything you've saved. Ask a question; ContextVolt retrieves the most relevant chunks across all your conversations and generates a grounded answer with **inline numbered `[n]` citations** that link back to the source context.
 
+<p align="center">
+  <img src="docs/images/ask_vault.gif" width="820" alt="Ask Your Vault — ask a question and get a grounded answer with inline citations and source chips" />
+</p>
+
 Under the hood:
 
 - **Hybrid retrieval** — semantic vector search (local embeddings via sqlite-vec, with asymmetric query/document prefixes) fused with an **FTS5 + BM25** keyword index and an **entity index** that catches identifier-shaped tokens (ticket IDs, env-var names, file paths, version tags) that embeddings miss.

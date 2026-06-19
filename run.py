@@ -216,6 +216,35 @@ def _restart_uvicorn() -> None:
     threading.Thread(target=_delayed_relaunch, daemon=True).start()
 
 
+# ─── MCP-only app (separate loopback port; the ONLY thing the tunnel exposes) ──
+# Isolation is topological: the Cloudflare tunnel forwards a port, not a path, so
+# pointing it at this app means a remote client can reach /mcp + OAuth and has no
+# way to reach the full REST API (which lives on _chosen_port and is never
+# tunneled). Distinct from the extension's 8000–8009 range so probes never land
+# here.
+_MCP_PORT_CANDIDATES = list(range(8765, 8775))
+_mcp_port: int | None = None
+
+
+def _select_mcp_port(exclude: int | None) -> int | None:
+    host = _paths.SERVER_HOST
+    for port in _MCP_PORT_CANDIDATES:
+        if port == exclude:
+            continue
+        if _port_is_free(host, port):
+            return port
+    return None
+
+
+def _launch_mcp_server(port: int) -> None:
+    """Run the MCP-only ASGI app on its own loopback port. Blocks until exit."""
+    from backend.mcp_app import build_mcp_app
+    config = uvicorn.Config(
+        build_mcp_app(), host=_paths.SERVER_HOST, port=port, log_level="warning"
+    )
+    uvicorn.Server(config).run()
+
+
 # ─── Frameless window: resize + Aero Snap (Win32) ────────────────
 # pywebview frameless windows use FormBorderStyle.None, which strips the
 # native resize border and Aero Snap. We restore both by re-adding the sizing
@@ -625,6 +654,23 @@ def main():
     # Start the first server instance
     server_thread = threading.Thread(target=_launch_server, daemon=True)
     server_thread.start()
+
+    # Bring up the MCP-only app on a separate loopback port — the only surface the
+    # Cloudflare tunnel is ever pointed at. Best-effort: if it can't start (MCP
+    # SDK missing, no free port), the main app still runs and only the remote
+    # tunnel feature is unavailable (tunnel-start refuses when _mcp_port is None).
+    global _mcp_port
+    try:
+        _mcp_port = _select_mcp_port(exclude=_chosen_port)
+        if _mcp_port is not None:
+            _main_module._mcp_port = _mcp_port
+            threading.Thread(
+                target=_launch_mcp_server, args=(_mcp_port,), daemon=True
+            ).start()
+        else:
+            logging.error("No free MCP port in %s; remote tunnel disabled.", _MCP_PORT_CANDIDATES)
+    except Exception:
+        logging.exception("Failed to start MCP app; remote tunnel disabled.")
 
     # Give the server a moment to boot before pointing the webview at it
     time.sleep(1.5)

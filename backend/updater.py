@@ -23,6 +23,30 @@ APP_VERSION = "2.4.0"
 GITHUB_REPO = "Rithvickkr/ContextVolt"
 _API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
+# Only GitHub-owned hosts may serve an installer. A release asset's
+# browser_download_url is github.com/...; GitHub then redirects to
+# *.githubusercontent.com, which urllib follows internally. This allowlist is a
+# defense-in-depth backstop so a download can never be pointed at an arbitrary
+# host even if a caller supplies one.
+_ALLOWED_DL_HOSTS = (
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+)
+
+
+def _is_trusted_download_url(url: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        parts = urlparse(url)
+    except Exception:
+        return False
+    if parts.scheme != "https":
+        return False
+    host = (parts.hostname or "").lower()
+    return host in _ALLOWED_DL_HOSTS
+
+
 _dl_path: str | None = None
 _dl_lock = threading.Lock()
 
@@ -81,8 +105,18 @@ def check_for_update() -> dict:
 
 
 def download_update(url: str, size: int = 0) -> Iterator[dict]:
-    """Generator — downloads the installer and yields SSE-friendly progress dicts."""
+    """Generator — downloads the installer and yields SSE-friendly progress dicts.
+
+    The URL must point at a GitHub-owned host; anything else is refused. Callers
+    should resolve the URL from check_for_update() rather than passing in a
+    client-supplied value.
+    """
     global _dl_path
+
+    if not _is_trusted_download_url(url):
+        _log.warning("Refused update download from untrusted URL: %s", url)
+        yield {"error": "refused: update URL is not a trusted GitHub release asset", "done": True}
+        return
 
     # The downloaded artifact must keep its real extension so the OS handler
     # recognizes it: .exe (silent install) on Windows, .dmg (mounted via `open`)

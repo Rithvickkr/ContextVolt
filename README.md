@@ -314,7 +314,9 @@ Runs alongside the app, talks to the same database, and falls back to keyword se
 
 ### Remote (HTTP) — access your vault from anywhere
 
-From **Settings → MCP Server** you can start a **Cloudflare Quick Tunnel** (no Cloudflare account needed) that exposes the MCP HTTP endpoint at a `https://*.trycloudflare.com` URL. Connections are protected by a bearer token and an OAuth 2.0 authorization flow; the token can be regenerated in-app at any time. Users who want a stable URL can supply a named-tunnel token via `config.json` (`cf_tunnel_token`) or the `CONVX_CF_TUNNEL_TOKEN` env var.
+From **Settings → MCP Server** you can start a **Cloudflare Quick Tunnel** (no Cloudflare account needed) that exposes the MCP HTTP endpoint at a `https://*.trycloudflare.com` URL. Connections are protected by a bearer token and an OAuth 2.0 + PKCE flow; the token can be regenerated in-app at any time. Users who want a stable URL can supply a named-tunnel token via `config.json` (`cf_tunnel_token`) or the `CONVX_CF_TUNNEL_TOKEN` env var.
+
+**Only the MCP endpoint is ever exposed.** The tunnel points at a dedicated, MCP-only server running on a separate local port that serves *just* `/mcp` and the OAuth routes — nothing else. Your REST API, vault data endpoints, and settings run on a different port that is bound to loopback and never tunneled, so a remote client can reach the MCP tools but has no path to the rest of the app. The isolation is enforced by topology (separate ports), not by request filtering.
 
 ---
 
@@ -448,7 +450,9 @@ ContextVolt/
 │   ├── entity_extractor.py    # Identifier/entity index for retrieval
 │   ├── mcp_server.py          # MCP server (stdio transport)
 │   ├── mcp_http.py            # MCP server (HTTP transport)
-│   ├── oauth_server.py        # OAuth 2.0 flow for remote MCP clients
+│   ├── mcp_app.py             # Standalone MCP-only app (the only tunneled surface)
+│   ├── oauth_server.py        # OAuth 2.0 helpers for remote MCP clients
+│   ├── oauth_routes.py        # OAuth 2.0 routes, mounted on the MCP-only app
 │   ├── cloudflare_tunnel.py   # Quick Tunnel management
 │   ├── updater.py             # In-app update check/apply
 │   ├── gpu_info.py            # GPU detection for model recommendations
@@ -512,7 +516,7 @@ All your data — database, config, logs, and downloaded models — lives in one
 - All data — conversations, summaries, embeddings, search indexes — lives in a local SQLite database on your machine.
 - Embeddings are **always** computed locally, even when a cloud provider handles summarization.
 - Cloud providers are opt-in and only ever receive the text being summarized or the question being answered.
-- The MCP remote tunnel is off by default; when enabled it is token + OAuth protected and read-only.
+- The MCP remote tunnel is off by default; when enabled it is token + OAuth protected, read-only, and isolated to a dedicated MCP-only port — the tunnel cannot reach your REST API or vault-management endpoints.
 
 ---
 

@@ -70,7 +70,6 @@ from backend.models import (
     CollectionCreate, CollectionUpdate, ContextCollectionSet,
     CloudKeySet, ProviderSelect, CloudKeyValidate, UserProfileUpdate,
 )
-from backend.mcp_http import mount_mcp_http, mcp_http_lifespan
 from backend.ollama_client import (
     summarize_conversation as _ollama_summarize,
     summarize_conversation_streaming as _ollama_summarize_streaming,
@@ -179,12 +178,20 @@ from contextlib import asynccontextmanager as _asynccontextmanager  # noqa: E402
 
 @_asynccontextmanager
 async def _lifespan(_app: "FastAPI"):
-    # Drives the MCP HTTP session manager (replaces deprecated on_event hooks).
-    async with mcp_http_lifespan():
-        yield
+    # The MCP HTTP transport runs on a SEPARATE app/port (backend.mcp_app), which
+    # is the only surface the Cloudflare tunnel exposes. This app — the full REST
+    # API + frontend — is bound to loopback and never tunneled, so it does not
+    # carry the MCP session manager.
+    yield
 
 
 app = FastAPI(title="ContextVolt", version="2.4.0", lifespan=_lifespan)
+
+# Port of the loopback MCP-only app (backend.mcp_app), published by run.py. The
+# Cloudflare tunnel is pointed here — never at this app's own port — so remote
+# clients can reach /mcp + OAuth but not /api/*. None when the app is run without
+# run.py (e.g. bare `uvicorn backend.main`); in that mode the tunnel is refused.
+_mcp_port: int | None = None
 
 
 @app.middleware("http")
@@ -213,11 +220,6 @@ app.add_middleware(
 
 # Initialize database on startup
 init_db()
-
-
-# Mount ConVX-as-MCP-server over Streamable HTTP. Exposes the same tools and
-# resources as `python -m backend.mcp_server` (stdio) — see backend/mcp_http.py.
-mount_mcp_http(app, path="/mcp")
 
 
 def _try_embed_context(context_id: int | None, summary: dict) -> None:
@@ -2763,10 +2765,15 @@ def _mcp_server_info_payload(request: Request) -> dict:
     """
     from backend.mcp_http import get_http_token, get_auth_required
 
-    # Compose the URL the host should use. We keep the path consistent with
-    # mount_mcp_http() above.
-    host = (request.headers.get("host") or f"127.0.0.1:{_active_port}").strip()
-    http_url = f"http://{host}/mcp"
+    # Compose the local URL for the HTTP transport. /mcp lives on the dedicated
+    # MCP app (its own loopback port), not on this REST app, so point at that
+    # port. Falls back to this app's host only if the MCP port isn't published
+    # (bare `uvicorn backend.main` with no run.py).
+    if _mcp_port:
+        http_url = f"http://127.0.0.1:{_mcp_port}/mcp"
+    else:
+        host = (request.headers.get("host") or f"127.0.0.1:{_active_port}").strip()
+        http_url = f"http://{host}/mcp"
 
     # Detect the venv python actually running the app — that's exactly what
     # the user should put in their Claude Desktop config.
@@ -2801,6 +2808,16 @@ def _mcp_server_info_payload(request: Request) -> dict:
 
 
 def _is_loopback(request: Request) -> bool:
+    # A request arriving through a Cloudflare tunnel reaches us from cloudflared,
+    # which runs on localhost — so request.client.host alone would read 127.0.0.1
+    # and wrongly pass. Cloudflare's edge stamps cf-connecting-ip / cf-ray on
+    # every tunneled request and a client cannot strip them, so their presence is
+    # a reliable "this came from the internet" signal. Use it to fail closed.
+    # (Belt-and-suspenders: the tunnel is pointed at the MCP-only app, so these
+    # admin endpoints aren't on the tunneled surface anyway.)
+    headers = request.headers
+    if headers.get("cf-connecting-ip") or headers.get("cf-ray"):
+        return False
     client = request.client
     host = client.host if client else ""
     return host in ("127.0.0.1", "::1", "localhost")
@@ -2855,11 +2872,22 @@ def mcp_tunnel_status(request: Request):
 
 @app.post("/api/mcp_server/tunnel/start")
 def mcp_tunnel_start(request: Request):
-    """Download cloudflared if needed and start a Quick Tunnel."""
+    """Download cloudflared if needed and start a Quick Tunnel.
+
+    The tunnel is pointed at the MCP-only app's port (backend.mcp_app), never at
+    this REST app — so the public HTTPS URL exposes /mcp + OAuth and nothing
+    else. If that port isn't published (app started without run.py), we refuse
+    rather than fall back to exposing the full API.
+    """
     if not _is_loopback(request):
         raise HTTPException(status_code=403, detail="loopback only")
+    if not _mcp_port:
+        raise HTTPException(
+            status_code=503,
+            detail="MCP endpoint not running; remote tunnel unavailable in this mode.",
+        )
     from backend import cloudflare_tunnel
-    cloudflare_tunnel.start(port=_active_port)
+    cloudflare_tunnel.start(port=_mcp_port)
     return {"ok": True, "status": cloudflare_tunnel.get_status()["status"]}
 
 
@@ -2873,125 +2901,10 @@ def mcp_tunnel_stop(request: Request):
     return {"ok": True}
 
 
-# ---------------------------------------------------------------------------
-# OAuth 2.0 + PKCE — required by Grok, ChatGPT, Claude.ai remote MCP connectors.
-#
-# Exposes /oauth/authorize and /oauth/token (public — reachable through the
-# Cloudflare tunnel) and /.well-known/oauth-authorization-server (discovery).
-# The issued access_token is the existing MCP bearer token; no new credential
-# is created.
-# ---------------------------------------------------------------------------
-
-from fastapi import Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-
-
-@app.get("/.well-known/oauth-authorization-server", include_in_schema=False)
-def oauth_discovery(request: Request):
-    """RFC 8414 discovery — some clients fetch this before starting OAuth."""
-    from backend.oauth_server import authorization_server_metadata
-    base = str(request.base_url).rstrip("/")
-    return authorization_server_metadata(base)
-
-
-@app.get("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
-def oauth_authorize_get(
-    response_type: str = "",
-    client_id: str = "",
-    redirect_uri: str = "",
-    code_challenge: str = "",
-    code_challenge_method: str = "S256",
-    state: str = "",
-    scope: str = "",   # accepted but not used — we grant full vault read access
-):
-    """Show the user a consent page."""
-    from backend.oauth_server import CLIENT_ID, _consent_html
-
-    if response_type != "code":
-        raise HTTPException(status_code=400, detail="only response_type=code is supported")
-    if not redirect_uri:
-        raise HTTPException(status_code=400, detail="redirect_uri required")
-    if not code_challenge:
-        raise HTTPException(status_code=400, detail="PKCE code_challenge required")
-    if code_challenge_method != "S256":
-        raise HTTPException(status_code=400, detail="only S256 code_challenge_method supported")
-
-    return _consent_html(
-        client_id=client_id or CLIENT_ID,
-        redirect_uri=redirect_uri,
-        challenge=code_challenge,
-        challenge_method=code_challenge_method,
-        state=state,
-    )
-
-
-@app.post("/oauth/authorize", response_class=HTMLResponse, include_in_schema=False)
-async def oauth_authorize_post(
-    decision: str = Form(...),
-    redirect_uri: str = Form(...),
-    code_challenge: str = Form(...),
-    client_id: str = Form(default="convx"),
-    state: str = Form(default=""),
-):
-    """User clicked Allow or Deny — redirect back to the client."""
-    from backend.oauth_server import _new_code, _consent_html
-    from urllib.parse import urlencode
-
-    if decision != "allow":
-        params = urlencode({"error": "access_denied", "state": state})
-        return RedirectResponse(f"{redirect_uri}?{params}", status_code=302)
-
-    code = _new_code(
-        challenge=code_challenge,
-        redirect_uri=redirect_uri,
-        client_id=client_id,
-    )
-    params: dict = {"code": code}
-    if state:
-        params["state"] = state
-    return RedirectResponse(f"{redirect_uri}?{urlencode(params)}", status_code=302)
-
-
-@app.post("/oauth/token", include_in_schema=False)
-async def oauth_token(
-    grant_type: str = Form(default=""),
-    code: str = Form(default=""),
-    code_verifier: str = Form(default=""),
-    redirect_uri: str = Form(default=""),
-    client_id: str = Form(default=""),   # accepted for spec compliance, not validated
-):
-    """Exchange an auth code + PKCE verifier for the MCP bearer token."""
-    from backend.oauth_server import _pop_code, _verify_pkce
-    from backend.mcp_http import get_http_token
-
-    def _err(error: str, desc: str = ""):
-        body = {"error": error}
-        if desc:
-            body["error_description"] = desc
-        return JSONResponse(body, status_code=400)
-
-    if grant_type != "authorization_code":
-        return _err("unsupported_grant_type")
-    if not code:
-        return _err("invalid_request", "code required")
-    if not code_verifier:
-        return _err("invalid_request", "code_verifier required")
-
-    entry = _pop_code(code)
-    if not entry:
-        return _err("invalid_grant", "code not found or expired")
-    if not _verify_pkce(code_verifier, entry["challenge"]):
-        return _err("invalid_grant", "PKCE verification failed")
-    if redirect_uri and redirect_uri != entry["redirect_uri"]:
-        return _err("invalid_grant", "redirect_uri mismatch")
-
-    token = get_http_token()
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in": 315360000,   # 10 years — effectively non-expiring
-        "scope": "",
-    }
+# OAuth 2.0 + PKCE for remote MCP clients (Grok, ChatGPT, Claude.ai) lives on the
+# standalone MCP app (backend.oauth_routes / backend.mcp_app), which is the only
+# surface the Cloudflare tunnel exposes. It is intentionally NOT registered on
+# this REST app, which is loopback-only and never tunneled.
 
 
 # ---------------------------------------------------------------------------
@@ -3006,13 +2919,26 @@ def update_check():
 
 
 @app.get("/api/update/download")
-def update_download(url: str = Query(...)):
-    """Stream installer download progress as SSE."""
-    from backend.updater import download_update
+def update_download():
+    """Stream installer download progress as SSE.
+
+    The download URL is resolved server-side from the GitHub releases API — it is
+    never taken from the request. This prevents a malicious page (which can reach
+    127.0.0.1 cross-origin) from pointing the updater at an arbitrary executable
+    and then triggering /api/update/apply to run it.
+    """
+    from backend.updater import check_for_update, download_update
     import json as _json
 
+    info = check_for_update()
+    url = info.get("download_url")
+    size = info.get("asset_size", 0) or 0
+
     def _stream():
-        for chunk in download_update(url):
+        if not url:
+            yield f"data: {_json.dumps({'error': 'no installer available for this platform', 'done': True})}\n\n"
+            return
+        for chunk in download_update(url, size):
             yield f"data: {_json.dumps(chunk)}\n\n"
 
     return StreamingResponse(

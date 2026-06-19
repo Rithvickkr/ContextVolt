@@ -74,8 +74,9 @@ async function _downloadAndInstallUpdate() {
     const barEl  = document.getElementById('update-progress-bar');
     const byteEl = document.getElementById('update-progress-bytes');
 
-    const url = encodeURIComponent(_updateInfo.download_url);
-    const res = await fetch(`${API}/api/update/download?url=${url}`);
+    // The server resolves the installer URL from the GitHub release itself; we
+    // intentionally don't pass it from the client (it would be untrusted input).
+    const res = await fetch(`${API}/api/update/download`);
     if (!res.ok || !res.body) {
         _setUpdateState('available');
         return;

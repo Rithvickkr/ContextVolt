@@ -174,7 +174,10 @@ def mount_mcp_http(app: FastAPI, path: str = "/mcp") -> None:
                        for k, v in scope.get("headers", [])}
             authz = headers.get("authorization", "")
             expected, _ = _resolve_token()
-            if not authz.startswith("Bearer ") or authz[7:].strip() != expected:
+            presented = authz[7:].strip() if authz.startswith("Bearer ") else ""
+            # Constant-time compare — this token is exposed over the network via
+            # the tunnel, so avoid a length/early-exit timing side channel.
+            if not presented or not secrets.compare_digest(presented, expected):
                 await _send_json(send, 401, {"error": "missing or invalid bearer token"})
                 return
 

@@ -91,7 +91,7 @@ AVAILABLE_MODELS = [
         "id": "llama3.2:3b",
         "name": "Llama 3.2 3B",
         "size": "~2 GB",
-        "description": "Recommended — strong JSON adherence, faithful summaries, 128k context",
+        "description": "Strong JSON adherence, faithful summaries, 128k context",
         "recommended": True,
     },
     {
@@ -129,7 +129,7 @@ AVAILABLE_EMBED_MODELS = [
         "id": "qwen3-embedding:0.6b",
         "name": "Qwen 3 Embedding 0.6B",
         "size": "~640 MB",
-        "description": "Recommended — current SOTA local retrieval, top of MTEB at this size",
+        "description": "Current SOTA local retrieval, top of MTEB at this size",
         "recommended": True,
     },
     {
@@ -161,6 +161,30 @@ AVAILABLE_EMBED_MODELS = [
         "recommended": False,
     },
 ]
+
+# ── VRAM-aware recommendations ──────────────────────────────────────────────
+# The setup wizard picks the model pair that fits the user's GPU instead of a
+# fixed default. detect_gpu() is lru_cached, so repeated calls are cheap.
+def _gpu_recommendation():
+    """Return (gpu_dict, recommendation_dict). Never raises."""
+    try:
+        from backend.gpu_info import detect_gpu, recommend_models
+        gpu = detect_gpu()
+        return gpu, recommend_models(gpu.get("vram_mb"))
+    except Exception:
+        logging.debug("GPU detection failed", exc_info=True)
+        return {"detected": False, "name": None, "vram_mb": None, "source": None}, None
+
+
+def _with_recommendation(models, recommended_id):
+    """Copy of `models` with `recommended` set only on the hardware-matched id."""
+    import copy
+    out = copy.deepcopy(models)
+    if recommended_id and any(m["id"] == recommended_id for m in out):
+        for m in out:
+            m["recommended"] = (m["id"] == recommended_id)
+    return out
+
 
 # Store Ollama models in the per-user data dir (same place run.py reads it from).
 # On Windows this is PROJECT_ROOT/.ollama (legacy); on Mac/Linux it's under the user data dir.
@@ -783,13 +807,20 @@ class Api:
             "installationComplete": state.installation_complete,
         }
     
+    def get_gpu_info(self):
+        """Detect the GPU/VRAM and return a hardware-aware model recommendation."""
+        gpu, rec = _gpu_recommendation()
+        return {"gpu": gpu, "recommendation": rec}
+
     def get_available_models(self):
-        """Return list of available model options."""
-        return AVAILABLE_MODELS
+        """Available LLM options, with `recommended` flagged for this GPU."""
+        _, rec = _gpu_recommendation()
+        return _with_recommendation(AVAILABLE_MODELS, rec and rec.get("llm"))
 
     def get_available_embed_models(self):
-        """Return list of available embedding model options."""
-        return AVAILABLE_EMBED_MODELS
+        """Available embedding options, with `recommended` flagged for this GPU."""
+        _, rec = _gpu_recommendation()
+        return _with_recommendation(AVAILABLE_EMBED_MODELS, rec and rec.get("embed"))
 
     def get_saved_config(self):
         """Return the currently saved model + embed_model from config.json."""
@@ -804,10 +835,10 @@ class Api:
                 # Update globals so installation uses whatever was persisted
                 OLLAMA_MODEL = saved_model
                 EMBED_MODEL = saved_embed
-                return {"model": saved_model, "embed_model": saved_embed}
+                return {"model": saved_model, "embed_model": saved_embed, "exists": True}
         except Exception:
             pass
-        return {"model": OLLAMA_MODEL, "embed_model": EMBED_MODEL}
+        return {"model": OLLAMA_MODEL, "embed_model": EMBED_MODEL, "exists": False}
 
     def set_selected_embed_model(self, model_id: str):
         """Set the embedding model to install and persist to config.json."""
@@ -989,10 +1020,32 @@ def main():
         height=600,
         resizable=False,
         background_color="#09090b",
+        # frameless=True drops the white OS title bar; we draw our own dark one in
+        # the page (drag strip + mac-style lights) and drive it through the
+        # exposed window-control callbacks below. easy_drag=False so only
+        # elements marked .pywebview-drag-region move the window.
+        frameless=True,
+        easy_drag=False,
         js_api=api,
     )
 
     state.window = window
+
+    # ─── Custom title-bar window controls (exposed to JS) ─────────────
+    # The installer is fixed-size, so only minimize + close are offered.
+    def cv_minimize():
+        try:
+            window.minimize()
+        except Exception:
+            pass
+
+    def cv_close():
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    window.expose(cv_minimize, cv_close)
 
     def _set_installer_icon():
         # Windows-only: native taskbar icon via ctypes/user32. macOS/Linux

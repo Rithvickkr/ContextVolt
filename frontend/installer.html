@@ -9,38 +9,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
         rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link
-        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap"
         rel="stylesheet"></noscript>
     <link rel="stylesheet" href="css/installer.css">
 </head>
 
 <body>
 
+    <!-- ── Frameless window chrome: drag strip + mac-style lights ──────── -->
+    <div class="cv-dragstrip pywebview-drag-region" aria-hidden="true"></div>
+    <div class="cv-lights" role="group" aria-label="Window controls">
+        <button class="cv-light cv-light-close" id="cv-win-close" type="button" aria-label="Close" title="Close">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.4 3.4l5.2 5.2M8.6 3.4 3.4 8.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <button class="cv-light cv-light-min" id="cv-win-min" type="button" aria-label="Minimize" title="Minimize">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.8 6h6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+    </div>
+
     <!-- ── Welcome Splash ─────────────────────────────────────────────── -->
     <div id="inst-welcome" class="inst-welcome" aria-hidden="true">
         <div class="iw-bg-grid" aria-hidden="true"></div>
-        <div class="iw-glow" aria-hidden="true"></div>
-        <div class="iw-orbit" aria-hidden="true">
-            <span class="iw-orbit-ring iw-orbit-1"></span>
-            <span class="iw-orbit-ring iw-orbit-2"></span>
-            <span class="iw-orbit-ring iw-orbit-3"></span>
-        </div>
+        <div class="iw-vignette" aria-hidden="true"></div>
         <div class="iw-content">
-            <div class="iw-logo">
-                <img src="CVsvg.svg" width="76" height="76" alt="ContextVolt">
+            <div class="iw-logo-stage" aria-hidden="true">
+                <div class="iw-halo"></div>
+                <span class="iw-ring"></span>
+                <span class="iw-ring"></span>
+                <span class="iw-ring"></span>
+                <div class="iw-logo">
+                    <img src="CVsvg.svg" width="78" height="78" alt="ContextVolt">
+                </div>
             </div>
             <h1 class="iw-name">ContextVolt</h1>
-            <p class="iw-tag">Local-first AI memory</p>
+            <p class="iw-tag">Local-first <b>AI memory</b></p>
             <div class="iw-progress" aria-hidden="true"><span class="iw-progress-fill"></span></div>
             <div class="iw-hint">Initializing environment…</div>
-        </div>
-        <div class="iw-footer" aria-hidden="true">
-            <span class="iw-foot-l">v1.0</span>
-            <span class="iw-foot-sep">·</span>
-            <span class="iw-foot-r">Setup Wizard</span>
         </div>
     </div>
 
@@ -53,9 +60,12 @@
             <div class="inst-left">
                 <div class="inst-brand">
                     <div class="inst-logo" aria-hidden="true">
-                        <img src="CVsvg.svg" width="30" height="30" alt="ContextVolt">
+                        <img src="CVsvg.svg" width="34" height="34" alt="ContextVolt">
                     </div>
-                    <span class="inst-brand-name">ContextVolt</span>
+                    <div class="inst-brand-text">
+                        <span class="inst-brand-name">ContextVolt</span>
+                        <span class="inst-brand-sub">Setup Wizard</span>
+                    </div>
                 </div>
 
                 <div class="inst-section-label">Installation</div>
@@ -161,7 +171,7 @@
                 </div>
 
                 <div class="inst-left-footer">
-                    Local-first AI memory
+                    <span class="pdot" aria-hidden="true"></span>Local-first AI memory
                 </div>
             </div>
 
@@ -173,13 +183,14 @@
                     <div class="inst-setup-panel" id="setup-panel">
 
                         <div class="isp-header">
-                            <h2 class="isp-title">Set up ContextVolt</h2>
-                            <p class="isp-sub">Choose your AI and configure settings before installation begins.</p>
+                            <span class="isp-eyebrow">Setup <span class="sep">/</span> Configure</span>
+                            <h2 class="isp-title">Set up your <span class="accent">memory</span> engine</h2>
+                            <p class="isp-sub">Choose your AI provider and models. Everything runs on your machine — your conversations never leave it.</p>
                         </div>
 
                         <!-- Provider toggle: Cloud / Local -->
                         <div class="isp-section">
-                            <div class="isp-section-label">AI Provider</div>
+                            <div class="isp-section-label"><span class="idx">01</span>AI Provider</div>
                             <div class="isp-provider-toggle" id="provider-toggle" role="tablist" aria-label="AI provider type">
                                 <button class="ipt-btn active" id="ipt-cloud" data-mode="cloud" role="tab" aria-selected="true" type="button">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
@@ -250,15 +261,30 @@
                             <div class="isp-model-grid" id="model-cards" role="radiogroup" aria-label="Local AI model"></div>
                         </div>
 
+                        <!-- GPU detection banner — VRAM-aware recommendation -->
+                        <div class="isp-gpu" id="gpu-banner" style="display:none;" role="status" aria-live="polite">
+                            <div class="isp-gpu-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 20h10M9 17v3M15 17v3"/><circle cx="9" cy="10.5" r="1.6"/><path d="M13 8.5h4M13 11.5h4"/></svg>
+                            </div>
+                            <div class="isp-gpu-text">
+                                <span class="isp-gpu-title" id="gpu-title">Detecting hardware…</span>
+                                <span class="isp-gpu-reason" id="gpu-reason"></span>
+                            </div>
+                        </div>
+
                         <!-- Embed model (always shown) -->
                         <div class="isp-section" id="isp-embed-section">
                             <div class="isp-divider"></div>
-                            <div class="isp-section-label">Embedding Model <span class="isp-label-hint">— always runs locally</span></div>
+                            <div class="isp-section-label"><span class="idx">02</span>Embedding Model <span class="isp-label-hint">— always runs locally</span></div>
                             <p class="isp-section-sub">Powers semantic search across your saved contexts.</p>
                             <div class="isp-model-grid" id="embed-model-cards" role="radiogroup" aria-label="Embedding model"></div>
                         </div>
 
                         <div class="isp-footer">
+                            <span class="isp-footer-note">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                No data leaves your device
+                            </span>
                             <button class="isp-start-btn" id="start-install-btn" disabled type="button">
                                 <span class="isb-text">Start Installation</span>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -268,6 +294,11 @@
 
                     <!-- Progress Panel (shown after install starts) -->
                     <div class="inst-progress-panel" id="progress-panel">
+
+                        <div class="ipp-intro">
+                            <span class="isp-eyebrow">Setup <span class="sep">/</span> Installing</span>
+                            <h2 class="isp-title ipp-maintitle">Building your <span class="accent">workspace</span></h2>
+                        </div>
 
                         <div class="ipp-header">
                             <div class="ipp-meta">
@@ -736,7 +767,7 @@ function updateUI(s) {
         // ── Default data ───────────────────────────────────────────────────
 
         const DEFAULT_MODELS = [
-            { id: 'llama3.2:3b',  name: 'Llama 3.2 3B',  size: '~2 GB',   description: 'Recommended — strong JSON adherence, faithful summaries, 128k context', recommended: true },
+            { id: 'llama3.2:3b',  name: 'Llama 3.2 3B',  size: '~2 GB',   description: 'Strong JSON adherence, faithful summaries, 128k context', recommended: true },
             { id: 'qwen3:4b',     name: 'Qwen 3 4B',     size: '~2.6 GB', description: 'Highest quality — newest reasoning model, beats Qwen 2.5 7B at half the size', recommended: false },
             { id: 'qwen2.5:3b',   name: 'Qwen 2.5 3B',   size: '~2 GB',   description: 'Stable fallback — proven, multilingual, runs on most hardware', recommended: false },
             { id: 'qwen2.5:7b',   name: 'Qwen 2.5 7B',   size: '~5 GB',   description: 'High quality — richer summaries, needs 6 GB+ VRAM or 8 GB+ RAM', recommended: false },
@@ -744,7 +775,7 @@ function updateUI(s) {
         ];
 
         const DEFAULT_EMBED_MODELS = [
-            { id: 'qwen3-embedding:0.6b',  name: 'Qwen 3 Embedding 0.6B', size: '~640 MB', description: 'Recommended — current SOTA local retrieval, top of MTEB at this size', recommended: true },
+            { id: 'qwen3-embedding:0.6b',  name: 'Qwen 3 Embedding 0.6B', size: '~640 MB', description: 'Current SOTA local retrieval, top of MTEB at this size', recommended: true },
             { id: 'mxbai-embed-large',     name: 'MixedBread Large',  size: '~670 MB', description: 'High-quality English embeddings — strong semantic search accuracy', recommended: false },
             { id: 'nomic-embed-text',      name: 'Nomic Embed Text',  size: '~274 MB', description: 'Fast and accurate — small footprint, good baseline', recommended: false },
             { id: 'nomic-embed-text:v1.5', name: 'Nomic Embed v1.5',  size: '~274 MB', description: 'Improved Nomic with Matryoshka representation support', recommended: false },
@@ -767,11 +798,29 @@ function updateUI(s) {
             if (!window.pywebview?.api) return;
             _apiInitDone = true;
 
+            let savedExists = false;
             try {
                 const saved = await window.pywebview.api.get_saved_config();
-                if (saved.model)       selectedModel      = saved.model;
-                if (saved.embed_model) selectedEmbedModel = saved.embed_model;
+                savedExists = !!saved.exists;
+                if (savedExists) {
+                    if (saved.model)       selectedModel      = saved.model;
+                    if (saved.embed_model) selectedEmbedModel = saved.embed_model;
+                }
             } catch (e) { /* keep defaults */ }
+
+            // VRAM-aware recommendation: pick the model pair that fits this GPU.
+            // Only seeds the default selection on a fresh install (no saved config).
+            try {
+                if (window.pywebview.api.get_gpu_info) {
+                    const info = await window.pywebview.api.get_gpu_info();
+                    _renderGpuBanner(info);
+                    const rec = info && info.recommendation;
+                    if (!savedExists && rec) {
+                        if (rec.llm)   selectedModel      = rec.llm;
+                        if (rec.embed) selectedEmbedModel = rec.embed;
+                    }
+                }
+            } catch (e) { /* banner stays hidden */ }
 
             try {
                 const models = await window.pywebview.api.get_available_models();
@@ -784,11 +833,47 @@ function updateUI(s) {
             } catch (e) { /* keep defaults */ }
         }
 
+        function _renderGpuBanner(info) {
+            const banner = document.getElementById('gpu-banner');
+            if (!banner) return;
+            const gpu = (info && info.gpu) || {};
+            const rec = info && info.recommendation;
+            const titleEl  = document.getElementById('gpu-title');
+            const reasonEl = document.getElementById('gpu-reason');
+
+            if (gpu.detected) {
+                let label = gpu.name || 'GPU detected';
+                if (gpu.vram_mb) {
+                    const gb = Math.round((gpu.vram_mb / 1024) * 10) / 10;
+                    label += '  ·  ' + gb + ' GB VRAM';
+                }
+                titleEl.textContent = label;
+                banner.classList.remove('no-gpu');
+            } else {
+                titleEl.textContent = 'No dedicated GPU detected';
+                banner.classList.add('no-gpu');
+            }
+            reasonEl.textContent = (rec && rec.reason) || 'Recommending models that run well on your hardware.';
+            banner.style.display = '';
+        }
+
         window.addEventListener('pywebviewready', initialize);
         const _initPoll = setInterval(() => {
             if (_apiInitDone || installationStarted) { clearInterval(_initPoll); return; }
             initialize();
         }, 300);
+
+        // ── Custom title-bar window controls (frameless pywebview) ──────────
+        (function() {
+            function api() { return window.pywebview && window.pywebview.api; }
+            const minBtn   = document.getElementById('cv-win-min');
+            const closeBtn = document.getElementById('cv-win-close');
+            if (minBtn)   minBtn.addEventListener('click',   () => { api()?.cv_minimize?.(); });
+            if (closeBtn) closeBtn.addEventListener('click', () => { api()?.cv_close?.(); });
+            // mac detail: traffic lights go gray while the window is unfocused.
+            window.addEventListener('blur',  () => document.body.classList.add('cv-win-blurred'));
+            window.addEventListener('focus', () => document.body.classList.remove('cv-win-blurred'));
+        })();
 
         // ── Welcome splash transition ──────────────────────────────────────
         (function() {
@@ -812,8 +897,8 @@ function updateUI(s) {
                 if (e.target.closest('#inst-welcome')) dismiss();
             }
 
-            // Auto-dismiss after 2.8 s (logo-in 0.6s + name 0.5s + tag 0.4s + hold 1.3s)
-            setTimeout(dismiss, 2800);
+            // Auto-dismiss after 3.0 s (stage-in 0.85s + name 0.75s + tag/progress/hint + hold)
+            setTimeout(dismiss, 3000);
 
             // Also allow early skip by clicking the splash or pressing any key
             setTimeout(() => {

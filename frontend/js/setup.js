@@ -10,9 +10,18 @@ import { updateStatusIndicator } from './system.js';
 let setupInterval = null;
 let setupAttempts = 0;
 
+// Keep the wizard on screen for at least this long so the user can actually
+// see each check turn green. Without it, a warm stack (Ollama already running +
+// model present, or a cloud provider active) passes on the first immediate
+// check and the wizard vanishes before it's even perceptible.
+const MIN_WIZARD_MS = 1400;
+let _wizardShownAt = 0;
+let _transitioning = false;
+
 // Called from main.js init — the interval handle must be assigned here, in
 // the module that owns the binding.
 function startSetupPolling() {
+    _wizardShownAt = Date.now();
     setupInterval = setInterval(checkSetup, 2000);
 }
 
@@ -105,7 +114,22 @@ async function checkSetup() {
 }
 
 function transitionToApp() {
+    if (_transitioning) return;
+    _transitioning = true;
     if (setupInterval) { clearInterval(setupInterval); setupInterval = null; }
+
+    // Hold the wizard until the minimum display time has elapsed, so a warm
+    // stack doesn't make it flash by before the checks are readable.
+    const elapsed = Date.now() - _wizardShownAt;
+    const remaining = MIN_WIZARD_MS - elapsed;
+    if (remaining > 0) {
+        setTimeout(_doTransition, remaining);
+    } else {
+        _doTransition();
+    }
+}
+
+function _doTransition() {
     const wizard = $('#setup-wizard');
     wizard.style.transition = 'opacity 0.5s ease';
     wizard.style.opacity = '0';

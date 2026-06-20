@@ -35,6 +35,26 @@ PROJECT_ROOT = Path(__file__).parent.absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 from backend import paths as _paths  # noqa: E402  — must follow sys.path setup
 
+# ─── Crash logging (the launcher runs under pythonw.exe — no console, no
+# error dialog. Without this, any startup crash here vanishes silently and
+# neither the wizard nor the app appears.) ────────────────────────
+import logging  # noqa: E402
+import traceback  # noqa: E402
+
+logging.basicConfig(
+    filename=str(_paths.log_path()),
+    level=logging.ERROR,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+
+
+def _excepthook(exc_type, exc_value, exc_tb):
+    logging.error("Unhandled exception:\n" + "".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _excepthook
+
 
 def _find_ollama_binary():
     """Locate the ollama CLI across PATH and platform-specific install dirs.
@@ -926,7 +946,7 @@ def main():
     # exit before opening any GUI window. No effect on normal runs.
     if os.environ.get("CONTEXTVOLT_CI") == "1":
         import backend.main  # noqa: F401 — pulls in fastapi/uvicorn/pydantic/mcp/routes
-        import webview, numpy, sqlite_vec  # noqa: F401
+        import numpy, sqlite_vec  # noqa: F401 — webview already imported at module scope
         from backend.database import init_db
         init_db()
         print("CONTEXTVOLT_CI: bundled runtime import + db init OK")

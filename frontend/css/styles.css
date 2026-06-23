@@ -9357,6 +9357,110 @@ kbd {
     transition: color 0.18s;
 }
 
+/* ── Aside "Continuation prompt" card (B) ──────────────────────────────
+   Primary: size selectors + volt-filled Generate button. Secondary (below the
+   divider): "Continue in <source>" ghost button + inline alternate-LLM chips. */
+
+/* Size selector — full width above the primary Generate button. */
+.cv-act2 .cv-size-seg { display: flex; width: 100%; margin-top: 12px; }
+.cv-act2 .cv-size-seg button { flex: 1; text-align: center; }
+
+/* Primary action — Generate prompt (volt-filled, full width). */
+.cv-act2-primary {
+    width: 100%; margin-top: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 42px; padding: 0 16px; cursor: pointer;
+    border-radius: 9px;
+    background: var(--cv-volt);
+    color: #1a1200; font: 600 12.5px/1 var(--cv-body); white-space: nowrap;
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 70%, black);
+    box-shadow: 0 2px 16px var(--cv-volt-glow);
+    transition: background 0.14s, transform 0.08s, box-shadow 0.15s;
+}
+[data-theme="light"] .cv-act2-primary { color: #ffffff; }
+.cv-act2-primary svg { width: 13px; height: 13px; }
+.cv-act2-primary:hover { background: color-mix(in oklab, var(--cv-volt) 92%, white 8%); box-shadow: 0 3px 22px var(--cv-volt-glow); }
+.cv-act2-primary:active { transform: translateY(1px); }
+.cv-act2-primary:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+.cv-act2-primary .cv-act2-kbd { margin-left: auto; }
+
+/* Divider before the secondary "jump into a chat" section. */
+.cv-act2-divider { height: 1px; background: var(--cv-line); margin: 18px 0 16px; }
+.cv-act2-prompt-lbl {
+    display: block; margin-bottom: 10px;
+    font: 600 9.5px/1 var(--cv-mono); letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--cv-text-4);
+}
+
+/* Secondary action — Continue in <source> (ghost) + alternate-LLM chips. */
+.cv-dcontinue { position: relative; }
+.cv-act2-secondary {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 40px; padding: 0 14px; cursor: pointer;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--cv-line-2);
+    color: var(--cv-text-1); font: 600 12px/1 var(--cv-body); white-space: nowrap;
+    transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+[data-theme="light"] .cv-act2-secondary { background: rgba(0,0,0,0.02); }
+.cv-act2-secondary svg { width: 13px; height: 13px; }
+.cv-act2-secondary:hover { color: var(--cv-volt); border-color: color-mix(in oklab, var(--cv-volt) 40%, transparent); background: var(--cv-volt-dim); }
+
+.cv-dcontinue-alt { margin-top: 12px; }
+.cv-dcontinue-alt-lbl {
+    display: block; margin-bottom: 9px;
+    font: 600 9.5px/1 var(--cv-mono); letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--cv-text-4);
+}
+.cv-dcontinue-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-dcontinue-chip {
+    height: 28px; padding: 0 11px; cursor: pointer;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--cv-line-2);
+    color: var(--cv-text-2); font: 500 11.5px/1 var(--cv-body);
+    transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+[data-theme="light"] .cv-dcontinue-chip { background: rgba(0,0,0,0.02); }
+.cv-dcontinue-chip:hover {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 45%, transparent);
+    background: var(--cv-volt-dim);
+}
+/* Busy: dim the secondary controls, show the "preparing" note while it builds. */
+.cv-dcontinue-busy-label {
+    display: none; margin-top: 10px;
+    font: 400 11px/1.4 var(--cv-mono); color: var(--cv-text-3);
+}
+.cv-dcontinue-busy .cv-act2-secondary,
+.cv-dcontinue-busy .cv-dcontinue-alt { opacity: 0.45; pointer-events: none; }
+.cv-dcontinue-busy .cv-dcontinue-busy-label { display: block; }
+
+/* ── "Next steps" filler card (B) — fills the space a short summary leaves. */
+.cv-nextsteps-list { display: flex; flex-direction: column; gap: 8px; }
+.cv-nextstep {
+    width: 100%; display: inline-flex; align-items: center; gap: 10px;
+    height: 40px; padding: 0 13px; cursor: pointer; text-decoration: none;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--cv-line);
+    color: var(--cv-text-1); font: 500 12.5px/1 var(--cv-body);
+    transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+[data-theme="light"] .cv-nextstep { background: rgba(0,0,0,0.02); }
+.cv-nextstep svg { width: 15px; height: 15px; color: var(--cv-text-3); flex: none; transition: color 0.14s; }
+.cv-nextstep:hover {
+    color: var(--cv-volt);
+    border-color: color-mix(in oklab, var(--cv-volt) 38%, transparent);
+    background: var(--cv-volt-dim);
+}
+.cv-nextstep:hover svg { color: var(--cv-volt); }
+/* When a Next-step is also an external-thread link, keep the row consistent
+   (the generic .cv-source-link rule loads later and would tighten the gap). */
+.cv-nextstep.cv-source-link { gap: 10px; color: var(--cv-text-1); }
+.cv-nextstep.cv-source-link svg { opacity: 1; }
+.cv-nextstep.cv-source-link:hover { color: var(--cv-volt); }
+
 /* Keyboard shortcut chip */
 .cv-action-kbd {
     margin-left: auto;
@@ -9441,6 +9545,37 @@ kbd {
 [data-theme="light"] .cv-prompt-copy, [data-theme="light"] .cv-prompt-close {
     background: #ffffff; border-color: rgba(0,0,0,0.1); color: #3f3f46;
 }
+/* "Continue in…" — the primary, volt-accented action on the prompt sheet. */
+.cv-prompt-continue {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--cv-volt-dim);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 38%, transparent);
+    color: var(--cv-volt);
+    font: 600 11.5px/1 var(--cv-body);
+    padding: 6px 12px; border-radius: 6px;
+    cursor: pointer; transition: all 0.12s;
+}
+.cv-prompt-continue:hover { background: color-mix(in oklab, var(--cv-volt) 20%, transparent); border-color: color-mix(in oklab, var(--cv-volt) 55%, transparent); }
+.cv-prompt-continue svg { flex-shrink: 0; }
+/* The source service is flagged in the picker with a small "source" pill. */
+.cv-continue-src {
+    margin-left: 6px; padding: 1px 6px; border-radius: 100px;
+    font: 600 9px/1.4 var(--cv-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--cv-volt); background: var(--cv-volt-dim);
+    border: 1px solid color-mix(in oklab, var(--cv-volt) 30%, transparent);
+}
+/* Source → original thread links (rail meta + hero eyebrow). */
+.cv-source-link, .cv-ebadge-link { text-decoration: none; cursor: pointer; }
+.cv-source-link {
+    display: inline-flex; align-items: center; gap: 4px;
+    color: inherit; transition: color 0.12s;
+}
+.cv-source-link svg { opacity: 0.6; }
+.cv-source-link:hover { color: var(--cv-volt); }
+.cv-source-link:hover svg { opacity: 1; }
+.cv-ebadge-link { display: inline-flex; align-items: center; gap: 5px; transition: all 0.12s; }
+.cv-ebadge-link svg { opacity: 0.7; }
+.cv-ebadge-link:hover { border-color: color-mix(in oklab, var(--cv-volt) 55%, transparent); }
 .cv-prompt-out .prompt-display {
     margin: 0; padding: 14px 16px;
     background: transparent;
@@ -9476,6 +9611,75 @@ kbd {
 .cv-dmain .cv-insights { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 900px)  { .cv-dmain .cv-insights { grid-template-columns: 1fr; } }
 @media (min-width: 1500px) { .cv-dmain .cv-insights { grid-template-columns: repeat(3, 1fr); } }
+
+/* ── Insights · asymmetric spotlight (V2) ──────────────────────────────
+   Key ideas is the hero anchor; Conclusion + Open question stack in a tinted
+   accent rail. Tints reuse the existing semantic icon hues so it stays on-theme.
+   The .cv-spotlight selectors carry an extra class to outrank the grid rules
+   above at every breakpoint. */
+.cv-insights.cv-spotlight,
+.cv-dmain .cv-insights.cv-spotlight { grid-template-columns: 1.55fr 1fr; }
+.cv-insights.cv-spotlight.cv-spotlight--nohero,
+.cv-dmain .cv-insights.cv-spotlight.cv-spotlight--nohero { grid-template-columns: 1fr; }
+@media (max-width: 1100px) {
+    .cv-insights.cv-spotlight,
+    .cv-dmain .cv-insights.cv-spotlight { grid-template-columns: 1fr; }
+}
+
+/* Hero card — the anchor: taller, numbered list */
+.cv-insights.cv-spotlight .cv-ins2-hero { max-height: 520px; }
+.cv-ins2-hero .cv-list { counter-reset: cv-idea; gap: 9px; }
+.cv-ins2-hero .cv-list li { padding-left: 42px; }
+.cv-ins2-hero .cv-list li::before {
+    counter-increment: cv-idea;
+    content: counter(cv-idea, decimal-leading-zero);
+    left: 13px; top: 10px; width: auto; height: auto;
+    border-radius: 0; background: none; box-shadow: none;
+    font: 600 11px/1.55 var(--cv-mono); color: var(--cv-text-4);
+}
+
+/* Accent rail */
+.cv-ins2-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.cv-ins2-card { position: relative; }
+.cv-ins2-concl {
+    background: linear-gradient(180deg, color-mix(in oklab, oklch(0.78 0.18 145) 7%, var(--cv-surface)), var(--cv-surface));
+    border-color: color-mix(in oklab, oklch(0.78 0.18 145) 22%, var(--cv-line));
+}
+.cv-ins2-open {
+    background: linear-gradient(180deg, color-mix(in oklab, oklch(0.78 0.15 30) 7%, var(--cv-surface)), var(--cv-surface));
+    border-color: color-mix(in oklab, oklch(0.78 0.15 30) 22%, var(--cv-line));
+}
+[data-theme="light"] .cv-ins2-concl { background: linear-gradient(180deg, color-mix(in oklab, oklch(0.78 0.18 145) 9%, #fff), rgba(255,255,255,0.9)); }
+[data-theme="light"] .cv-ins2-open  { background: linear-gradient(180deg, color-mix(in oklab, oklch(0.78 0.15 30) 9%, #fff), rgba(255,255,255,0.9)); }
+.cv-ins2-concl .cv-list li::before { background: oklch(0.78 0.18 145); box-shadow: 0 0 8px color-mix(in oklab, oklch(0.78 0.18 145) 45%, transparent); }
+.cv-ins2-open  .cv-list li::before { background: oklch(0.78 0.15 30); box-shadow: 0 0 8px color-mix(in oklab, oklch(0.78 0.15 30) 45%, transparent); }
+
+/* Pick-up CTA — turns the open question into the next action */
+.cv-ins2-pickup {
+    margin-top: 13px; align-self: flex-start; flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 13px; border-radius: 9px; cursor: pointer;
+    background: color-mix(in oklab, oklch(0.78 0.15 30) 11%, transparent);
+    border: 1px solid color-mix(in oklab, oklch(0.78 0.15 30) 32%, transparent);
+    color: oklch(0.84 0.13 45); font: 600 12px/1 var(--cv-body);
+    transition: background 0.14s, border-color 0.14s, transform 0.08s;
+}
+.cv-ins2-pickup svg { width: 13px; height: 13px; }
+.cv-ins2-pickup:hover { background: color-mix(in oklab, oklch(0.78 0.15 30) 18%, transparent); border-color: color-mix(in oklab, oklch(0.78 0.15 30) 50%, transparent); }
+.cv-ins2-pickup:active { transform: translateY(1px); }
+
+/* Pulse the aside Continue card when "Pick up in a new chat" is clicked */
+@keyframes cv-continue-pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--cv-volt) 45%, transparent); }
+    70%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+.cv-continue-pulse { animation: cv-continue-pulse 1.3s var(--cv-ease); border-color: color-mix(in oklab, var(--cv-volt) 45%, var(--cv-line)) !important; }
+
+/* Keep the tinted borders on hover (the global .cv-dmain .cv-block:hover would
+   otherwise reset them to neutral). */
+.cv-dmain .cv-ins2-concl:hover { border-color: color-mix(in oklab, oklch(0.78 0.18 145) 35%, var(--cv-line)); }
+.cv-dmain .cv-ins2-open:hover  { border-color: color-mix(in oklab, oklch(0.78 0.15 30) 35%, var(--cv-line)); }
 
 /* ── Sticky aside: details / vitals / tags ────────────────── */
 .cv-daside {
@@ -14799,7 +15003,12 @@ body[data-view="detail"] .cv-lights::before { opacity: 1; }
 #view-detail.cv-main { padding-top: 0 !important; }
 
 /* ── Hero: one meta line + title + lede ── */
-.cv-dhero2 { padding: 2px 4px 16px; }
+/* The rail island is pinned 16px from the window (negative margins), so its
+   "‹ Library" content sits at a constant 16px + 18px island-padding = 34px from
+   the viewport. The hero lives in the view's normal gutter (clamp(14,3vw,40)),
+   which lands ~10px to the right → misaligned. Shift the hero left by the same
+   amount so the title/eyebrow share the back button's left edge at every width. */
+.cv-dhero2 { padding: 2px 4px 16px 0; margin-left: calc(34px - clamp(14px, 3vw, 40px)); }
 .cv-dhero-meta {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     margin-bottom: 10px;
@@ -14822,7 +15031,9 @@ body[data-view="detail"] .cv-lights::before { opacity: 1; }
     z-index: 40;
     display: flex; align-items: center; gap: 6px;
     padding: 6px 6px;
-    margin: 0 0 16px;
+    /* Match the rail island's width (pinned 16px from the window) so the two
+       stacked pills share the same left/right edges instead of being offset. */
+    margin: 0 calc(16px - clamp(14px, 3vw, 40px)) 16px;
     border-radius: 12px;
     background: color-mix(in oklab, var(--cv-bg-1, #0a0a0c) 86%, transparent);
     backdrop-filter: blur(12px);

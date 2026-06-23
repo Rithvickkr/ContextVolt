@@ -733,7 +733,19 @@ def main():
     def cv_start_resize(edge):
         _start_native_resize(edge)
 
-    window.expose(cv_minimize, cv_toggle_maximize, cv_close, cv_start_resize)
+    def cv_open_external(url):
+        # Open external links (e.g. "Continue in <LLM>", original conversation
+        # threads) in the user's default browser rather than inside the WebView2
+        # control. WebView2 suppresses unhandled window.open/target=_blank, so JS
+        # routes those through this bridge.
+        try:
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                import webbrowser
+                webbrowser.open(url)
+        except Exception:
+            logging.exception("cv_open_external failed for %r", url)
+
+    window.expose(cv_minimize, cv_toggle_maximize, cv_close, cv_start_resize, cv_open_external)
 
     def _setup_native_window():
         if sys.platform != "win32":

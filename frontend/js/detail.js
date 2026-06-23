@@ -2,12 +2,32 @@
 import { _askSimpleMarkdown } from './ask.js';
 import { _KNOWN_SOURCES } from './badges.js';
 import { _getCollectionForContext, setContextCollection } from './collections.js';
-import { $, API, escapeHtml, state } from './core.js';
+import { $, API, escapeHtml, openExternal, state } from './core.js';
 import { _timeAgo } from './dashboard.js';
 import { _showUndoToast, releaseFocus, showConfirm, showToast, trapFocus } from './dialogs.js';
 import { _commitDelete, _rerenderGrid } from './library.js';
 import { navigateTo } from './nav.js';
 import { _buildDetailStatusBanner, _kickGlobalPoll, startWorkerPolling } from './polling.js';
+
+// ─── LLM web apps ─────────────────────────────────────────────────────
+// Maps a captured source / detected model to its web chat app. `q` is the
+// new-chat URL query param that prefills the first message (null = the app has
+// no such param; we fall back to clipboard + a bare new-chat URL).
+const _LLM_SERVICES = {
+    chatgpt:    { label: 'ChatGPT',    newChat: 'https://chatgpt.com/',             q: 'q' },
+    claude:     { label: 'Claude',     newChat: 'https://claude.ai/new',            q: 'q' },
+    gemini:     { label: 'Gemini',     newChat: 'https://gemini.google.com/app',    q: null },
+    grok:       { label: 'Grok',       newChat: 'https://grok.com/',                q: 'q' },
+    deepseek:   { label: 'DeepSeek',   newChat: 'https://chat.deepseek.com/',       q: null },
+    perplexity: { label: 'Perplexity', newChat: 'https://www.perplexity.ai/search', q: 'q' },
+    copilot:    { label: 'Copilot',    newChat: 'https://copilot.microsoft.com/',   q: null },
+};
+
+// Normalise a model/source label ("ChatGPT", "AI Assistant") to a service key.
+function _serviceKey(label) {
+    const k = (label || '').toLowerCase().replace(/[^a-z]/g, '');
+    return _LLM_SERVICES[k] ? k : '';
+}
 // â”€â”€â”€ Context Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function showDetail(id) {
     // Show detail view immediately with a layout-shaped skeleton (avoids the
@@ -76,6 +96,11 @@ function renderDetail(ctx) {
     const source     = (ctx.tags || []).find(t => _KNOWN_SOURCES.includes(t)) || '';
     const aiModel    = _detectAIModel(ctx.tags);
     const starred    = !!ctx.starred;
+    // The exact thread this context was captured from (if the extension saved it),
+    // and the LLM web app it came from — used for the "open original" links and to
+    // default the "Continue in…" picker to the source service.
+    const convUrl    = (ctx.conversation_url || '').trim();
+    const srcKey     = _serviceKey(aiModel) || _serviceKey(source);
 
     // Derive quick metrics for the hero eyebrow + facts grid
     const chatText = ctx.original_chat || '';
@@ -119,18 +144,28 @@ function renderDetail(ctx) {
         bolt:   '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
         chunks: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
         redo:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>',
+        ext:    '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     };
-
-    // Eyebrow stays a glance (source + when); the full metrics live once, in the aside.
-    const eyebrowBits = [];
-    if (source) {
-        eyebrowBits.push(`<span class="cv-ebadge">${escapeHtml(source)}</span>`);
-        eyebrowBits.push(`<span class="cv-dot"></span>`);
-    }
-    eyebrowBits.push(`<span>${escapeHtml(timeAgo)}</span>`);
 
     // (The old aside Details rows are gone — model/turns/words live on the
     // hero facts line, created/updated in the overview Record card.)
+
+    // "Continue in…" picker — the source service (if known) leads, then the rest.
+    const continueKeys = [...new Set([srcKey, ...Object.keys(_LLM_SERVICES)].filter(Boolean))];
+    // In-sheet picker (a prompt is already generated): just open it.
+    const continueOptsHtml = continueKeys.map(k => {
+        const s = _LLM_SERVICES[k];
+        const isSrc = k === srcKey;
+        return `<button class="cv-export-opt" role="menuitem" onclick="continueInService('${k}'); cvCloseContinueMenu();">${escapeHtml(s.label)}${isSrc ? ' <span class="cv-continue-src">source</span>' : ''}</button>`;
+    }).join('');
+    // Aside primary target: the source service, or ChatGPT as a sensible default
+    // when the source isn't a known LLM; the rest become inline "open in" chips.
+    const primaryKey = srcKey || 'chatgpt';
+    const primaryLabel = _LLM_SERVICES[primaryKey].label;
+    const altChipsHtml = Object.keys(_LLM_SERVICES)
+        .filter(k => k !== primaryKey)
+        .map(k => `<button type="button" class="cv-dcontinue-chip" onclick="continueGenerate(${ctx.id}, '${k}')">${escapeHtml(_LLM_SERVICES[k].label)}</button>`)
+        .join('');
 
     container.innerHTML = `
         <!-- Rail: island matching the app navbar — back + meta + actions -->
@@ -140,9 +175,9 @@ function renderDetail(ctx) {
             </button>
             <div class="cv-rail-meta">
                 <span>Context <b>#${ctx.id}</b></span>
-                ${source ? `<span class="cv-rail-sep">·</span><span>${escapeHtml(source)}</span>` : ''}
-                <span class="cv-rail-sep">·</span>
-                <span>${escapeHtml(timeAgo)}</span>
+                ${source ? `<span class="cv-rail-sep">·</span>${convUrl
+                    ? `<a class="cv-source-link" href="${escapeHtml(convUrl)}" target="_blank" rel="noopener" title="Open the original ${escapeHtml(source)} conversation in a new tab">${escapeHtml(source)} ${icon.ext}</a>`
+                    : `<span>${escapeHtml(source)}</span>`}` : ''}
             </div>
             <div class="cv-rail-actions">
                 <button class="cv-ibtn${starred ? ' on' : ''}" id="cv-btn-pin"
@@ -169,7 +204,6 @@ function renderDetail(ctx) {
         <!-- Hero: one meta line + title + single lede -->
         <section class="cv-dhero cv-dhero2">
             <div class="cv-dhero-meta">
-                <div class="cv-dhero-eyebrow">${eyebrowBits.join('')}</div>
                 ${starred ? `<span class="cv-dhero-pin">★ pinned</span>` : ''}
                 <span class="cv-collection-inline cv-coll-dd${ctx.collection_id ? ' has-coll' : ''}" data-ctx="${ctx.id}">
                     <button type="button" class="cv-coll-dd-btn" aria-haspopup="listbox" aria-expanded="false" title="Move to a collection">
@@ -221,9 +255,9 @@ function renderDetail(ctx) {
             </div>` : ''}
 
             ${(keyIdeas.length || conclusions.length || unresolved.length) ? `
-            <div class="cv-insights">
+            <div class="cv-insights cv-spotlight${keyIdeas.length ? '' : ' cv-spotlight--nohero'}">
                 ${keyIdeas.length ? `
-                <div class="cv-block">
+                <div class="cv-block cv-ins2-hero">
                     <div class="cv-block-head">
                         <span class="cv-block-ic cv-ic-idea">${icon.idea}</span>
                         <h3>Key ideas</h3>
@@ -231,24 +265,27 @@ function renderDetail(ctx) {
                     </div>
                     <ul class="cv-list">${keyIdeas.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
                 </div>` : ''}
-                ${conclusions.length ? `
-                <div class="cv-block">
-                    <div class="cv-block-head">
-                        <span class="cv-block-ic cv-ic-done">${icon.done}</span>
-                        <h3>Conclusions</h3>
-                        <span class="cv-count">${conclusions.length}</span>
+                <div class="cv-ins2-side">
+                    ${conclusions.length ? `
+                    <div class="cv-block cv-ins2-card cv-ins2-concl">
+                        <div class="cv-block-head">
+                            <span class="cv-block-ic cv-ic-done">${icon.done}</span>
+                            <h3>${conclusions.length > 1 ? 'Conclusions' : 'Conclusion'}</h3>
+                            ${conclusions.length > 1 ? `<span class="cv-count">${conclusions.length}</span>` : ''}
+                        </div>
+                        <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+                    </div>` : ''}
+                    <div class="cv-block cv-ins2-card cv-ins2-open cv-block-open">
+                        <div class="cv-block-head">
+                            <span class="cv-block-ic cv-ic-open">${icon.open}</span>
+                            <h3>${unresolved.length > 1 ? 'Open questions' : 'Open question'}</h3>
+                            ${unresolved.length > 1 ? `<span class="cv-count">${unresolved.length}</span>` : ''}
+                        </div>
+                        ${unresolved.length
+                            ? `<ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+                               <button type="button" class="cv-ins2-pickup" onclick="cvFocusContinue()">${icon.bolt}<span>Pick up in a new chat</span></button>`
+                            : `<p class="cv-block-empty">No open questions — nothing left hanging.</p>`}
                     </div>
-                    <ul class="cv-list">${conclusions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
-                </div>` : ''}
-                <div class="cv-block cv-block-open">
-                    <div class="cv-block-head">
-                        <span class="cv-block-ic cv-ic-open">${icon.open}</span>
-                        <h3>Open questions</h3>
-                        ${unresolved.length ? `<span class="cv-count">${unresolved.length}</span>` : ''}
-                    </div>
-                    ${unresolved.length
-                        ? `<ul class="cv-list">${unresolved.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>`
-                        : `<p class="cv-block-empty">No open questions</p>`}
                 </div>
             </div>` : ''}
 
@@ -322,7 +359,7 @@ function renderDetail(ctx) {
 
           </div>
 
-          <!-- Sticky aside: continue (primary) + ask bridge + details + vitals -->
+          <!-- Sticky aside (B): compact Continue card + Next steps filler -->
           <aside class="cv-daside">
             <div class="cv-aside-card cv-act2" id="cv-action-card">
                 <div class="cv-aside-head">
@@ -331,22 +368,43 @@ function renderDetail(ctx) {
                 <p class="cv-act2-sub">Pack this conversation into a ready-to-paste prompt for any AI chat.</p>
                 <input type="text" id="retrieval-query" class="cv-action-input"
                        placeholder="Focus on… (optional)" />
+
                 <div class="cv-size-seg" id="cv-size-seg" role="tablist" aria-label="Prompt size">
                     <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="compact" data-hint="Compact · ~2,000 chars — fits 4k context windows">Compact</button>
                     <button class="prompt-size-btn on" role="tab" aria-selected="true" data-size="standard" data-hint="Standard · ~5,200 chars — fits most 8k context windows">Standard</button>
                     <button class="prompt-size-btn" role="tab" aria-selected="false" data-size="full" data-hint="Full · ~12,000 chars — for 16k+ context windows">Full</button>
                 </div>
-                <button class="cv-action-go" onclick="generatePrompt(${ctx.id}, this)">
-                    ${icon.bolt}<span>Generate</span><kbd class="cv-act2-kbd">Ctrl ↵</kbd>
+                <button class="cv-act2-primary" id="cv-generate-link" onclick="generatePrompt(${ctx.id}, this)">
+                    ${icon.bolt}<span>Generate prompt</span><kbd class="cv-act2-kbd">Ctrl ↵</kbd>
                 </button>
-                <span class="cv-action-hint" id="cv-action-hint">Standard · ~5,200 chars — fits most 8k context windows</span>
+
+                <div class="cv-act2-divider" aria-hidden="true"></div>
+
+                <div class="cv-dcontinue" id="cv-dcontinue">
+                    <span class="cv-act2-prompt-lbl">Or jump straight into a chat</span>
+                    <button type="button" class="cv-act2-secondary"
+                            onclick="continueGenerate(${ctx.id}, '${primaryKey}')"
+                            title="Build a full continuation prompt and open ${escapeHtml(primaryLabel)} in your browser">
+                        ${icon.ext}<span>Continue in ${escapeHtml(primaryLabel)}</span>
+                    </button>
+                    <span class="cv-dcontinue-busy-label">Preparing full prompt…</span>
+                    ${altChipsHtml ? `
+                    <div class="cv-dcontinue-alt">
+                        <span class="cv-dcontinue-alt-lbl">or open in</span>
+                        <div class="cv-dcontinue-chips">${altChipsHtml}</div>
+                    </div>` : ''}
+                </div>
             </div>
 
-            <div class="cv-aside-card cv-askbridge">
+            <div class="cv-aside-card cv-nextsteps">
                 <div class="cv-aside-head">
-                    <span class="cv-aside-eyebrow">Ask about this</span>
+                    <span class="cv-aside-eyebrow">Next steps</span>
                 </div>
-                <button class="cv-askbridge-go" id="cv-askbridge-go">Open in Ask Vault →</button>
+                <div class="cv-nextsteps-list">
+                    <button type="button" class="cv-nextstep" id="cv-askbridge-go">${icon.chat}<span>Ask about this context</span></button>
+                    ${convUrl ? `<a class="cv-nextstep cv-source-link" href="${escapeHtml(convUrl)}" target="_blank" rel="noopener">${icon.ext}<span>Open original ${escapeHtml(source || 'conversation')}</span></a>` : ''}
+                    <button type="button" class="cv-nextstep" onclick="exportContext('markdown')">${icon.export}<span>Export as Markdown</span></button>
+                </div>
             </div>
           </aside>
         </section>
@@ -358,6 +416,15 @@ function renderDetail(ctx) {
                     <h3 id="prompt-section-heading">Generated prompt</h3>
                     <span class="cv-prompt-stat" id="cv-prompt-stat"></span>
                     <div class="cv-prompt-out-acts">
+                        <div class="cv-continue-wrap" style="position:relative;">
+                            <button class="cv-prompt-continue" id="cv-continue-trigger" type="button"
+                                    onclick="cvToggleContinueMenu(event)" aria-haspopup="menu" aria-expanded="false"
+                                    title="Open a new chat with this prompt">
+                                ${icon.bolt}<span>Continue in…</span>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                            </button>
+                            <div class="cv-export-menu" id="cv-continue-menu" role="menu">${continueOptsHtml}</div>
+                        </div>
                         <button class="cv-prompt-copy" id="copy-prompt-btn" type="button">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                             <span>Copy</span>
@@ -406,7 +473,7 @@ function renderDetail(ctx) {
         focusInput.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                const goBtn = document.querySelector('.cv-action-go');
+                const goBtn = document.getElementById('cv-generate-link');
                 if (goBtn && !goBtn.disabled) goBtn.click();
             }
         });
@@ -625,6 +692,130 @@ function cvCloseExportMenu(refocus) {
 window.cvToggleExportMenu = cvToggleExportMenu;
 window.cvCloseExportMenu  = cvCloseExportMenu;
 
+// ─── "Continue in…" picker (prompt sheet) ─────────────────────────
+function cvToggleContinueMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('cv-continue-menu');
+    const trigger = document.getElementById('cv-continue-trigger');
+    if (!menu) return;
+    const open = menu.classList.toggle('open');
+    if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { const first = menu.querySelector('.cv-export-opt'); if (first) first.focus(); }
+}
+function cvCloseContinueMenu() {
+    const menu = document.getElementById('cv-continue-menu');
+    const trigger = document.getElementById('cv-continue-trigger');
+    if (menu) menu.classList.remove('open');
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+// Open a fresh chat in the chosen LLM web app, carrying a continuation prompt.
+// Prompts can be long, so the clipboard is the reliable transport (always
+// copied); when the app supports a prefill query param AND the encoded prompt is
+// short enough to survive URL-length limits, we also prefill it so the user
+// often lands with the prompt already typed. The actual open goes through the
+// pywebview bridge so it lands in the user's default browser, not the WebView.
+async function _openServiceWithPrompt(serviceKey, prompt) {
+    const svc = _LLM_SERVICES[serviceKey];
+    if (!svc) return;
+    let copied = false;
+    if (prompt) {
+        try { await navigator.clipboard.writeText(prompt); copied = true; } catch { /* clipboard blocked */ }
+    }
+    // Prefill via the app's ?q= param ONLY when the prompt is short enough to be
+    // safe. Long prompts can't ride in a URL: the LLM apps drop/ignore an oversized
+    // ?q=, and the Windows "open in browser" bridge (ShellExecute) has a command
+    // line length limit a long URL blows past — so the browser fails to launch.
+    // Continuation prompts are almost always long, so the reliable path is the
+    // clipboard: we copy, open a clean new chat, and the user pastes (Ctrl/⌘+V).
+    const PREFILL_MAX = 1600; // encoded chars — conservative, keeps the URL launchable
+    let url = svc.newChat;
+    let prefilled = false;
+    if (svc.q && prompt) {
+        const enc = encodeURIComponent(prompt);
+        if (enc.length <= PREFILL_MAX) {
+            url += (url.includes('?') ? '&' : '?') + svc.q + '=' + enc;
+            prefilled = true;
+        }
+    }
+    // The success toast lives in THIS window — once the browser grabs focus the
+    // user never sees it, so they'd land in a blank chat not knowing to paste.
+    // The first time we hand off via the clipboard, show an in-app explainer they
+    // must acknowledge before we open the browser. After that we trust they know.
+    if (prompt && copied && !prefilled && !_continueHowtoSeen()) {
+        const ok = await showConfirm({
+            title: `Continue in ${svc.label}`,
+            message: `The full prompt is now on your clipboard. We'll open a new ${svc.label} chat in your browser — paste it there with Ctrl/⌘+V and press Enter to pick up where you left off.`,
+            confirmLabel: `Open ${svc.label}`,
+        });
+        if (!ok) return;
+        try { localStorage.setItem(_CONTINUE_HOWTO_KEY, '1'); } catch { /* storage blocked */ }
+    }
+    openExternal(url);
+    if (!prompt) {
+        showToast(`Opening ${svc.label}`, 'success');
+    } else if (prefilled) {
+        showToast(`Opening ${svc.label} with your prompt prefilled.`, 'success');
+    } else if (copied) {
+        showToast(`Prompt copied — paste it into ${svc.label} (Ctrl/⌘+V).`, 'success');
+    } else {
+        showToast(`Opening ${svc.label} — copy the prompt manually.`, 'error');
+    }
+}
+
+// Remember once the user has seen the "paste into the new chat" explainer, so we
+// only interrupt the very first hand-off, not every continuation after.
+const _CONTINUE_HOWTO_KEY = 'cv-continue-howto-seen';
+function _continueHowtoSeen() {
+    try { return localStorage.getItem(_CONTINUE_HOWTO_KEY) === '1'; } catch { return false; }
+}
+
+// Sheet flow: a prompt has already been generated and shown — just open it.
+function continueInService(serviceKey) {
+    return _openServiceWithPrompt(serviceKey, state.currentPrompt || '');
+}
+
+// Main detail-page flow: generate the full continuation prompt on the fly (using
+// the optional focus query), copy it to the clipboard, then open a clean new chat
+// in the chosen LLM. One click → land in the chat, paste (Ctrl/⌘+V), send. We use
+// the full prompt because the clipboard has no length limit (unlike a URL).
+async function continueGenerate(id, serviceKey) {
+    const svc = _LLM_SERVICES[serviceKey];
+    if (!svc) return;
+    const card = document.getElementById('cv-dcontinue');
+    if (card) card.classList.add('cv-dcontinue-busy');
+    try {
+        const queryEl = document.getElementById('retrieval-query');
+        const query = queryEl ? queryEl.value.trim() : '';
+        await _requestPrompt(id, 'full', query);
+        await _openServiceWithPrompt(serviceKey, state.currentPrompt || '');
+    } catch (err) {
+        showToast('Failed to prepare the continuation prompt', 'error');
+    } finally {
+        if (card) card.classList.remove('cv-dcontinue-busy');
+    }
+}
+
+window.cvToggleContinueMenu = cvToggleContinueMenu;
+window.cvCloseContinueMenu  = cvCloseContinueMenu;
+window.continueInService    = continueInService;
+window.continueGenerate     = continueGenerate;
+
+// "Pick up in a new chat" from the Open questions card → bring the aside Continue
+// card into view and briefly pulse it, so the next action is obvious.
+function cvFocusContinue() {
+    const card = document.getElementById('cv-action-card');
+    if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('cv-continue-pulse');
+    void card.offsetWidth; // restart the animation if it's already played
+    card.classList.add('cv-continue-pulse');
+    setTimeout(() => card.classList.remove('cv-continue-pulse'), 1300);
+    const input = document.getElementById('retrieval-query');
+    if (input) setTimeout(() => { try { input.focus({ preventScroll: true }); } catch { input.focus(); } }, 380);
+}
+window.cvFocusContinue = cvFocusContinue;
+
 // ─── Pinned notes collapse (detail page) ─────────────────────────
 // Persisted so the choice sticks across re-renders / contexts. Defaults collapsed.
 function _pinnedOpen() {
@@ -646,6 +837,19 @@ window.cvToggleBlock = function(btn) {
 document.addEventListener('click', (e) => {
     if (!e.target.closest('#cv-export-menu') && !e.target.closest('[onclick*="cvToggleExportMenu"]')) {
         cvCloseExportMenu();
+    }
+    if (!e.target.closest('#cv-continue-menu') && !e.target.closest('[onclick*="cvToggleContinueMenu"]')) {
+        cvCloseContinueMenu();
+    }
+});
+
+// Original-thread badges (rail + hero eyebrow) must open in the user's default
+// browser, not navigate the WebView — intercept and route through the bridge.
+document.addEventListener('click', (e) => {
+    const link = e.target.closest('.cv-source-link, .cv-ebadge-link');
+    if (link && link.getAttribute('href')) {
+        e.preventDefault();
+        openExternal(link.href);
     }
 });
 // Keyboard nav for the open export menu: Esc closes (refocusing the trigger),
@@ -864,6 +1068,20 @@ function toggleOriginalChat() {
     }
 }
 
+// Request a continuation prompt from the backend and stash it on state.
+// Shared by the "Generate" preview button and the "Continue in…" flow.
+async function _requestPrompt(id, size, query) {
+    const res = await fetch(`${API}/api/contexts/${id}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query || null, size }),
+    });
+    if (!res.ok) throw new Error('Failed to generate prompt');
+    const data = await res.json();
+    state.currentPrompt = data.prompt;
+    return data.prompt;
+}
+
 async function generatePrompt(id, btn) {
     let originalHTML = '';
     if (btn) {
@@ -876,14 +1094,7 @@ async function generatePrompt(id, btn) {
         const size = activeSize ? activeSize.dataset.size : 'standard';
         const queryEl = document.getElementById('retrieval-query');
         const query = queryEl ? queryEl.value.trim() : '';
-        const res = await fetch(`${API}/api/contexts/${id}/prompt`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query || null, size }),
-        });
-        if (!res.ok) throw new Error('Failed to generate prompt');
-        const data = await res.json();
-        state.currentPrompt = data.prompt;
+        const data = { prompt: await _requestPrompt(id, size, query) };
 
         const section = $('#prompt-section');
         section.style.display = 'block';

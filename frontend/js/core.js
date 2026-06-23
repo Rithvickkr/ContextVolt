@@ -34,5 +34,14 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// Open a URL in the user's default browser. WebView2 suppresses unhandled
+// window.open/target=_blank, so route through the pywebview bridge when present;
+// fall back to window.open for a plain-browser dev session.
+function openExternal(url) {
+    if (!url) return;
+    const api = window.pywebview && window.pywebview.api;
+    if (api && api.cv_open_external) { api.cv_open_external(url); return; }
+    window.open(url, '_blank', 'noopener');
+}
 
-export { $, $$, API, escapeHtml, state };
+export { $, $$, API, escapeHtml, openExternal, state };

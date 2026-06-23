@@ -35,7 +35,7 @@ def build_mcp_app() -> FastAPI:
     """Construct the MCP-only ASGI app. Call once; serve on its own port."""
     app = FastAPI(
         title="ContextVolt MCP",
-        version="2.6.0",
+        version="2.6.1",
         lifespan=_lifespan,
         # No interactive docs / schema on the public surface.
         docs_url=None,

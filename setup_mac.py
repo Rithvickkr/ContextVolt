@@ -84,6 +84,13 @@ OPTIONS = {
         # anyio/sniffio are normally auto-discovered, but list the entry points
         # explicitly so a missed dynamic import can't drop them.
         "anyio",
+        # anyio picks its event-loop backend at runtime via
+        # importlib.import_module("anyio._backends._asyncio"), which py2app's
+        # static analyzer can't see — so the whole anyio/_backends/ package gets
+        # dropped and EVERY request 500s ("No module named 'anyio._backends'",
+        # since Starlette's BaseHTTPMiddleware needs the backend). Force them in.
+        "anyio._backends",
+        "anyio._backends._asyncio",
         "sniffio",
         "h11",
     ],

@@ -64,14 +64,19 @@ jobs:
           if [ ! -x "$APP" ]; then
             echo "Bundle executable not found at $APP"; ls -la dist/ContextVolt.app/Contents/MacOS; exit 1
           fi
-          # macOS ships no timeout(1) (it's GNU coreutils). Enforce a 60s ceiling
+          # macOS ships no timeout(1) (it's GNU coreutils). Enforce a 120s ceiling
           # portably via perl: alarm() survives exec and SIGALRM's default action
           # terminates the process, so a hung bundle fails the job instead of
-          # stalling the runner.
-          OUT=$(CONTEXTVOLT_CI=1 perl -e 'alarm shift; exec @ARGV' 60 "$APP" 2>&1) || {
+          # stalling the runner. (The smoke now boots the server + serves a
+          # request, which can wait on a missing-Ollama startup retry first.)
+          OUT=$(CONTEXTVOLT_CI=1 perl -e 'alarm shift; exec @ARGV' 120 "$APP" 2>&1) || {
             echo "Bundle launch failed:"; echo "$OUT"; exit 1
           }
           echo "$OUT"
+          # Require BOTH markers: the server must have actually served a request
+          # (proves the async/anyio runtime path), not just imported cleanly.
+          echo "$OUT" | grep -q "server served /api/health 200 OK" \
+            || { echo "Bundle started but did not serve a request — runtime broken"; exit 1; }
           echo "$OUT" | grep -q "bundled runtime import + db init OK" \
             || { echo "Expected CI marker not found"; exit 1; }
 

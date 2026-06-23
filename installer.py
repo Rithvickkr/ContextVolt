@@ -980,6 +980,37 @@ def main():
         import numpy, sqlite_vec  # noqa: F401 — webview already imported at module scope
         from backend.database import init_db
         init_db()
+        # Import + db init proves the modules are present, but it does NOT
+        # exercise the async request path — so a bundle missing a *runtime*
+        # dynamic import (e.g. anyio._backends._asyncio, which Starlette's
+        # BaseHTTPMiddleware loads on the first request) would still pass here yet
+        # 500 on every request in the real app. Boot the server and serve one
+        # request so that whole "clean build, broken at runtime" class fails CI.
+        import socket, threading, time, urllib.request
+        import uvicorn
+        _s = socket.socket()
+        _s.bind(("127.0.0.1", 0))
+        _ci_port = _s.getsockname()[1]
+        _s.close()
+        _server = uvicorn.Server(uvicorn.Config(
+            backend.main.app, host="127.0.0.1", port=_ci_port, log_level="warning"))
+        threading.Thread(target=_server.run, daemon=True).start()
+        _body = None
+        for _ in range(90):  # up to ~45s (startup may retry a missing Ollama first)
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:{_ci_port}/api/health", timeout=2) as _r:
+                    if _r.status == 200:
+                        _body = _r.read().decode("utf-8", "replace")
+                        break
+            except Exception:
+                pass
+            time.sleep(0.5)
+        _server.should_exit = True
+        if not _body or '"contextvolt"' not in _body:
+            print("CONTEXTVOLT_CI: server /api/health check FAILED", flush=True)
+            sys.exit(1)
+        print("CONTEXTVOLT_CI: server served /api/health 200 OK")
         print("CONTEXTVOLT_CI: bundled runtime import + db init OK")
         return
 

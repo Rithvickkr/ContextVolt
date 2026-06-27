@@ -204,7 +204,7 @@ async def _lifespan(_app: "FastAPI"):
     yield
 
 
-app = FastAPI(title="ContextVolt", version="2.6.1", lifespan=_lifespan)
+app = FastAPI(title="ContextVolt", version="2.7.0", lifespan=_lifespan)
 
 # Port of the loopback MCP-only app (backend.mcp_app), published by run.py. The
 # Cloudflare tunnel is pointed here — never at this app's own port — so remote

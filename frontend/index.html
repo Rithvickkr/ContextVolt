@@ -230,6 +230,19 @@
 
         <!-- Main Content -->
         <main class="main-content" id="main-content" aria-label="Main content">
+            <!-- GPU diagnostic banner — shown when inference lands on the integrated GPU -->
+            <div class="cv-gpu-banner" id="cv-gpu-banner" role="alert" hidden>
+                <svg class="cv-gpu-banner-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <div class="cv-gpu-banner-body">
+                    <span class="cv-gpu-banner-title">Running on integrated GPU</span>
+                    <span class="cv-gpu-banner-text" id="cv-gpu-banner-text"></span>
+                </div>
+                <button class="cv-gpu-banner-fix" id="cv-gpu-banner-fix" type="button">Switch to NVIDIA</button>
+                <button class="cv-gpu-banner-dismiss" id="cv-gpu-banner-dismiss" type="button" aria-label="Dismiss">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+
             <!-- Dashboard View -->
             <div class="view cv-main" id="view-input" role="region" aria-labelledby="view-input-heading">
 

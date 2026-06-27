@@ -8,6 +8,9 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
+import sys
 import time
 import requests
 
@@ -90,6 +93,24 @@ def _get_embed_model() -> str:
     except Exception:
         pass
     return "nomic-embed-text"
+
+
+def _embed_on_cpu() -> bool:
+    """Whether to force the embedding model onto CPU (config 'embed_on_cpu', default False).
+
+    Opt-in for small dedicated GPUs (~4 GB): keeping embeddings off the GPU frees
+    VRAM so the summarize/RAG LLM can stay fully resident, avoiding model-swap
+    churn. On capable GPUs leave it off so embedding stays fast on-device. Read at
+    call time so toggling it takes effect without a restart.
+    """
+    try:
+        with open(_CFG_PATH, "r", encoding="utf-8") as _f:
+            _cfg = json.load(_f)
+            if isinstance(_cfg, dict) and "embed_on_cpu" in _cfg:
+                return bool(_cfg["embed_on_cpu"])
+    except Exception:
+        pass
+    return False
 
 
 def _embed_prefix(model: str, is_query: bool) -> str:
@@ -376,6 +397,100 @@ def check_ollama_running() -> bool:
         return False
 
 
+def _find_ollama_binary() -> str | None:
+    """Locate the ollama CLI across PATH and platform-specific install dirs.
+
+    Returns the absolute path as a string, or None if not found.
+    """
+    found = shutil.which("ollama")
+    if found:
+        return found
+    if sys.platform == "win32":
+        candidate = os.path.join(
+            os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"
+        )
+        return candidate if os.path.exists(candidate) else None
+    for p in (
+        "/usr/local/bin/ollama",
+        "/opt/homebrew/bin/ollama",
+        "/Applications/Ollama.app/Contents/Resources/ollama",
+        os.path.expanduser("~/Applications/Ollama.app/Contents/Resources/ollama"),
+    ):
+        if os.path.exists(p):
+            return p
+    return None
+
+
+# Handle to the `ollama serve` process WE spawned (if any). Used by
+# stop_spawned_ollama() so we only ever shut down an Ollama instance ContextVolt
+# started — never one the user/tray was already running.
+_spawned_proc: "subprocess.Popen | None" = None
+
+
+def ensure_ollama_running(timeout: float = 12.0) -> bool:
+    """If Ollama is down, start `ollama serve` headless and wait for it to come up.
+
+    Best-effort: returns True if Ollama is (or becomes) reachable, False if no
+    binary is found or it doesn't come up within `timeout`. Safe to call from a
+    startup thread — never raises. The spawned server inherits OLLAMA_MODELS from
+    the environment (run.py sets it) so models resolve to the same dir as the app.
+
+    If Ollama is ALREADY running we leave it untouched and record nothing, so a
+    later stop_spawned_ollama() won't close an instance we didn't start.
+    """
+    if check_ollama_running():
+        return True
+    binary = _find_ollama_binary()
+    if not binary:
+        _log.warning("Ollama not running and no ollama binary found — cannot auto-start")
+        return False
+    kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if sys.platform == "win32":
+        # CREATE_NO_WINDOW alone — deliberately NOT combined with DETACHED_PROCESS.
+        # DETACHED_PROCESS leaves `ollama serve` with no console, so the model-runner
+        # subprocesses Ollama spawns (ollama_llama_server.exe) each allocate a brand-new
+        # console window → visible cmd flashes on every model load. CREATE_NO_WINDOW gives
+        # serve a hidden console its runner children inherit, so they never create windows.
+        # serve still survives our app exiting (Windows doesn't kill children on parent exit).
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    else:
+        kwargs["start_new_session"] = True
+
+    # Prefer a dedicated NVIDIA GPU over an integrated one for the Ollama instance
+    # WE launch. Ollama 0.30.x defaults Vulkan on and picks the device with the most
+    # free VRAM — on hybrid-GPU laptops that's the slower integrated GPU, leaving the
+    # NVIDIA card idle. Disabling Vulkan forces the CUDA path onto the NVIDIA card.
+    # Scoped to this spawned process only — never the user's system environment. Only
+    # when an NVIDIA GPU is present (iGPU-only users keep Vulkan, their only accel)
+    # and only when the user hasn't set OLLAMA_VULKAN themselves.
+    env = os.environ.copy()
+    if "OLLAMA_VULKAN" not in env and _prefer_dedicated_gpu():
+        try:
+            from backend.gpu_info import has_nvidia
+            if has_nvidia():
+                env["OLLAMA_VULKAN"] = "0"
+                _log.info("NVIDIA GPU detected — launching Ollama with OLLAMA_VULKAN=0 to prefer it")
+        except Exception:
+            pass
+    kwargs["env"] = env
+
+    try:
+        global _spawned_proc
+        _spawned_proc = subprocess.Popen([binary, "serve"], **kwargs)
+        _log.info("Started 'ollama serve' (%s, pid %s)", binary, _spawned_proc.pid)
+    except Exception as e:
+        _log.warning("Failed to spawn 'ollama serve': %s", e)
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if check_ollama_running():
+            _log.info("Ollama is up after auto-start")
+            return True
+        time.sleep(0.5)
+    _log.warning("Ollama did not become reachable within %.0fs of auto-start", timeout)
+    return False
+
+
 def check_model_available(model: str | None = None) -> bool:
     """Check if the specified model is already pulled."""
     model = model or _get_default_model()
@@ -611,14 +726,18 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     max_chars = _get_embed_max_chars(_model)
     # Chunks are stored documents → document-side prefix (is_query=False).
     doc_prefix = _embed_prefix(_model, is_query=False)
+    cpu_opts = {"num_gpu": 0} if _embed_on_cpu() else None  # resolve once per call
 
     for start in range(0, len(chunks), _EMBED_BATCH_SIZE):
         batch = chunks[start:start + _EMBED_BATCH_SIZE]
         texts = [doc_prefix + ch["text"][:max_chars] for ch in batch]
+        body = {"model": _model, "input": texts}
+        if cpu_opts:
+            body["options"] = cpu_opts
         try:
             r = _ollama_post(
                 f"{OLLAMA_BASE}/api/embed",
-                json={"model": _model, "input": texts},
+                json=body,
                 timeout=60,
             )
             r.raise_for_status()
@@ -1980,10 +2099,13 @@ def embed_text(text: str, model: str | None = None, is_query: bool = True,
     # the part that gets cut off.
     content = text[:_get_embed_max_chars(_model)]
     payload = _embed_prefix(_model, is_query) + content
+    body = {"model": _model, "input": payload, "keep_alive": keep_alive}
+    if _embed_on_cpu():
+        body["options"] = {"num_gpu": 0}
     try:
         r = _ollama_post(
             f"{OLLAMA_BASE}/api/embed",
-            json={"model": _model, "input": payload, "keep_alive": keep_alive},
+            json=body,
             timeout=30,
         )
         r.raise_for_status()
@@ -2002,6 +2124,142 @@ def warm_embed_model() -> bool:
     False (without raising) if Ollama is down or the model isn't installed.
     """
     return embed_text("warmup", is_query=True) is not None
+
+
+def _prefer_dedicated_gpu() -> bool:
+    """Whether to steer the Ollama we launch onto a dedicated NVIDIA GPU.
+
+    Read from config.json at call time (default True). The user can turn this off
+    if they'd rather keep inference on the integrated GPU — e.g. to leave a small
+    dedicated card free for gaming.
+    """
+    try:
+        with open(_CFG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+            if isinstance(cfg, dict) and "prefer_dedicated_gpu" in cfg:
+                return bool(cfg["prefer_dedicated_gpu"])
+    except Exception:
+        pass
+    return True
+
+
+def restart_ollama() -> dict:
+    """Stop any running Ollama and relaunch it via ensure_ollama_running().
+
+    User-initiated only (the 'Switch to NVIDIA' banner action). Relaunching is how
+    the OLLAMA_VULKAN=0 preference takes effect on a server that was already running
+    on the integrated GPU — env vars can't change under a live process. Best-effort;
+    returns the post-restart diagnostic.
+    """
+    try:
+        if sys.platform == "win32":
+            # Kill the tray app too ("ollama app.exe") so it can't immediately
+            # respawn a server without our env before we launch our own.
+            for image in ("ollama app.exe", "ollama.exe"):
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", image],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+        else:
+            # Scope to the server specifically — "ollama serve" is in its argv, so
+            # this won't catch the Ollama.app GUI or unrelated processes the way a
+            # bare "ollama" pattern would.
+            subprocess.run(
+                ["pkill", "-f", "ollama serve"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except Exception as e:
+        _log.warning("restart_ollama: kill step failed: %s", e)
+    time.sleep(1.0)  # let the OS release port 11434
+    ensure_ollama_running(timeout=20.0)
+    return gpu_usage_diagnostic()
+
+
+def stop_spawned_ollama() -> bool:
+    """Stop the Ollama server ONLY if ContextVolt started it.
+
+    Called on app shutdown. If Ollama was already running when we launched (the
+    user or its tray started it), `_spawned_proc` is None and we leave it alone —
+    it isn't ours to close. Idempotent and never raises.
+    """
+    global _spawned_proc
+    proc = _spawned_proc
+    _spawned_proc = None
+    if proc is None:
+        return False
+    try:
+        if proc.poll() is not None:
+            return False  # already exited
+        if sys.platform == "win32":
+            # /T kills the runner children (ollama_llama_server.exe) too, so none
+            # are orphaned after serve dies.
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        else:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+        _log.info("Stopped ContextVolt-spawned Ollama (pid %s) on exit", proc.pid)
+        return True
+    except Exception as e:
+        _log.warning("Failed to stop spawned Ollama: %s", e)
+        return False
+
+
+def _models_loaded() -> bool:
+    """True if Ollama currently has at least one model resident (via /api/ps)."""
+    try:
+        r = requests.get(f"{OLLAMA_BASE}/api/ps", timeout=3)
+        if r.status_code == 200:
+            return bool(r.json().get("models"))
+    except Exception:
+        pass
+    return False
+
+
+def gpu_usage_diagnostic() -> dict:
+    """Detect whether a loaded model is actually running on the NVIDIA GPU.
+
+    Hybrid-GPU laptops can end up running inference on the integrated GPU (via
+    Ollama's Vulkan backend) while a faster NVIDIA card sits idle. We flag that
+    with a version-independent signal: an NVIDIA GPU is present and a model is
+    loaded, yet no ollama process appears in nvidia-smi's compute-app list.
+
+    Returns a dict the UI can render as a banner. `warn` is True only when we are
+    confident inference is NOT on the NVIDIA card; `using_nvidia` is None when
+    nvidia-smi can't tell. Never raises.
+    """
+    nvidia = False
+    on_nvidia: bool | None = None
+    try:
+        from backend.gpu_info import has_nvidia, nvidia_running_ollama
+        nvidia = has_nvidia()
+        if nvidia:
+            on_nvidia = nvidia_running_ollama()
+    except Exception:
+        pass
+
+    model_loaded = _models_loaded()
+    warn = bool(nvidia and model_loaded and on_nvidia is False)
+    detail = (
+        "A model is loaded but Ollama isn't using your NVIDIA GPU — it's likely "
+        "running on your integrated GPU. Restart Ollama with OLLAMA_VULKAN=0 to "
+        "prefer the NVIDIA card."
+    ) if warn else ""
+
+    return {
+        "nvidia_present": nvidia,
+        "model_loaded": model_loaded,
+        "using_nvidia": on_nvidia,
+        "warn": warn,
+        "detail": detail,
+    }
 
 
 _THINK_BLOCK_RE = re.compile(r'<think>[\s\S]*?</think>\s*', re.IGNORECASE)

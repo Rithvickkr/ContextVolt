@@ -11,7 +11,7 @@ import { _initNotifCenter } from './notifications.js';
 import { _deleteCloudKey, _initMcpServerPanelHandlers, _initSettingsHint, _initTunnelPanelHandlers, _validateCloudKey, closeSettingsModal, openSettingsModal, saveSettings } from './settings.js';
 import { checkSetup, setupInterval, startSetupPolling, transitionToApp } from './setup.js';
 import { _initSidebarTooltips, setTheme, toggleSidebar } from './shell.js';
-import { _switchSystemTab, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, setLogLevel, updateStatusIndicator } from './system.js';
+import { _switchSystemTab, checkGpuDiagnostic, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, setLogLevel, updateStatusIndicator } from './system.js';
 import { _initUpdatePanel } from './updates.js';
 
 // â”€â”€â”€ Global error handler — prevents silent freezes in pywebview â”€â”€
@@ -453,6 +453,17 @@ document.addEventListener('DOMContentLoaded', () => {
             updateStatusIndicator(false);
         }
     }, 30000);
+
+    // GPU diagnostic — check shortly after load (catches the startup embed warm-load),
+    // a few times, then STOP. No forever-polling: the GPU a model runs on is fixed when
+    // Ollama loads it, so there's nothing to watch continuously — and each check shells
+    // out to nvidia-smi, so an infinite loop spawns a process every tick.
+    checkGpuDiagnostic();
+    let _gpuChecks = 0;
+    const _gpuTimer = setInterval(() => {
+        checkGpuDiagnostic();
+        if (++_gpuChecks >= 4) clearInterval(_gpuTimer);
+    }, 15000);
 });
 
 // Expose to global for inline onclick handlers

@@ -807,6 +807,15 @@ def main():
     # private_mode forces a clean cache — bust WebView2's stale index.html.
     _debug = os.environ.get("CONVX_DEBUG") == "1"
     webview.start(debug=_debug, private_mode=True)
+
+    # Window closed — shut down Ollama IF ContextVolt started it. A user/tray-started
+    # Ollama is left running (it isn't ours to close). No-op when we didn't spawn one.
+    try:
+        from backend.ollama_client import stop_spawned_ollama
+        stop_spawned_ollama()
+    except Exception:
+        logging.exception("Failed to stop spawned Ollama on exit")
+
     sys.exit(0)
 
 

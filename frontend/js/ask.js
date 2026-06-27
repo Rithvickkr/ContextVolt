@@ -831,96 +831,129 @@ function _askRemoveThinking() {
 }
 
 function _askSimpleMarkdown(text) {
-    // Convert basic markdown to HTML
-    let html = escapeHtml(text);
+    const src0 = String(text == null ? '' : text);
 
-    // Code blocks: ```lang\n...\n```
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-        return `<pre><code class="language-${lang}">${code}</code></pre>`;
+    // 1) Stash fenced + inline code FIRST, behind placeholders, so the inline
+    //    rules below (bold/italic/links) can never reformat code content —
+    //    a `**` or `[x](y)` inside a code sample must stay literal. Code is
+    //    HTML-escaped as it's stashed.
+    const codeStore = [];
+    const stash = (h) => ` C${codeStore.push(h) - 1} `;
+    let src = src0.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+        const cls = lang ? ` class="language-${lang}"` : '';
+        return `\n${stash(`<pre><code${cls}>${escapeHtml(code.replace(/\n$/, ''))}</code></pre>`)}\n`;
     });
+    src = src.replace(/`([^`\n]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`));
 
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // 2) Escape the rest — the model never emits trusted HTML.
+    let html = escapeHtml(src);
 
-    // Bold
+    // 3) Inline formatting (on escaped text, code already stashed out).
+    // Links: [label](http/https/mailto) only — bare [n] citations are left for
+    // _askLinkifyCitations, which runs afterward and matches just [digits].
+    html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+        (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
+    html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-    // Italic (but not if part of a list marker **)
-    html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+    // 4) Block-level line-walk: headings, hr, blockquotes, ordered/unordered
+    //    lists, GFM tables, paragraphs. Single pass (no catastrophic regex).
+    const lines = html.split('\n');
+    const out = [];
+    let listType = null;   // 'ul' | 'ol' | null
+    let inQuote = false;
+    let para = [];
 
-    // Unordered + numbered list markers → <li>
-    html = html.replace(/^[-â€¢*]\s+(.+)$/gm, '<li>$1</li>');
-    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    const splitRow = (s) => {
+        let t = s.trim();
+        if (t.startsWith('|')) t = t.slice(1);
+        if (t.endsWith('|'))   t = t.slice(0, -1);
+        return t.split('|').map(c => c.trim());
+    };
+    const isRow = (s) => s.includes('|') && s.trim() !== '';
+    const isSep = (s) => {
+        if (!s.includes('|')) return false;
+        const cells = splitRow(s);
+        return cells.length >= 1 && cells.every(c => /^:?-{2,}:?$/.test(c.replace(/\s+/g, '')));
+    };
 
-    // Tables + lists — single line-walk (no catastrophic regex backtracking).
-    {
-        const lines = html.split('\n');
-        const out = [];
-        let inList = false;
+    const flushPara  = () => { if (para.length) { out.push(`<p>${para.join('<br>')}</p>`); para = []; } };
+    const closeList  = () => { if (listType) { out.push(`</${listType}>`); listType = null; } };
+    const closeQuote = () => { if (inQuote) { out.push('</blockquote>'); inQuote = false; } };
+    const closeBlocks = () => { flushPara(); closeList(); closeQuote(); };
 
-        const splitRow = (s) => {
-            let t = s.trim();
-            if (t.startsWith('|')) t = t.slice(1);
-            if (t.endsWith('|'))   t = t.slice(0, -1);
-            return t.split('|').map(c => c.trim());
-        };
-        const isRow = (s) => s.includes('|') && s.trim() !== '';
-        // A GFM separator row: every pipe-cell is dashes (with optional :align:)
-        const isSep = (s) => {
-            if (!s.includes('|')) return false;
-            const cells = splitRow(s);
-            return cells.length >= 1 && cells.every(c => /^:?-{2,}:?$/.test(c.replace(/\s+/g, '')));
-        };
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const t = line.trim();
 
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+        // Blank line — break the current paragraph / list / quote.
+        if (t === '') { closeBlocks(); continue; }
 
-            // GFM table: header row, then |---|---| separator, then 0+ body rows
-            if (isRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {
-                if (inList) { out.push('</ul>'); inList = false; }
-                const headers = splitRow(line);
-                i += 1; // consume the separator row
-                const rows = [];
-                while (i + 1 < lines.length && isRow(lines[i + 1]) && !isSep(lines[i + 1])) {
-                    rows.push(splitRow(lines[i + 1]));
-                    i += 1;
-                }
-                let tbl = '<table class="cv-md-table"><thead><tr>';
-                tbl += headers.map(h => `<th>${h}</th>`).join('');
-                tbl += '</tr></thead><tbody>';
-                for (const r of rows) {
-                    tbl += '<tr>' + headers.map((_, c) => `<td>${r[c] || ''}</td>`).join('') + '</tr>';
-                }
-                tbl += '</tbody></table>';
-                out.push(tbl);
-                continue;
+        // A stashed fenced code block sits on its own line — emit as a block.
+        if (/^ C\d+ $/.test(t)) { closeBlocks(); out.push(t); continue; }
+
+        // GFM table: header row, then |---|---| separator, then 0+ body rows.
+        if (isRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {
+            closeBlocks();
+            const headers = splitRow(line);
+            i += 1; // consume the separator
+            const rows = [];
+            while (i + 1 < lines.length && isRow(lines[i + 1]) && !isSep(lines[i + 1])) {
+                rows.push(splitRow(lines[i + 1])); i += 1;
             }
-
-            const isLi = line.startsWith('<li>') && line.endsWith('</li>');
-            if (isLi && !inList) { out.push('<ul>'); inList = true; }
-            else if (!isLi && inList) { out.push('</ul>'); inList = false; }
-            out.push(line);
+            let tbl = '<table class="cv-md-table"><thead><tr>'
+                    + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+            for (const r of rows) tbl += '<tr>' + headers.map((_, c) => `<td>${r[c] || ''}</td>`).join('') + '</tr>';
+            out.push(tbl + '</tbody></table>');
+            continue;
         }
-        if (inList) out.push('</ul>');
-        html = out.join('\n');
+
+        // Heading (#–######).
+        let m = t.match(/^(#{1,6})\s+(.+)$/);
+        if (m) { closeBlocks(); const l = m[1].length; out.push(`<h${l} class="cv-md-h">${m[2]}</h${l}>`); continue; }
+
+        // Horizontal rule (a line of only ---, ***, or ___).
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { closeBlocks(); out.push('<hr class="cv-md-hr">'); continue; }
+
+        // Blockquote (> was escaped to &gt;).
+        m = t.match(/^&gt;\s?(.*)$/);
+        if (m) {
+            flushPara(); closeList();
+            if (!inQuote) { out.push('<blockquote class="cv-md-quote">'); inQuote = true; }
+            if (m[1]) out.push(`<p>${m[1]}</p>`);
+            continue;
+        }
+        closeQuote(); // any non-quote line ends an open quote
+
+        // Ordered list.
+        m = t.match(/^\d+\.\s+(.+)$/);
+        if (m) {
+            flushPara();
+            if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+            out.push(`<li>${m[1]}</li>`);
+            continue;
+        }
+
+        // Unordered list.
+        m = t.match(/^[-*•]\s+(.+)$/);
+        if (m) {
+            flushPara();
+            if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+            out.push(`<li>${m[1]}</li>`);
+            continue;
+        }
+
+        // Plain prose — accumulate; consecutive lines join with <br>.
+        closeList();
+        para.push(t);
     }
+    closeBlocks();
 
-    // Line breaks â†’ paragraphs
-    html = html.replace(/\n\n+/g, '</p><p>');
-    html = html.replace(/\n/g, '<br>');
-    html = `<p>${html}</p>`;
+    html = out.join('\n');
 
-    // Clean up empty paragraphs
-    html = html.replace(/<p><\/p>/g, '');
-    html = html.replace(/<p>(<pre>)/g, '$1');
-    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<ul>)/g, '$1');
-    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<table)/g, '$1');
-    html = html.replace(/(<\/table>)<\/p>/g, '$1');
-    html = html.replace(/<br>(<table)/g, '$1');
-    html = html.replace(/(<\/table>)<br>/g, '$1');
-
+    // 5) Restore stashed code now that all formatting is done.
+    html = html.replace(/ C(\d+) /g, (_, i) => codeStore[Number(i)] || '');
     return html;
 }
 

@@ -189,8 +189,18 @@ async def _lifespan(_app: "FastAPI"):
     # is down or the model is missing, warm_embed_model() just returns False and
     # search falls back to keyword as usual.
     import threading as _threading
-    from backend.ollama_client import warm_embed_model as _warm_embed_model
-    _threading.Thread(target=_warm_embed_model, daemon=True).start()
+    from backend.ollama_client import (
+        ensure_ollama_running as _ensure_ollama_running,
+        warm_embed_model as _warm_embed_model,
+    )
+
+    def _startup_warm() -> None:
+        # Auto-start Ollama if the user closed it, THEN warm the embed model
+        # (warming needs Ollama up). Both are best-effort and never raise.
+        _ensure_ollama_running()
+        _warm_embed_model()
+
+    _threading.Thread(target=_startup_warm, daemon=True).start()
     yield
 
 
@@ -313,6 +323,32 @@ def setup_status():
         "model_ready": model_ready,
         "model_name": current_model,
     }
+
+
+@app.get("/api/gpu/diagnostic")
+def gpu_diagnostic():
+    """Report whether a loaded model is actually running on the NVIDIA GPU.
+
+    Lets the UI warn hybrid-GPU laptop users when inference landed on the
+    integrated GPU instead of a faster dedicated NVIDIA card. Best-effort.
+    """
+    from backend.ollama_client import gpu_usage_diagnostic
+    return gpu_usage_diagnostic()
+
+
+@app.post("/api/gpu/prefer-nvidia")
+def gpu_prefer_nvidia():
+    """Persist the NVIDIA preference and relaunch Ollama so it takes effect now.
+
+    Backs the 'Switch to NVIDIA' banner action — explicit, user-initiated, so the
+    Ollama restart (which it implies) is consented. Returns the post-restart
+    diagnostic for the UI to confirm.
+    """
+    cfg = _read_config()
+    cfg["prefer_dedicated_gpu"] = True
+    _write_config(cfg)
+    from backend.ollama_client import restart_ollama
+    return restart_ollama()
 
 
 @app.post("/api/setup/pull-model")
@@ -548,6 +584,7 @@ def get_config():
         "user_about": cfg.get("user_about", ""),
         "gpu": gpu,
         "recommendation": rec,
+        "prefer_dedicated_gpu": cfg.get("prefer_dedicated_gpu", True),
     }
 
 
@@ -2043,14 +2080,15 @@ def api_vault_ask(body: dict):
             turns.append(f"{role}: {msg.get('content', '')}")
         history_text = "\n".join(turns)
 
-    system_prompt = f"""You are ContextVolt Assistant — an AI that answers questions using the user's saved conversation history.
+    system_prompt = f"""You are ContextVolt Assistant. You answer the user's question using ONLY the retrieved excerpts from their saved conversations below.
 
 RULES:
-- Answer using ONLY the retrieved context below. Do not make up information.
-- If the context doesn't have relevant information, say: "I don't have information about that in your vault."
+- The excerpts are REFERENCE MATERIAL from past chats. Do NOT copy their wording, tone, persona, or formatting, and never role-play a voice from them (e.g. addressing the user as "Boss"). Write in your own neutral voice.
+- Answer the user's CURRENT question directly and nothing else. For a yes/no question, begin with "Yes" or "No".
+- Use ONLY facts present in the excerpts. Never invent details, names, features, or numbers. If the excerpts don't actually address the question, reply exactly: "I don't have information about that in your vault." — even if an excerpt is loosely related.
 - Cite sources inline using the bracketed numbers from the context blocks, e.g. [1] or [2][3], placed right after the claim they support.
-- Be concise but thorough. Use markdown formatting for code blocks, lists, etc.
-- If multiple conversations discuss the same topic, synthesize the information.
+- Be concise. Use markdown (lists, code blocks) only when it helps.
+- If multiple excerpts genuinely discuss the same topic, synthesize them — but never merge unrelated topics to force an answer.
 
 <retrieved_context>
 {retrieved_context}

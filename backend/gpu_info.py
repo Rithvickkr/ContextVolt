@@ -103,6 +103,30 @@ def detect_gpu() -> dict:
     return {"detected": True, "name": name, "vram_mb": vram_mb, "source": source}
 
 
+def _is_nvidia(gpu: dict) -> bool:
+    """True if the detected GPU is an NVIDIA card."""
+    return gpu.get("source") == "nvidia-smi" or "nvidia" in (gpu.get("name") or "").lower()
+
+
+def has_nvidia() -> bool:
+    """True if an NVIDIA GPU is present on this machine (cached via detect_gpu)."""
+    return bool(_is_nvidia(detect_gpu()))
+
+
+def nvidia_running_ollama() -> bool | None:
+    """Whether an ollama process is currently computing on the NVIDIA GPU.
+
+    Uses nvidia-smi's compute-app list — a version-independent signal that
+    distinguishes "running on the NVIDIA card" from "running on the integrated
+    GPU (via Vulkan)". Returns True/False, or None when nvidia-smi is
+    unavailable (can't tell). Not cached — reflects live GPU state.
+    """
+    out = _run(["nvidia-smi", "--query-compute-apps=process_name", "--format=csv,noheader"])
+    if out is None:
+        return None
+    return any("ollama" in line.lower() for line in out.splitlines())
+
+
 # ── VRAM tiers ────────────────────────────────────────────────────────────────
 # Peak GPU footprint of each pair when both are loaded simultaneously (Ollama
 # loads weights + KV cache + compute graph). Numbers measured on RTX 3050 4GB

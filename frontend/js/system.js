@@ -16,6 +16,59 @@ function updateStatusIndicator(online, label) {
     }
 }
 
+// ─── GPU diagnostic banner ──────────────────────────────────────────────────
+// Warns hybrid-GPU laptop users when inference landed on the integrated GPU
+// instead of a faster dedicated NVIDIA card. Dismissal is per-session so we
+// don't nag, but it re-checks on the next launch.
+let _gpuBannerWired = false;
+
+function _wireGpuBanner() {
+    if (_gpuBannerWired) return;
+    _gpuBannerWired = true;
+    const dismiss = $('#cv-gpu-banner-dismiss');
+    const fix = $('#cv-gpu-banner-fix');
+    if (dismiss) dismiss.addEventListener('click', () => {
+        sessionStorage.setItem('cv-gpu-banner-dismissed', '1');
+        $('#cv-gpu-banner').hidden = true;
+    });
+    if (fix) fix.addEventListener('click', async () => {
+        if (fix.disabled) return;
+        fix.disabled = true;
+        const original = fix.textContent;
+        fix.textContent = 'Switching…';
+        try {
+            const res = await fetch(`${API}/api/gpu/prefer-nvidia`, { method: 'POST' });
+            if (!res.ok) throw new Error();
+            $('#cv-gpu-banner').hidden = true;
+            showToast('Ollama restarted — it will use your NVIDIA GPU now', 'success');
+        } catch {
+            showToast('Could not restart Ollama automatically — try restarting it manually', 'error');
+        } finally {
+            fix.textContent = original;
+            fix.disabled = false;
+        }
+    });
+}
+
+async function checkGpuDiagnostic() {
+    const banner = $('#cv-gpu-banner');
+    if (!banner) return;
+    if (sessionStorage.getItem('cv-gpu-banner-dismissed')) return;
+    try {
+        const res = await fetch(`${API}/api/gpu/diagnostic`);
+        if (!res.ok) return;
+        const d = await res.json();
+        if (d.warn) {
+            const textEl = $('#cv-gpu-banner-text');
+            if (textEl) textEl.textContent = d.detail || 'Your NVIDIA GPU is idle while a model runs on the integrated GPU.';
+            _wireGpuBanner();
+            banner.hidden = false;
+        } else {
+            banner.hidden = true;
+        }
+    } catch { /* backend unreachable — leave banner as-is */ }
+}
+
 // â”€â”€â”€ Rebuild Embeddings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function rebuildEmbeddings() {
     const btn = $('#btn-rebuild-embeddings');
@@ -383,4 +436,4 @@ async function downloadBackup() {
 }
 
 
-export { _switchSystemTab, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, restartBackend, setLogLevel, updateStatusIndicator };
+export { _switchSystemTab, checkGpuDiagnostic, closeSystemModal, downloadBackup, filterLogs, loadSystemLogs, openSystemModal, rebuildEmbeddings, restartBackend, setLogLevel, updateStatusIndicator };

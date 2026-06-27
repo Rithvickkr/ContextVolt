@@ -125,14 +125,107 @@ function _cvRenderList() {
     list.querySelectorAll('[data-dismiss]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const id = btn.getAttribute('data-dismiss');
-            _cvNotifs = _cvNotifs.filter(n => n.id !== id);
-            _cvSaveNotifs();
-            _cvRenderList();
-            _cvRenderBadge();
+            _cvDismiss(btn.getAttribute('data-dismiss'));
         });
     });
+    _cvBindSwipe(list);
 }
+
+// Animate a single item out, then remove it from the store.
+function _cvDismiss(id) {
+    const el = document.querySelector(`.cv-notif-item[data-nid="${id}"]`);
+    if (!el) {
+        _cvNotifs = _cvNotifs.filter(n => n.id !== id);
+        _cvSaveNotifs(); _cvRenderBadge();
+        return;
+    }
+    if (el.dataset.removing) return;
+    el.dataset.removing = '1';
+    // Lock height so the collapse animates smoothly.
+    el.style.height = el.offsetHeight + 'px';
+    // Drop any inline transform/opacity left over from a swipe so the
+    // .removing class controls the exit animation.
+    el.style.transform = '';
+    el.style.opacity = '';
+    // force reflow so the height is committed before we collapse
+    void el.offsetHeight;
+    el.classList.add('removing');
+    el.style.height = '0px';
+    const finish = () => {
+        el.removeEventListener('transitionend', finish);
+        _cvNotifs = _cvNotifs.filter(n => n.id !== id);
+        _cvSaveNotifs();
+        _cvRenderBadge();
+        const list = el.parentElement;
+        el.remove();
+        // Show the empty state if nothing is left.
+        if (list && !list.children.length) _cvRenderList();
+        else { const c = document.getElementById('cv-notify-count'); if (c) c.textContent = String(_cvNotifs.length); }
+    };
+    el.addEventListener('transitionend', finish);
+    // Safety net in case transitionend doesn't fire.
+    setTimeout(finish, 360);
+}
+
+// Swipe-to-dismiss (pointer drag) — modern-app gesture.
+function _cvBindSwipe(list) {
+    list.querySelectorAll('.cv-notif-item').forEach(el => {
+        if (el.dataset.swipeBound) return;
+        el.dataset.swipeBound = '1';
+        let startX = 0, dx = 0, dragging = false, pid = null;
+        const THRESHOLD = 88;
+        el.addEventListener('pointerdown', (e) => {
+            // Don't start a swipe from the dismiss button.
+            if (e.target.closest('.cv-notif-dismiss')) return;
+            if (e.button !== undefined && e.button !== 0) return;
+            dragging = true; startX = e.clientX; dx = 0; pid = e.pointerId;
+            el.style.transition = 'none';
+            try { el.setPointerCapture(pid); } catch (_) {}
+        });
+        el.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            dx = e.clientX - startX;
+            el.style.transform = `translateX(${dx}px)`;
+            el.style.opacity = String(Math.max(0.25, 1 - Math.abs(dx) / 220));
+        });
+        const end = () => {
+            if (!dragging) return;
+            dragging = false;
+            try { el.releasePointerCapture(pid); } catch (_) {}
+            el.style.transition = '';
+            if (Math.abs(dx) >= THRESHOLD) {
+                _cvDismiss(el.getAttribute('data-nid'));
+            } else {
+                el.style.transform = '';
+                el.style.opacity = '';
+            }
+        };
+        el.addEventListener('pointerup', end);
+        el.addEventListener('pointercancel', end);
+    });
+}
+// Staggered fade-out of every item, then clear the store.
+function _cvClearAll() {
+    const list = document.getElementById('cv-notify-list');
+    const items = list ? Array.from(list.children) : [];
+    if (!items.length) {
+        _cvNotifs = []; _cvSaveNotifs(); _cvRenderList(); _cvRenderBadge();
+        return;
+    }
+    items.forEach((el, i) => {
+        setTimeout(() => {
+            el.style.height = el.offsetHeight + 'px';
+            void el.offsetHeight;
+            el.classList.add('removing');
+            el.style.height = '0px';
+        }, i * 45);
+    });
+    const total = items.length * 45 + 320;
+    setTimeout(() => {
+        _cvNotifs = []; _cvSaveNotifs(); _cvRenderList(); _cvRenderBadge();
+    }, total);
+}
+
 function _initNotifCenter() {
     _cvLoadNotifs();
     _cvRenderBadge();
@@ -147,7 +240,7 @@ function _initNotifCenter() {
     const clearBtn = document.getElementById('cv-notify-clear');
     if (clearBtn) clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        _cvNotifs = []; _cvSaveNotifs(); _cvRenderList(); _cvRenderBadge();
+        _cvClearAll();
     });
     const markBtn = document.getElementById('cv-notify-mark-read');
     if (markBtn) markBtn.addEventListener('click', (e) => {

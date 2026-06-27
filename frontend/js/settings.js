@@ -1046,6 +1046,32 @@ function _renderGpuBanner(gpu, rec) {
     `;
 }
 
+// Embed-on-CPU toggle: reflect current config, and wire its change handler once.
+let _embedCpuWired = false;
+function _syncEmbedCpuToggle() {
+    const chk = $('#settings-embed-on-cpu');
+    if (!chk) return;
+    if (_settingsConfig) chk.checked = !!_settingsConfig.embed_on_cpu;
+    if (_embedCpuWired) return;
+    _embedCpuWired = true;
+    chk.addEventListener('change', async () => {
+        const enabled = chk.checked;
+        try {
+            const r = await fetch(`${API}/api/setup/embed-on-cpu`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+            });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+            if (_settingsConfig) _settingsConfig.embed_on_cpu = enabled;
+            showToast(enabled ? 'Embeddings will run on CPU' : 'Embeddings will run on GPU', 'success');
+        } catch (e) {
+            chk.checked = !enabled; // revert on failure
+            showToast(`Update failed: ${e.message}`, 'error');
+        }
+    });
+}
+
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
 
@@ -1055,6 +1081,7 @@ function _renderSettingsCards() {
     if (nameInput)  nameInput.value  = _settingsConfig.user_name  || '';
     if (aboutInput) aboutInput.value = _settingsConfig.user_about || '';
     _updateAvatarFace();
+    _syncEmbedCpuToggle();
 
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');

@@ -585,6 +585,7 @@ def get_config():
         "gpu": gpu,
         "recommendation": rec,
         "prefer_dedicated_gpu": cfg.get("prefer_dedicated_gpu", True),
+        "embed_on_cpu": cfg.get("embed_on_cpu", False),
     }
 
 
@@ -604,6 +605,19 @@ def save_profile(req: UserProfileUpdate):
     cfg["user_about"] = req.about.strip()
     _write_config(cfg)
     return {"status": "saved"}
+
+
+@app.post("/api/setup/embed-on-cpu")
+def set_embed_on_cpu(body: dict):
+    """Toggle the embed-on-CPU preference (frees GPU VRAM on small cards).
+
+    Opt-in, default off. Read live by the embed calls, so it takes effect on the
+    next embedding without a restart.
+    """
+    cfg = _read_config()
+    cfg["embed_on_cpu"] = bool(body.get("enabled"))
+    _write_config(cfg)
+    return {"status": "saved", "embed_on_cpu": cfg["embed_on_cpu"]}
 
 
 @app.post("/api/setup/pull-embed-model")

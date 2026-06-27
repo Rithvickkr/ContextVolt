@@ -4914,6 +4914,12 @@ body {
     display: flex;
 }
 
+.settings-embed-cpu-row {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+}
+
 .settings-embed-warning svg {
     flex-shrink: 0;
     margin-top: 1px;

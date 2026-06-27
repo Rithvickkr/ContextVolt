@@ -1148,6 +1148,16 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                         <span>Embedding model changed. After saving, use <strong>Re-embed All (New Model)</strong> in the sidebar to re-index your contexts with the new model.</span>
                     </div>
+
+                    <div class="settings-embed-cpu-row">
+                        <label class="settings-mcp-checkbox">
+                            <input type="checkbox" id="settings-embed-on-cpu">
+                            <span>Run embeddings on CPU</span>
+                        </label>
+                        <p class="settings-section-hint" style="margin-top:4px;">
+                            Frees GPU memory so a larger summarize/chat model fits on small graphics cards (~4&nbsp;GB). Leave off if your GPU has memory to spare — embeddings run faster on the GPU. Takes effect on the next embedding.
+                        </p>
+                    </div>
                 </div>
 
                 </div><!-- /models panel -->

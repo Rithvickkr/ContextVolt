@@ -47,6 +47,7 @@ backend/tools/rag_test.py
 
 # ─── Local / scratch ─────────────────────────────
 .claude/settings.local.json
+.claude/settings.json
 _patch_settings.py
 dom result.md
 

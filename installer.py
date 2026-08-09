@@ -986,7 +986,7 @@ def main():
         # BaseHTTPMiddleware loads on the first request) would still pass here yet
         # 500 on every request in the real app. Boot the server and serve one
         # request so that whole "clean build, broken at runtime" class fails CI.
-        import socket, threading, time, urllib.request
+        import socket, time, urllib.request
         import uvicorn
         _s = socket.socket()
         _s.bind(("127.0.0.1", 0))

@@ -362,7 +362,20 @@ def run_installation():
                     installer_url = "https://ollama.com/download/OllamaSetup.exe"
                     installer_path = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
                     state.log("  Downloading from ollama.com...")
-                    urllib.request.urlretrieve(installer_url, str(installer_path))
+                    _last_pct = -1
+
+                    def _report(block_num, block_size, total_size):
+                        nonlocal _last_pct
+                        if total_size <= 0:
+                            return
+                        pct = min(100, block_num * block_size * 100 // total_size)
+                        if pct >= _last_pct + 10 or pct == 100:
+                            _last_pct = pct
+                            mb = block_num * block_size / (1024 * 1024)
+                            total_mb = total_size / (1024 * 1024)
+                            state.log(f"  Downloading... {pct}% ({mb:.0f}/{total_mb:.0f} MB)")
+
+                    urllib.request.urlretrieve(installer_url, str(installer_path), reporthook=_report)
                     if installer_path.exists():
                         state.log("  Installing Ollama silently...")
                         install_env = os.environ.copy()

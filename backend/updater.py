@@ -19,7 +19,7 @@ from typing import Iterator
 
 _log = logging.getLogger("contextvolt.updater")
 
-APP_VERSION = "2.7.1"
+APP_VERSION = "2.8.0"
 GITHUB_REPO = "Rithvickkr/ContextVolt"
 _API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 

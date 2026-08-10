@@ -78,8 +78,20 @@ def _model_path(model: str) -> Path | None:
 
 
 def _gpu_layers() -> int:
-    """-1 offloads every layer to GPU; 0 keeps inference on CPU."""
+    """-1 offloads every layer to GPU; 0 keeps inference on CPU.
+
+    Checks the *installed llama_cpp build*, not just whether an NVIDIA GPU
+    is present — today's packaged wheel is CPU-only (see requirements.txt),
+    so llama_supports_gpu_offload() is False even on a GPU machine. Asking
+    for GPU layers on a CPU-only build is harmless (llama.cpp ignores it and
+    runs on CPU), but claiming acceleration that isn't there is misleading —
+    this makes "no GPU wheel yet" explicit instead of silently no-op'ing.
+    A CUDA-enabled wheel (Phase 2 follow-up) needs no other code change here.
+    """
     try:
+        import llama_cpp
+        if not llama_cpp.llama_supports_gpu_offload():
+            return 0
         from backend.gpu_info import has_nvidia
         return -1 if has_nvidia() else 0
     except Exception:

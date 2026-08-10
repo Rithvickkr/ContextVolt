@@ -144,6 +144,22 @@ class NativeEngine:
         unregistered = [p.stem for p in native_models_dir().glob("*.gguf") if p.name not in registered_files]
         return sorted(found + unregistered)
 
+    def delete_model(self, model: str) -> bool:
+        """Remove `model`'s GGUF file from disk. Evicts it from the loaded-model
+        cache first — on Windows, deleting a file still mmap'd by a live Llama
+        instance (the default) raises PermissionError."""
+        path = _model_path(model)
+        if path is None:
+            return False
+        for key in [k for k in _loaded if k[0] == str(path)]:
+            del _loaded[key]
+        try:
+            path.unlink()
+            return True
+        except Exception as e:
+            _log.warning("Failed to delete native model %r: %s", model, e)
+            return False
+
     def ensure_model(self, model: str, on_progress=None) -> bool:
         """Download `model`'s GGUF file if not already present.
 
@@ -195,6 +211,47 @@ class NativeEngine:
             except Exception:
                 pass
             return False
+
+    def download_progress(self, model: str):
+        """Yield {"status": "downloading", "completed": bytes, "total": bytes}
+        while fetching `model`'s GGUF, then a final {"status": "success"} or
+        {"status": "error", "error": str}. Byte-granular (unlike ensure_model's
+        ~10%-step text log) for main.py's /api/setup/pull-model-stream, whose
+        frontend consumer computes completed/total itself for a progress bar."""
+        if _model_path(model) is not None:
+            yield {"status": "success"}
+            return
+        entry = MODEL_REGISTRY.get(model)
+        if not entry:
+            yield {"status": "error", "error": f"No download source registered for {model!r}"}
+            return
+
+        import requests
+        native_models_dir().mkdir(parents=True, exist_ok=True)
+        dest = native_models_dir() / entry["filename"]
+        url = f"https://huggingface.co/{entry['repo']}/resolve/main/{entry['filename']}"
+
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(native_models_dir()), suffix=".part")
+        try:
+            with os.fdopen(tmp_fd, "wb") as f:
+                resp = requests.get(url, stream=True, timeout=60)
+                resp.raise_for_status()
+                total = int(resp.headers.get("content-length", 0))
+                completed = 0
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    completed += len(chunk)
+                    yield {"status": "downloading", "completed": completed, "total": total}
+            os.replace(tmp_path, dest)
+            yield {"status": "success"}
+        except Exception as e:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            yield {"status": "error", "error": str(e)[:200]}
 
     def generate(self, prompt: str, model: str, **kwargs) -> str:
         llm = _load(model, embedding=False)

@@ -47,12 +47,13 @@ async function checkSetup() {
         _setStepState(stepBackend, 'ok', 'Connected');
         stepBackend.classList.add('ready');
 
-        // Ollama
+        // Local inference engine (Ollama, or the embedded native engine)
+        const isNative = data.inference_backend === 'native';
         if (data.ollama_running) {
             _setStepState(stepOllama, 'ok', 'Running');
             stepOllama.classList.add('ready');
         } else {
-            _setStepState(stepOllama, 'pending', 'Waiting for Ollama...');
+            _setStepState(stepOllama, 'pending', isNative ? 'Starting local engine...' : 'Waiting for Ollama...');
             stepOllama.classList.remove('ready');
         }
 

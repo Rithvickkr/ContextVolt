@@ -316,7 +316,8 @@ def setup_status():
     from backend.ollama_client import _get_default_model
     from backend.engine import get_inference_backend
     current_model = _get_default_model()
-    if get_inference_backend() == "native":
+    inference_backend = get_inference_backend()
+    if inference_backend == "native":
         from backend.engine.native import NativeEngine
         engine = NativeEngine()
         engine_ready = engine.is_ready()
@@ -328,6 +329,7 @@ def setup_status():
         model_ready = check_model_available(current_model) if engine_ready else False
     return {
         "backend": True,
+        "inference_backend": inference_backend,
         "ollama_running": engine_ready,  # field name kept for frontend compat — reports the active backend, not literally Ollama
         "model_ready": model_ready,
         "model_name": current_model,
@@ -362,7 +364,12 @@ def gpu_prefer_nvidia():
 
 @app.post("/api/setup/pull-model")
 def pull_model():
-    """Trigger an Ollama model pull in the background."""
+    """Trigger a model download in the background (Ollama pull, or native GGUF fetch)."""
+    from backend.engine import get_inference_backend
+    if get_inference_backend() == "native":
+        from backend.engine.native import NativeEngine
+        threading.Thread(target=NativeEngine().ensure_model, args=(DEFAULT_MODEL,), daemon=True).start()
+        return {"status": "pulling", "model": DEFAULT_MODEL}
     if not check_ollama_running():
         raise HTTPException(status_code=503, detail="Ollama is not running")
     try:
@@ -639,11 +646,16 @@ def set_embed_on_cpu(body: dict):
 
 @app.post("/api/setup/pull-embed-model")
 def pull_embed_model():
-    """Trigger an Ollama pull for the configured embed model."""
-    if not check_ollama_running():
-        raise HTTPException(status_code=503, detail="Ollama is not running")
+    """Trigger a download for the configured embed model (Ollama pull, or native GGUF fetch)."""
+    from backend.engine import get_inference_backend
     cfg = _read_config()
     model = cfg.get("embed_model", "nomic-embed-text")
+    if get_inference_backend() == "native":
+        from backend.engine.native import NativeEngine
+        threading.Thread(target=NativeEngine().ensure_model, args=(model,), daemon=True).start()
+        return {"status": "pulling", "model": model}
+    if not check_ollama_running():
+        raise HTTPException(status_code=503, detail="Ollama is not running")
     try:
         subprocess.Popen(
             ["ollama", "pull", model],
@@ -658,11 +670,22 @@ def pull_embed_model():
 
 @app.post("/api/setup/pull-model-stream")
 def pull_model_stream(body: ModelSelect):
-    """Stream Ollama pull progress for a model as NDJSON.
+    """Stream model download progress as NDJSON (Ollama pull, or native GGUF fetch).
 
     Each line: {"status": "downloading", "completed": bytes, "total": bytes}
     Final line: {"status": "success"}
     """
+    from backend.engine import get_inference_backend
+    if get_inference_backend() == "native":
+        from backend.engine.native import NativeEngine
+        import json as _json
+
+        def _native_stream():
+            for event in NativeEngine().download_progress(body.model):
+                yield _json.dumps(event) + "\n"
+
+        return StreamingResponse(_native_stream(), media_type="application/x-ndjson")
+
     if not check_ollama_running():
         raise HTTPException(status_code=503, detail="Ollama is not running")
 
@@ -692,12 +715,18 @@ def pull_model_stream(body: ModelSelect):
 
 @app.delete("/api/setup/delete-model/{model_id:path}")
 def delete_ollama_model(model_id: str):
-    """Delete an installed Ollama model.
+    """Delete an installed model (Ollama, or a native GGUF file).
 
     Resolves the actual Ollama model name (e.g. qwen2.5:latest) from the
     config model ID (e.g. qwen2.5:3b) using the same fuzzy base-name match
     that _is_installed uses, so the delete never fails with 'model not found'.
     """
+    from backend.engine import get_inference_backend
+    if get_inference_backend() == "native":
+        from backend.engine.native import NativeEngine
+        if NativeEngine().delete_model(model_id):
+            return {"status": "deleted", "model": model_id, "actual": model_id}
+        raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
     if not check_ollama_running():
         raise HTTPException(status_code=503, detail="Ollama is not running")
     import requests as _req

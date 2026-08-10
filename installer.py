@@ -214,11 +214,13 @@ EMBEDDED_MODE = is_embedded_python()
 class InstallState:
     """Holds installation state."""
     def __init__(self):
+        from backend.engine import get_inference_backend
+        is_native = get_inference_backend() == "native"
         self.steps = [
             {"id": "python", "label": "Python Environment", "status": "pending"},
             {"id": "venv", "label": "Virtual Environment", "status": "pending"},
             {"id": "deps", "label": "Dependencies", "status": "pending"},
-            {"id": "ollama", "label": "Ollama Service", "status": "pending"},
+            {"id": "ollama", "label": "Local Engine" if is_native else "Ollama Service", "status": "pending"},
             {"id": "model", "label": "AI Model", "status": "pending"},
             {"id": "embed", "label": "Embed Model", "status": "pending"},
             {"id": "extension", "label": "Browser Extension", "status": "pending"},

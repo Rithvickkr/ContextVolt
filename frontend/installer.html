@@ -716,6 +716,12 @@ function updateUI(s) {
                 const statusEl = el.querySelector('.ist-status');
                 const labels = { pending: 'Waiting…', running: 'In progress…', completed: 'Complete', error: 'Failed' };
                 statusEl.textContent = labels[step.status] || '';
+                // Backend-aware step title (e.g. "Ollama Service" vs "Local Engine") —
+                // sent by installer.py's InstallState, previously ignored here.
+                if (step.label) {
+                    const labelEl = el.querySelector('.ist-label');
+                    if (labelEl) labelEl.textContent = step.label;
+                }
             });
 
             const done = steps.filter(s => s.status === 'completed').length;

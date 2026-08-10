@@ -710,6 +710,35 @@ def run_installation():
 
         return True
 
+    def step_check_native_engine():
+        state.log("Checking native inference engine...")
+        try:
+            import llama_cpp  # noqa: F401
+        except Exception as e:
+            state.log(f"  llama-cpp-python not available: {str(e)[:80]}")
+            state.log("  Falling back — run: pip install -r requirements.txt")
+            return False
+        state.log("  Native engine ready (no external app needed)")
+        return True
+
+    def step_pull_native_model():
+        from backend.engine.native import NativeEngine
+        state.log(f"Checking AI model ({OLLAMA_MODEL})...")
+        engine = NativeEngine()
+        ok = engine.ensure_model(OLLAMA_MODEL, on_progress=state.log)
+        if not ok:
+            state.log(f"  Could not prepare {OLLAMA_MODEL} — check your connection and retry")
+        return True  # non-fatal — app can still launch, model downloads on first use
+
+    def step_pull_native_embed_model():
+        from backend.engine.native import NativeEngine
+        state.log(f"Checking embedding model ({EMBED_MODEL})...")
+        engine = NativeEngine()
+        ok = engine.ensure_model(EMBED_MODEL, on_progress=state.log)
+        if not ok:
+            state.log(f"  Could not prepare {EMBED_MODEL} — check your connection and retry")
+        return True
+
     def step_install_extension():
         state.log("Setting up browser extension...")
         ext_dir = PROJECT_ROOT / "extension"
@@ -761,7 +790,11 @@ def run_installation():
 
         return True
 
-    steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_pull_embed_model, step_install_extension]
+    from backend.engine import get_inference_backend
+    if get_inference_backend() == "native":
+        steps = [step_check_python, step_create_venv, step_install_deps, step_check_native_engine, step_pull_native_model, step_pull_native_embed_model, step_install_extension]
+    else:
+        steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_pull_embed_model, step_install_extension]
     
     try:
         for i in range(state.current_step, len(steps)):

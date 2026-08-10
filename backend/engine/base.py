@@ -12,7 +12,7 @@ Mirrors the Ollama HTTP surface ollama_client.py actually uses:
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 class InferenceEngine(Protocol):
@@ -24,8 +24,12 @@ class InferenceEngine(Protocol):
         """Model names currently available to this engine."""
         ...
 
-    def ensure_model(self, model: str) -> bool:
-        """Make `model` available (download/load as needed). Returns success."""
+    def ensure_model(self, model: str, on_progress: Callable[[str], None] | None = None) -> bool:
+        """Make `model` available (download/load as needed). Returns success.
+
+        `on_progress`, if given, receives human-readable status lines —
+        installer.py wires this to its state.log() UI during setup.
+        """
         ...
 
     def generate(self, prompt: str, model: str, **kwargs) -> str:

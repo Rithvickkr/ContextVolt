@@ -30,7 +30,7 @@ class OllamaEngine:
         except Exception:
             return []
 
-    def ensure_model(self, model: str) -> bool:
+    def ensure_model(self, model: str, on_progress=None) -> bool:
         # Downloading/pulling a model for Ollama is handled by the installer's
         # setup flow (installer.py step_pull_model), not the engine layer —
         # this just reports whether it's already available.

@@ -29,11 +29,25 @@ _log = logging.getLogger("contextvolt")
 # NOT default embedding models to the chat context size, llama.cpp will
 # warn ("n_ctx_seq > n_ctx_train") and may misbehave near the limit.
 MODEL_REGISTRY: dict[str, dict] = {
+    # Chat — "llama3.2:3b" is AVAILABLE_MODELS' recommended default in installer.py.
+    "llama3.2:3b": {
+        "repo": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+        "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "kind": "chat",
+        "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+    },
     "qwen2.5:3b": {
         "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
         "kind": "chat",
         "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+    },
+    # Embed — "qwen3-embedding:0.6b" is AVAILABLE_EMBED_MODELS' recommended default.
+    "qwen3-embedding:0.6b": {
+        "repo": "Qwen/Qwen3-Embedding-0.6B-GGUF",
+        "filename": "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        "kind": "embed",
+        "n_ctx": 32768,
     },
     "nomic-embed-text": {
         "repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
@@ -42,6 +56,12 @@ MODEL_REGISTRY: dict[str, dict] = {
         "n_ctx": 2048,
     },
 }
+
+# Models offered by installer.py's AVAILABLE_MODELS / AVAILABLE_EMBED_MODELS
+# that don't have a GGUF entry above yet — ensure_model() returns False for
+# these today (installer falls back to reporting the failure, doesn't crash).
+# TODO: qwen3:4b, qwen2.5:7b, qwen2.5:1.5b, mxbai-embed-large,
+#       nomic-embed-text:v1.5, bge-m3.
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>\s*", re.IGNORECASE)
 
@@ -105,7 +125,18 @@ class NativeEngine:
         except Exception:
             return []
 
-    def ensure_model(self, model: str) -> bool:
+    def ensure_model(self, model: str, on_progress=None) -> bool:
+        """Download `model`'s GGUF file if not already present.
+
+        `on_progress`, if given, is called with a human-readable status line
+        for each ~10% step (e.g. for wiring into installer.py's state.log UI).
+        Always also logged to the app logger regardless of `on_progress`.
+        """
+        def _emit(msg: str) -> None:
+            _log.info(msg)
+            if on_progress:
+                on_progress(msg)
+
         if _model_path(model) is not None:
             return True
         entry = MODEL_REGISTRY.get(model)
@@ -116,7 +147,7 @@ class NativeEngine:
         native_models_dir().mkdir(parents=True, exist_ok=True)
         dest = native_models_dir() / entry["filename"]
         url = f"https://huggingface.co/{entry['repo']}/resolve/main/{entry['filename']}"
-        _log.info("Downloading native model %s from %s", model, url)
+        _emit(f"Downloading {model} from Hugging Face...")
 
         last_pct = -1
 
@@ -127,16 +158,19 @@ class NativeEngine:
             pct = min(100, block_num * block_size * 100 // total_size)
             if pct >= last_pct + 10 or pct == 100:
                 last_pct = pct
-                _log.info("  Downloading %s... %d%%", entry["filename"], pct)
+                mb = block_num * block_size / (1024 * 1024)
+                total_mb = total_size / (1024 * 1024)
+                _emit(f"  Downloading {entry['filename']}... {pct}% ({mb:.0f}/{total_mb:.0f} MB)")
 
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(native_models_dir()), suffix=".part")
         os.close(tmp_fd)
         try:
             urllib.request.urlretrieve(url, tmp_path, reporthook=_report)
             os.replace(tmp_path, dest)
+            _emit(f"  {model} ready!")
             return True
         except Exception as e:
-            _log.warning("Failed to download native model %r: %s", model, e)
+            _emit(f"  Download failed: {str(e)[:80]}")
             try:
                 os.unlink(tmp_path)
             except Exception:

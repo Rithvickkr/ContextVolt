@@ -45,6 +45,9 @@ backend/tools/rag_eval_fixtures.json
 backend/tools/rag_eval.py
 backend/tools/rag_test.py
 
+# Native engine GGUF models — multi-GB, downloaded per-machine, never committed
+/models/
+
 # ─── Local / scratch ─────────────────────────────
 .claude/settings.local.json
 .claude/settings.json

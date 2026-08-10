@@ -70,6 +70,9 @@ python -c "import sqlite3; sqlite3.connect(':memory:').enable_load_extension(Tru
     || { echo "  ERROR: build Python lacks SQLite loadable-extension support (needed for sqlite-vec)."; \
          echo "         Use Homebrew Python: brew install python@3.12 and set PYTHON_BIN to it."; exit 1; }
 pip install --upgrade pip --quiet --disable-pip-version-check
+# cmake fallback for llama-cpp-python: if no prebuilt wheel matches this
+# runner's macOS/Python combo, pip falls back to a source build, which needs it.
+command -v cmake >/dev/null 2>&1 || brew install cmake --quiet
 pip install -r requirements.txt --quiet --disable-pip-version-check
 pip install py2app --quiet --disable-pip-version-check
 echo "         build venv ready"

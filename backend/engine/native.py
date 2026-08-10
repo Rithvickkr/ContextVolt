@@ -24,17 +24,22 @@ from backend.paths import native_models_dir
 
 _log = logging.getLogger("contextvolt")
 
-# model key -> (HF repo, filename, kind). "kind" picks embedding=True at load time.
+# model key -> (HF repo, filename, kind, n_ctx). "kind" picks embedding=True
+# at load time; "n_ctx" is this model's own trained/supported context — do
+# NOT default embedding models to the chat context size, llama.cpp will
+# warn ("n_ctx_seq > n_ctx_train") and may misbehave near the limit.
 MODEL_REGISTRY: dict[str, dict] = {
     "qwen2.5:3b": {
         "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
         "kind": "chat",
+        "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
     },
     "nomic-embed-text": {
         "repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
         "filename": "nomic-embed-text-v1.5.Q4_K_M.gguf",
         "kind": "embed",
+        "n_ctx": 2048,
     },
 }
 
@@ -64,6 +69,7 @@ def _gpu_layers() -> int:
 def _load(model: str, embedding: bool) -> object:
     entry = MODEL_REGISTRY.get(model)
     filename = entry["filename"] if entry else f"{model}.gguf"
+    n_ctx = entry["n_ctx"] if entry else (2048 if embedding else int(os.getenv("OLLAMA_NUM_CTX", "32768")))
     path = native_models_dir() / filename
     if not path.exists():
         raise FileNotFoundError(f"Model not downloaded: {model} (expected {path})")
@@ -72,11 +78,11 @@ def _load(model: str, embedding: bool) -> object:
     key = (str(path), n_gpu_layers)
     if key not in _loaded:
         from llama_cpp import Llama
-        _log.info("Loading native model %s (gpu_layers=%d, embedding=%s)", path.name, n_gpu_layers, embedding)
+        _log.info("Loading native model %s (gpu_layers=%d, n_ctx=%d, embedding=%s)", path.name, n_gpu_layers, n_ctx, embedding)
         _loaded[key] = Llama(
             model_path=str(path),
             n_gpu_layers=n_gpu_layers,
-            n_ctx=int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+            n_ctx=n_ctx,
             embedding=embedding,
             verbose=False,
         )

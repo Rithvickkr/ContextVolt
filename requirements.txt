@@ -9,6 +9,11 @@ numpy>=1.26,<3
 sqlite-vec>=0.1.6,<0.2
 mcp>=1.0.0
 
+# Native inference engine (INFERENCE_BACKEND=native — see backend/engine/).
+# CPU wheels only come from abetlen's release index, not PyPI proper.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0
+
 # macOS-only: pywebview's WebKit backend needs PyObjC bindings.
 # pip skips these on Windows/Linux thanks to the platform marker.
 pyobjc-core; sys_platform == "darwin"

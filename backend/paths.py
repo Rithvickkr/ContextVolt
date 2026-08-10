@@ -133,6 +133,11 @@ def ollama_models_dir() -> Path:
     return ollama_dir() / "models"
 
 
+def native_models_dir() -> Path:
+    """GGUF model files for the embedded llama.cpp engine (INFERENCE_BACKEND=native)."""
+    return user_data_dir() / "models"
+
+
 def cloudflared_dir() -> Path:
     return user_data_dir() / ".cloudflared"
 

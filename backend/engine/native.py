@@ -86,7 +86,16 @@ def _gpu_layers() -> int:
     for GPU layers on a CPU-only build is harmless (llama.cpp ignores it and
     runs on CPU), but claiming acceleration that isn't there is misleading —
     this makes "no GPU wheel yet" explicit instead of silently no-op'ing.
-    A CUDA-enabled wheel (Phase 2 follow-up) needs no other code change here.
+    A CUDA-enabled wheel needs no other code change here — but note the CUDA
+    wheel is NOT a drop-in "swap the index URL" fix (tested against
+    abetlen.github.io/llama-cpp-python/whl/cu121 on this machine's RTX 3050):
+    it installs but its llama.dll fails to load with a missing-dependency
+    error, because it links against CUDA runtime DLLs (cudart/cublas) that
+    the wheel does NOT bundle and this machine doesn't have installed
+    separately. Shipping GPU support means either (a) bundling those
+    redistributable DLLs alongside the wheel in the installer build, or
+    (b) requiring users to install the NVIDIA CUDA Toolkit themselves —
+    (a) is the only realistic option for a consumer installer.
     """
     try:
         import llama_cpp

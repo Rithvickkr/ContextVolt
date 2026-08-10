@@ -36,7 +36,7 @@ def get_active_provider() -> dict:
 
     Returns:
         {
-            "provider": "ollama" | "openai" | "anthropic" | "google",
+            "provider": "ollama" | "native" | "openai" | "anthropic" | "google",
             "model": str,
             "api_key": str | None,
             "is_cloud": bool,
@@ -47,8 +47,9 @@ def get_active_provider() -> dict:
 
     if provider == "ollama":
         from backend.ollama_client import _get_default_model
+        from backend.engine import get_inference_backend
         return {
-            "provider": "ollama",
+            "provider": "native" if get_inference_backend() == "native" else "ollama",
             "model": _get_default_model(),
             "api_key": None,
             "is_cloud": False,
@@ -122,6 +123,21 @@ def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
         result["provider"] = active["provider"]
         result["model"] = active["model"]
         return result
+    elif active["provider"] == "native":
+        # In-process llama.cpp — fold system into the prompt (single-prompt model).
+        from backend.engine import get_engine
+        folded = f"{system}\n\n{prompt}" if system else prompt
+        text = get_engine().generate(
+            folded, active["model"],
+            temperature=temperature, max_tokens=max_tokens, timeout=timeout,
+        )
+        return {
+            "response": text,
+            "usage": None,
+            "cost": None,
+            "provider": "native",
+            "model": active["model"],
+        }
     else:
         # Ollama path — fold system into the prompt (single-prompt model).
         from backend.ollama_client import _call_generate, _NUM_CTX
@@ -173,6 +189,17 @@ def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 200
                 event["provider"] = active["provider"]
                 event["model"] = active["model"]
             yield event
+    elif active["provider"] == "native":
+        from backend.engine import get_engine
+        folded = f"{system}\n\n{prompt}" if system else prompt
+        try:
+            for tok in get_engine().generate_stream(folded, active["model"], temperature=temperature, max_tokens=max_tokens):
+                if tok:
+                    yield {"token": tok}
+            yield {"done": True, "usage": None, "cost": None, "provider": "native", "model": active["model"]}
+        except Exception as e:
+            _log.error("Native engine stream error: %s", e)
+            yield {"error": str(e)}
     else:
         # Ollama streaming
         import requests as _req

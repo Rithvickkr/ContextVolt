@@ -132,10 +132,17 @@ class NativeEngine:
         return any(native_models_dir().glob("*.gguf"))
 
     def list_models(self) -> list[str]:
+        """Model keys present on disk, using the same identifiers as config.json
+        / the Ollama backend (e.g. "llama3.2:3b"), not raw GGUF filenames —
+        callers compare these against model ids picked in Settings."""
         try:
-            return sorted(p.stem for p in native_models_dir().glob("*.gguf"))
+            present = {p.name for p in native_models_dir().glob("*.gguf")}
         except Exception:
             return []
+        found = [key for key, entry in MODEL_REGISTRY.items() if entry["filename"] in present]
+        registered_files = {entry["filename"] for entry in MODEL_REGISTRY.values()}
+        unregistered = [p.stem for p in native_models_dir().glob("*.gguf") if p.name not in registered_files]
+        return sorted(found + unregistered)
 
     def ensure_model(self, model: str, on_progress=None) -> bool:
         """Download `model`'s GGUF file if not already present.
@@ -199,6 +206,58 @@ class NativeEngine:
         )
         text = result["choices"][0]["text"]
         return _THINK_BLOCK_RE.sub("", text).strip()
+
+    def generate_stream(self, prompt: str, model: str, **kwargs):
+        """Yield text chunks as they're generated. Not part of InferenceEngine —
+        an extra capability llm_router.py uses for streaming responses.
+
+        Filters <think>...</think> the same way generate() does, but across
+        chunk boundaries (a tag can straddle two chunks), buffering by holding
+        back a short tail until each chunk is known not to end mid-tag.
+        """
+        llm = _load(model, embedding=False)
+        stream = llm(
+            prompt,
+            max_tokens=kwargs.get("max_tokens", 2000),
+            temperature=kwargs.get("temperature", 0.2),
+            stop=kwargs.get("stop") or [],
+            stream=True,
+        )
+        in_think = False
+        pending = ""
+        for chunk in stream:
+            tok = chunk["choices"][0]["text"]
+            if not tok:
+                continue
+            buf = pending + tok
+            pending = ""
+            out = []
+            while buf:
+                if in_think:
+                    end = buf.find("</think>")
+                    if end == -1:
+                        pending = buf[-8:] if len(buf) > 8 else buf
+                        buf = ""
+                        break
+                    buf = buf[end + len("</think>"):]
+                    in_think = False
+                else:
+                    start = buf.find("<think>")
+                    if start == -1:
+                        if len(buf) > 7:
+                            out.append(buf[:-7])
+                            pending = buf[-7:]
+                        else:
+                            pending = buf
+                        buf = ""
+                        break
+                    out.append(buf[:start])
+                    buf = buf[start + len("<think>"):]
+                    in_think = True
+            if out:
+                yield "".join(out)
+        if pending and not in_think:
+            yield pending
 
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not texts:

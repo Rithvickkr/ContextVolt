@@ -314,12 +314,21 @@ def health():
 def setup_status():
     """Report readiness of all services for the Setup Wizard UI."""
     from backend.ollama_client import _get_default_model
+    from backend.engine import get_inference_backend
     current_model = _get_default_model()
-    ollama_running = check_ollama_running()
-    model_ready = check_model_available(current_model) if ollama_running else False
+    if get_inference_backend() == "native":
+        from backend.engine.native import NativeEngine
+        engine = NativeEngine()
+        engine_ready = engine.is_ready()
+        # list_models(), not ensure_model() — this is a read-only status check
+        # and must never trigger a multi-GB download as a side effect of polling.
+        model_ready = engine_ready and current_model in engine.list_models()
+    else:
+        engine_ready = check_ollama_running()
+        model_ready = check_model_available(current_model) if engine_ready else False
     return {
         "backend": True,
-        "ollama_running": ollama_running,
+        "ollama_running": engine_ready,  # field name kept for frontend compat — reports the active backend, not literally Ollama
         "model_ready": model_ready,
         "model_name": current_model,
     }
@@ -478,24 +487,32 @@ def get_config():
     boolean so the frontend can show which models are already downloaded.
     Includes cloud provider info.
     """
+    from backend.engine import get_inference_backend
     cfg = _read_config()
-    ollama_ok = check_ollama_running()
     current_model = cfg.get("model", DEFAULT_MODEL)
     current_embed = cfg.get("embed_model", "nomic-embed-text")
     current_provider = cfg.get("provider", "ollama")
     cloud_keys = cfg.get("cloud_keys", {})
     cloud_models = cfg.get("cloud_models", {})
 
-    # Fetch installed model names once — single HTTP call
+    is_native = get_inference_backend() == "native"
     installed_names: list[str] = []
-    if ollama_ok:
-        try:
-            import requests as _req
-            r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=4)
-            if r.status_code == 200:
-                installed_names = [m.get("name", "") for m in r.json().get("models", [])]
-        except Exception:
-            pass
+    if is_native:
+        from backend.engine.native import NativeEngine
+        ollama_ok = NativeEngine().is_ready()
+        if ollama_ok:
+            installed_names = NativeEngine().list_models()
+    else:
+        ollama_ok = check_ollama_running()
+        # Fetch installed model names once — single HTTP call
+        if ollama_ok:
+            try:
+                import requests as _req
+                r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=4)
+                if r.status_code == 200:
+                    installed_names = [m.get("name", "") for m in r.json().get("models", [])]
+            except Exception:
+                pass
 
     def _is_installed(model_id: str) -> bool:
         for n in installed_names:

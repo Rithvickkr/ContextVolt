@@ -709,6 +709,27 @@ def chunk_conversation(
 _EMBED_BATCH_SIZE = 32
 
 
+def _embed_batch(texts: list[str], model: str, cpu_opts: dict | None = None, keep_alive: str | None = None) -> list[list[float] | None]:
+    """Backend-agnostic batched embedding — routes to the native engine when
+    INFERENCE_BACKEND=native, otherwise Ollama's /api/embed.
+
+    `keep_alive` (Ollama only) keeps the embed model resident past its default
+    5-minute idle window — the native engine has no equivalent concept (it
+    caches loaded models for the process lifetime already, see engine/native.py).
+    """
+    from backend.engine import get_inference_backend, get_engine
+    if get_inference_backend() == "native":
+        return get_engine().embed(texts, model)
+    body: dict = {"model": model, "input": texts}
+    if cpu_opts:
+        body["options"] = cpu_opts
+    if keep_alive:
+        body["keep_alive"] = keep_alive
+    r = _ollama_post(f"{OLLAMA_BASE}/api/embed", json=body, timeout=60)
+    r.raise_for_status()
+    return r.json().get("embeddings", [])
+
+
 def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     """Embed all chunks via batched /api/embed calls (much faster than per-chunk).
 
@@ -731,17 +752,8 @@ def embed_chunks(chunks: list[dict], model: str | None = None) -> list[dict]:
     for start in range(0, len(chunks), _EMBED_BATCH_SIZE):
         batch = chunks[start:start + _EMBED_BATCH_SIZE]
         texts = [doc_prefix + ch["text"][:max_chars] for ch in batch]
-        body = {"model": _model, "input": texts}
-        if cpu_opts:
-            body["options"] = cpu_opts
         try:
-            r = _ollama_post(
-                f"{OLLAMA_BASE}/api/embed",
-                json=body,
-                timeout=60,
-            )
-            r.raise_for_status()
-            embeddings = r.json().get("embeddings", [])
+            embeddings = _embed_batch(texts, _model, cpu_opts)
             for i, ch in enumerate(batch):
                 ch["embedding"] = embeddings[i] if i < len(embeddings) else None
         except Exception as e:
@@ -1129,6 +1141,30 @@ def _empty_summary() -> dict:
     }
 
 
+def _generate_text(model: str, prompt: str, temperature: float, max_tokens: int, timeout: int) -> str:
+    """Backend-agnostic single-shot generation for the summarization pipeline.
+
+    Routes to the native in-process engine when INFERENCE_BACKEND=native,
+    otherwise to Ollama's HTTP API via the existing GPU->CPU fallback ladder
+    in _call_generate(). Both paths already strip <think> blocks; this
+    normalizes them to a single "-> plain text" contract so _extract_chunk /
+    _synthesize don't need to know which backend served the call.
+    """
+    from backend.engine import get_inference_backend, get_engine
+    if get_inference_backend() == "native":
+        return get_engine().generate(prompt, model, temperature=temperature, max_tokens=max_tokens, timeout=timeout)
+    r = _call_generate(
+        model, prompt,
+        {"temperature": temperature, "num_predict": max_tokens, "num_ctx": _NUM_CTX},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    body = r.json()
+    if "error" in body:
+        raise RuntimeError(body["error"])
+    return _strip_think_blocks(body.get("response", ""))
+
+
 def _extract_chunk(text: str, model: str | None = None, label: str = "") -> str:
     """Run constrained fact-extraction on a single chunk. Returns raw extraction text.
 
@@ -1139,14 +1175,7 @@ def _extract_chunk(text: str, model: str | None = None, label: str = "") -> str:
     model = model or _get_default_model()
     prompt = EXTRACT_PROMPT.format(conversation=text[:_CHUNK_LIMIT])  # type: ignore[index]
     try:
-        r = _call_generate(
-            model, prompt,
-            {"temperature": 0.1, "num_predict": 800, "num_ctx": _NUM_CTX},
-            timeout=120,
-        )
-        _log.debug("Extract status=%s label=%r", r.status_code, label)
-        r.raise_for_status()
-        result = _strip_think_blocks(r.json().get("response", ""))
+        result = _generate_text(model, prompt, temperature=0.1, max_tokens=800, timeout=120)
         _log.debug("Extract result (first 300): %r", result[:300])  # type: ignore[index]
         return result
     except Exception as e:
@@ -1178,18 +1207,7 @@ def _synthesize(
         merged_facts=merged_facts[:_CHAR_LIMIT],            # type: ignore[index]
     )
     try:
-        r = _call_generate(
-            model, prompt,
-            {"temperature": 0.2, "num_predict": 2000, "num_ctx": _NUM_CTX},
-            timeout=180,
-        )
-        _log.debug("Synthesize status=%s label=%r", r.status_code, label)
-        r.raise_for_status()
-        body = r.json()
-        if "error" in body:
-            _log.warning("Ollama error in synthesize: %s", body["error"])
-            raise RuntimeError(body["error"])
-        response_text = _strip_think_blocks(body.get("response", ""))
+        response_text = _generate_text(model, prompt, temperature=0.2, max_tokens=2000, timeout=180)
         _log.debug("Synthesize response (first 400): %r", response_text[:400])  # type: ignore[index]
         if not response_text.strip():
             _log.warning("Empty synthesize response (label=%r)", label)
@@ -2099,20 +2117,10 @@ def embed_text(text: str, model: str | None = None, is_query: bool = True,
     # the part that gets cut off.
     content = text[:_get_embed_max_chars(_model)]
     payload = _embed_prefix(_model, is_query) + content
-    body = {"model": _model, "input": payload, "keep_alive": keep_alive}
-    if _embed_on_cpu():
-        body["options"] = {"num_gpu": 0}
+    cpu_opts = {"num_gpu": 0} if _embed_on_cpu() else None
     try:
-        r = _ollama_post(
-            f"{OLLAMA_BASE}/api/embed",
-            json=body,
-            timeout=30,
-        )
-        r.raise_for_status()
-        embeddings = r.json().get("embeddings")
-        if embeddings:
-            return embeddings[0]
-        return None
+        embeddings = _embed_batch([payload], _model, cpu_opts, keep_alive=keep_alive)
+        return embeddings[0] if embeddings else None
     except Exception:
         return None
 

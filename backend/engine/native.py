@@ -99,6 +99,13 @@ MODEL_REGISTRY: dict[str, dict] = {
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>\s*", re.IGNORECASE)
 
+# Upper bound on an embedding model's batch/ubatch. llama.cpp allocates this
+# eagerly, so it's a memory/capability tradeoff — 4096 tokens covers every
+# chunk ContextVolt produces without reserving a 32k-token buffer for
+# qwen3-embedding. Inputs are clamped to it in embed() so the encoder's
+# n_ubatch assert (which abort()s the process) can never fire.
+_EMBED_MAX_BATCH_TOKENS = 4096
+
 # ── Loaded-model cache ────────────────────────────────────────────────
 # Reloading a multi-GB GGUF costs seconds, so instances stay resident. Two
 # invariants this cache has to hold, both of which bite hard if ignored:
@@ -305,11 +312,16 @@ def _load(model: str, embedding: bool) -> tuple[object, threading.Lock, int]:
                 "verbose": False,
             }
             if embedding:
-                # Embedding models pool over the whole sequence, so a batch
-                # smaller than the input silently drops tokens (or errors).
-                # Keep n_batch at the context size, but cap it — a 32k-token
-                # batch for qwen3-embedding costs far more memory than we need.
-                kwargs["n_batch"] = min(n_ctx, 4096)
+                # Embedding models encode the whole sequence in one shot, and
+                # llama.cpp enforces `n_ubatch >= n_tokens` for encoders with a
+                # GGML_ASSERT — which calls abort(), taking the entire app down
+                # with it (no Python exception to catch: it surfaces as
+                # pythonw.exe faulting in ucrtbase.dll, 0xc0000409).
+                # n_ubatch defaults to 512, so BOTH have to be raised; setting
+                # only n_batch leaves the real limit at 512.
+                batch = min(n_ctx, _EMBED_MAX_BATCH_TOKENS)
+                kwargs["n_batch"] = batch
+                kwargs["n_ubatch"] = batch
             try:
                 _log.info(
                     "Loading native model %s (kind=%s, gpu_layers=%d, n_ctx=%d)",
@@ -637,12 +649,31 @@ class NativeEngine:
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not texts:
             return []
-        llm, lock, _n_ctx = _load(model, embedding=True)
+        llm, lock, n_ctx = _load(model, embedding=True)
+        limit = min(n_ctx, _EMBED_MAX_BATCH_TOKENS)
         with lock:
-            # truncate=True lets llama.cpp clamp anything still over the context
-            # window; callers already trim by _get_embed_max_chars, this is the
-            # backstop so one oversized chunk can't fail a whole batch.
-            result = llm.embed(texts, normalize=True, truncate=True)
+            # Clamp by TOKENS, not characters. llama.cpp asserts
+            # n_ubatch >= n_tokens for encoders and abort()s the whole process
+            # when it fails — an unrecoverable crash, not an exception — so a
+            # character-based limit upstream isn't a safe guarantee: token
+            # density varies wildly (CJK, code, emoji all blow past an estimate).
+            # This is the last line of defence, and it must never be removed.
+            safe: list[str] = []
+            for t in texts:
+                try:
+                    toks = llm.tokenize(t.encode("utf-8", "ignore"), special=False)
+                    if len(toks) > limit:
+                        _log.warning(
+                            "Embed input %d tokens > %d — truncating (would abort llama.cpp)",
+                            len(toks), limit,
+                        )
+                        t = llm.detokenize(toks[:limit]).decode("utf-8", "ignore")
+                except Exception:
+                    # Tokenizer unavailable: fall back to a deliberately
+                    # pessimistic char cut (2 chars/token) rather than risk it.
+                    t = t[: limit * 2]
+                safe.append(t)
+            result = llm.embed(safe, normalize=True, truncate=True)
         # llama-cpp-python returns a flat list[float] for single input, list[list[float]] for batches.
         if result and isinstance(result[0], float):
             return [result]

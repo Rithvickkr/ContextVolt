@@ -591,7 +591,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
             e.stopPropagation();
             const ok = await showConfirm({
                 title: `Delete "${label}"?`,
-                message: `This will remove the model from Ollama. You can re-download it later.`,
+                message: `This deletes the downloaded model file. You can download it again later.`,
                 confirmLabel: 'Delete',
                 danger: true,
             });
@@ -610,7 +610,7 @@ function _makeSettingsCard(item, selectedId, containerId, onSelect) {
         if (card.dataset.installed !== 'true' && !card.classList.contains('downloading') && !_downloads.has(item.id)) {
             const ok = await showConfirm({
                 title: `Download "${label}"?`,
-                message: `${size ? size + ' — ' : ''}${desc || 'This model will be pulled from Ollama.'}`,
+                message: `${size ? size + ' — ' : ''}${desc || 'This model will be downloaded to your machine.'}`,
                 confirmLabel: 'Download',
             });
             if (ok) _pullModelInline(item.id, card);
@@ -961,7 +961,7 @@ async function _pullModelInline(modelId, card) {
                 const capturedLabel = label;
                 delBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    const ok = await showConfirm({ title: `Delete “${capturedLabel}”?`, message: 'This will remove the model from Ollama. You can re-download it later.', confirmLabel: 'Delete', danger: true });
+                    const ok = await showConfirm({ title: `Delete “${capturedLabel}”?`, message: `This deletes the downloaded model file. You can download it again later.`, confirmLabel: 'Delete', danger: true });
                     if (ok) _deleteModelInline(modelId, finishedCard, finishedCard.closest('[id]')?.id || '', () => {});
                 });
                 right.insertBefore(delBtn, radio);
@@ -995,7 +995,9 @@ async function _pullModelInline(modelId, card) {
 // Provider icon/color map. Cloud providers use the exact brand SVGs from frontend/logos/.
 const _PROVIDER_META = {
     ollama: {
-        label: 'Local (Ollama)', color: '#888',
+        // Label is overwritten from /api/setup/config's engine_label — this id
+        // means "the local engine", which may be the built-in one or Ollama.
+        label: 'Local', color: '#888',
         svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
         useBrandLogo: false,
     },
@@ -1068,6 +1070,69 @@ function _syncEmbedCpuToggle() {
         } catch (e) {
             chk.checked = !enabled; // revert on failure
             showToast(`Update failed: ${e.message}`, 'error');
+        }
+    });
+}
+
+// ── Inference engine switcher ────────────────────────────────────────
+// Without this the only way to change engines is hand-editing config.json,
+// which is not something a user can be expected to do.
+let _engineSwitchWired = false;
+
+async function _syncEngineSwitcher() {
+    const row = $('#settings-engine-row');
+    if (!row) return;
+    let d;
+    try {
+        const r = await fetch(`${API}/api/setup/inference-backend`);
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        d = await r.json();
+    } catch { row.hidden = true; return; }
+    row.hidden = false;
+
+    const sel = $('#settings-engine-select');
+    if (sel) {
+        sel.value = d.backend;
+        // Don't offer an engine that isn't installed — switching to it would
+        // just produce a broken app on next start.
+        const nativeOpt = sel.querySelector('option[value="native"]');
+        const ollamaOpt = sel.querySelector('option[value="ollama"]');
+        if (nativeOpt) {
+            nativeOpt.disabled = !d.native_ready;
+            nativeOpt.textContent = d.native_ready
+                ? 'Built-in (no extra app needed)'
+                : 'Built-in — not installed';
+        }
+        if (ollamaOpt) {
+            ollamaOpt.disabled = !d.ollama_ready && d.backend !== 'ollama';
+            ollamaOpt.textContent = (d.ollama_ready || d.backend === 'ollama')
+                ? 'Ollama (external app)'
+                : 'Ollama — not installed';
+        }
+    }
+
+    if (_engineSwitchWired) return;
+    _engineSwitchWired = true;
+    sel.addEventListener('change', async () => {
+        const backend = sel.value;
+        const note = $('#settings-engine-note');
+        try {
+            const r = await fetch(`${API}/api/setup/inference-backend`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ backend }),
+            });
+            const body = await r.json();
+            if (!r.ok) throw new Error(body.detail || `status ${r.status}`);
+            if (note) {
+                note.hidden = false;
+                note.textContent = body.message || 'Restart ContextVolt to apply.';
+            }
+            showToast('Engine changed — restart ContextVolt to apply', 'success');
+        } catch (e) {
+            showToast(`Could not switch engine: ${e.message}`, 'error');
+            _engineSwitchWired = false;   // let the next sync re-attach cleanly
+            _syncEngineSwitcher();        // and snap the control back to reality
         }
     });
 }
@@ -1152,6 +1217,7 @@ async function _syncGpuAccelSection() {
 
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
+    _syncEngineSwitcher();
     _syncGpuAccelSection();
 
     // ── Profile fields ──
@@ -1213,6 +1279,12 @@ function _renderSettingsCards() {
 
 function _makeProviderCard(providerId, isReady, _cpInfo) {
     const meta = _PROVIDER_META[providerId] || { svg: '', label: providerId, color: '#888' };
+    // The local card's name depends on which engine is configured, so take it
+    // from the backend instead of the static map ("Local (Ollama)" was shown
+    // even when the built-in engine was doing the work).
+    if (providerId === 'ollama' && _settingsConfig && _settingsConfig.engine_label) {
+        meta.label = `Local (${_settingsConfig.engine_label})`;
+    }
     const card = document.createElement('div');
     card.className = 'settings-provider-card' + (providerId === _selectedProvider ? ' selected' : '');
     card.dataset.provider = providerId;

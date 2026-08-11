@@ -4920,6 +4920,26 @@ body {
     border-top: 1px solid var(--border-subtle);
 }
 
+/* ── Local inference engine picker ──────────────────────────────── */
+.settings-select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-input, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.settings-select:focus {
+    outline: none;
+    border-color: var(--accent, #6366f1);
+}
+.settings-select option[disabled] {
+    color: var(--text-faint);
+}
+
 /* ── GPU acceleration (built-in engine) ─────────────────────────── */
 .settings-gpu-accel-head {
     display: flex;

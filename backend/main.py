@@ -411,6 +411,19 @@ def gpu_diagnostic():
     Lets the UI warn hybrid-GPU laptop users when inference landed on the
     integrated GPU instead of a faster dedicated NVIDIA card. Best-effort.
     """
+    # Ollama-specific: the whole diagnostic (and its "Switch to NVIDIA" fix,
+    # which restarts Ollama) is about Ollama's device pick. The built-in engine
+    # chooses its own offload, so report "nothing to warn about" rather than
+    # letting the Ollama probe fail its way to the same answer by accident.
+    if is_native_backend():
+        from backend.engine.native import gpu_available
+        return {
+            "nvidia_present": False,
+            "model_loaded": False,
+            "using_nvidia": gpu_available() or None,
+            "warn": False,
+            "detail": "",
+        }
     from backend.ollama_client import gpu_usage_diagnostic
     return gpu_usage_diagnostic()
 
@@ -669,6 +682,10 @@ def get_config():
         "model_ready": _is_installed(current_model),
         "embed_model_ready": _is_installed(current_embed),
         "ollama_running": ollama_ok,
+        # Which local engine is active + its display name, so the Settings UI
+        # can stop hardcoding "Ollama" in labels and confirm dialogs.
+        "inference_backend": get_inference_backend(),
+        "engine_label": local_engine_label(),
         "available_models": llm_models,
         "available_embed_models": embed_models,
         "provider": current_provider,
@@ -714,6 +731,63 @@ def set_embed_on_cpu(body: dict):
     cfg["embed_on_cpu"] = bool(body.get("enabled"))
     _write_config(cfg)
     return {"status": "saved", "embed_on_cpu": cfg["embed_on_cpu"]}
+
+
+@app.get("/api/setup/inference-backend")
+def get_inference_backend_setting():
+    """Which local engine runs inference, and whether the alternative is usable.
+
+    `native_ready` gates the UI: offering a switch to an engine whose
+    llama-cpp-python isn't importable would just produce a broken install.
+    """
+    current = get_inference_backend()
+    try:
+        from backend.engine.native import _prepare_cuda_dll_path
+        _prepare_cuda_dll_path()
+        import llama_cpp  # noqa: F401
+        native_ready = True
+    except Exception:
+        native_ready = False
+    from backend.ollama_client import _find_ollama_binary, check_ollama_running
+    return {
+        "backend": current,
+        "native_ready": native_ready,
+        "ollama_ready": bool(check_ollama_running() or _find_ollama_binary()),
+    }
+
+
+@app.post("/api/setup/inference-backend")
+def set_inference_backend(body: dict):
+    """Switch between the built-in engine and Ollama.
+
+    Persisted to config.json rather than applied live: model instances, loaded
+    weights and the embed cache all belong to the current engine, so swapping
+    mid-process would leave stale state behind. The UI asks for a restart.
+    """
+    backend = (body or {}).get("backend")
+    if backend not in ("native", "ollama"):
+        raise HTTPException(status_code=400, detail="backend must be 'native' or 'ollama'")
+
+    if backend == "native":
+        try:
+            from backend.engine.native import _prepare_cuda_dll_path
+            _prepare_cuda_dll_path()
+            import llama_cpp  # noqa: F401
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Built-in engine unavailable (llama-cpp-python not installed): {str(e)[:120]}",
+            )
+
+    cfg = _read_config()
+    cfg["inference_backend"] = backend
+    _write_config(cfg)
+    return {
+        "status": "saved",
+        "backend": backend,
+        "restart_required": True,
+        "message": "Restart ContextVolt to apply the engine change.",
+    }
 
 
 @app.post("/api/setup/pull-embed-model")

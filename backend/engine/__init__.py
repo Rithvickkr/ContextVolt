@@ -67,8 +67,14 @@ def local_engine_ready() -> bool:
 
 
 def local_engine_label() -> str:
-    """Backend name for user-facing error messages."""
-    return "Local engine" if is_native_backend() else "Ollama"
+    """Short display name for the active local engine.
+
+    Deliberately a bare noun ("Built-in", not "Local engine") because the UI
+    nests it inside other text — the provider card renders "Local (<label>)",
+    which read as "Local (Local engine)" before this. Prose that needs a full
+    sentence subject should phrase around it rather than interpolating this.
+    """
+    return "Built-in" if is_native_backend() else "Ollama"
 
 
 def local_model_available(model: str | None = None) -> bool:

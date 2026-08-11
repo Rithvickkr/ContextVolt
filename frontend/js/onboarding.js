@@ -128,14 +128,14 @@ const CV_ONBOARD_STEPS = [
         view: 'input',
         target: '#btn-settings',
         title: 'Settings & Models',
-        body: 'Pick which Ollama model handles summarization and which handles Q&A. Tweak chunk sizes, temperature, and retrieval depth here.',
+        body: 'Pick which local model handles summarization and which handles Q&A. Choose your inference engine, enable GPU acceleration, and tweak retrieval settings here.',
         eyebrow: 'Configure'
     },
     {
         view: 'input',
         target: '#status-indicator',
         title: 'System & health',
-        body: 'The pulsing dot shows live backend status. Click it to open <b>System</b> — Ollama connection, health, live logs, and a Restart Backend button.',
+        body: 'The pulsing dot shows live backend status. Click it to open <b>System</b> — engine status, health, live logs, and a Restart Backend button.',
         eyebrow: 'Health'
     },
     {

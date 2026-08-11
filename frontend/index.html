@@ -1149,6 +1149,20 @@
                         <span>Embedding model changed. After saving, use <strong>Re-embed All (New Model)</strong> in the sidebar to re-index your contexts with the new model.</span>
                     </div>
 
+                    <div class="settings-embed-cpu-row" id="settings-engine-row" hidden>
+                        <div class="settings-gpu-accel-head">
+                            <span class="settings-gpu-accel-title">Local inference engine</span>
+                        </div>
+                        <p class="settings-section-hint" style="margin-top:4px;">
+                            The built-in engine runs models inside ContextVolt — nothing else to install. Ollama uses the separate Ollama app if you already run it.
+                        </p>
+                        <select id="settings-engine-select" class="settings-select" style="margin-top:8px;">
+                            <option value="native">Built-in (no extra app needed)</option>
+                            <option value="ollama">Ollama (external app)</option>
+                        </select>
+                        <div class="settings-gpu-accel-log" id="settings-engine-note" hidden></div>
+                    </div>
+
                     <!-- Built-in engine only; hidden on the Ollama backend, which manages its own GPU use. -->
                     <div class="settings-embed-cpu-row" id="settings-gpu-accel-row" hidden>
                         <div class="settings-gpu-accel-head">

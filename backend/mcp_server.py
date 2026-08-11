@@ -72,7 +72,11 @@ except ImportError as e:
 # with a clear hint instead of cryptic ImportError.
 try:
     from backend import database
-    from backend.ollama_client import embed_text, check_ollama_running
+    from backend.ollama_client import embed_text
+    # local_engine_ready(), not check_ollama_running(): under the native backend
+    # Ollama is absent by design, so gating on it would silently drop MCP search
+    # to keyword-only even though embeddings work fine.
+    from backend.engine import local_engine_ready
 except ImportError as e:
     print(
         f"FATAL: cannot import ConVX backend ({e}). "
@@ -383,9 +387,9 @@ async def _tool_search_vault(args: dict) -> dict:
     top_k = max(1, min(30, int(args.get("top_k") or 8)))
     context_id = args.get("context_id")
 
-    # Try semantic first; fall back to keyword if Ollama is down or returns nothing.
+    # Try semantic first; fall back to keyword if the local engine is down or returns nothing.
     semantic_chunks: list[dict] = []
-    embed_ok = check_ollama_running()
+    embed_ok = local_engine_ready()
     if embed_ok:
         try:
             qvec = embed_text(query)
@@ -463,7 +467,7 @@ def _tool_get_chunks(args: dict) -> dict:
 
 def _tool_vault_stats() -> dict:
     stats = database.get_db_stats()
-    return {**stats, "ollama_running": check_ollama_running()}
+    return {**stats, "ollama_running": local_engine_ready()}
 
 
 async def _tool_search_contexts(args: dict) -> dict:
@@ -473,7 +477,7 @@ async def _tool_search_contexts(args: dict) -> dict:
     top_k = max(1, min(50, int(args.get("top_k") or 10)))
 
     results: list[dict] = []
-    embed_ok = check_ollama_running()
+    embed_ok = local_engine_ready()
     mode = "keyword"
     if embed_ok:
         try:

@@ -211,11 +211,26 @@ EMBEDDED_MODE = is_embedded_python()
 # Installation State & Logic
 # ─────────────────────────────────────────────────────────────────
 
+def _is_native_backend() -> bool:
+    """Whether the native (in-process llama.cpp) engine is configured.
+
+    Deliberately defensive: this runs at import time via the module-level
+    InstallState(), and an exception there takes down the whole installer
+    before its window can even open — the worst possible failure mode, and one
+    this file has already shipped once. Any problem resolving the setting just
+    means "assume Ollama", which is the historical behaviour.
+    """
+    try:
+        from backend.engine import get_inference_backend
+        return get_inference_backend() == "native"
+    except Exception:
+        return False
+
+
 class InstallState:
     """Holds installation state."""
     def __init__(self):
-        from backend.engine import get_inference_backend
-        is_native = get_inference_backend() == "native"
+        is_native = _is_native_backend()
         self.steps = [
             {"id": "python", "label": "Python Environment", "status": "pending"},
             {"id": "venv", "label": "Virtual Environment", "status": "pending"},
@@ -723,22 +738,31 @@ def run_installation():
         state.log("  Native engine ready (no external app needed)")
         return True
 
+    # A failed model download is deliberately NOT fatal — the app still runs and
+    # re-downloads on demand, and halting a whole install over one flaky network
+    # request is worse. But it must not show a green "Complete" either (it did,
+    # and the resulting install looked fine while being unusable), so these
+    # return "warning": step continues, UI shows an amber "Incomplete".
     def step_pull_native_model():
         from backend.engine.native import NativeEngine
         state.log(f"Checking AI model ({OLLAMA_MODEL})...")
-        engine = NativeEngine()
-        ok = engine.ensure_model(OLLAMA_MODEL, on_progress=state.log)
+        ok = NativeEngine().ensure_model(OLLAMA_MODEL, on_progress=state.log)
         if not ok:
-            state.log(f"  Could not prepare {OLLAMA_MODEL} — check your connection and retry")
-        return True  # non-fatal — app can still launch, model downloads on first use
+            state.log(f"  Could not download {OLLAMA_MODEL}.")
+            state.log("  ContextVolt will retry automatically on first use,")
+            state.log("  or you can download it from Settings → Models.")
+            return "warning"
+        return True
 
     def step_pull_native_embed_model():
         from backend.engine.native import NativeEngine
         state.log(f"Checking embedding model ({EMBED_MODEL})...")
-        engine = NativeEngine()
-        ok = engine.ensure_model(EMBED_MODEL, on_progress=state.log)
+        ok = NativeEngine().ensure_model(EMBED_MODEL, on_progress=state.log)
         if not ok:
-            state.log(f"  Could not prepare {EMBED_MODEL} — check your connection and retry")
+            state.log(f"  Could not download {EMBED_MODEL}.")
+            state.log("  Search will use keyword matching until it's installed")
+            state.log("  (Settings → Models).")
+            return "warning"
         return True
 
     def step_install_extension():
@@ -792,8 +816,7 @@ def run_installation():
 
         return True
 
-    from backend.engine import get_inference_backend
-    if get_inference_backend() == "native":
+    if _is_native_backend():
         steps = [step_check_python, step_create_venv, step_install_deps, step_check_native_engine, step_pull_native_model, step_pull_native_embed_model, step_install_extension]
     else:
         steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_pull_embed_model, step_install_extension]
@@ -803,7 +826,12 @@ def run_installation():
             state.current_step = i
             state.steps[i]["status"] = "running"
             try:
-                if steps[i]():
+                result = steps[i]()
+                if result == "warning":
+                    # Step didn't fully succeed but isn't fatal — keep going,
+                    # and don't claim "Complete" for work that didn't happen.
+                    state.steps[i]["status"] = "warning"
+                elif result:
                     state.steps[i]["status"] = "completed"
                 else:
                     state.steps[i]["status"] = "error"

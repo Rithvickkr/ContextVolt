@@ -628,6 +628,17 @@ a { color: inherit; }
 }
 .inst-step.error .icon-error { opacity: 1; }
 
+/* "warning" — the step finished but didn't fully succeed (e.g. a model
+   download failed). Non-fatal, so the install continues, but it must not
+   read as a green success. Reuses the error glyph in amber. */
+.inst-step.warning .inst-step-dot {
+    border-color: rgba(251,191,36,0.5);
+    background: rgba(251,191,36,0.1);
+    color: var(--warning);
+}
+.inst-step.warning .icon-error { opacity: 1; }
+.inst-step.warning .inst-step-line { background: linear-gradient(180deg, rgba(251,191,36,0.4), var(--border)); }
+
 .inst-step-info {
     display: flex;
     flex-direction: column;
@@ -651,9 +662,11 @@ a { color: inherit; }
 .inst-step.running   .ist-label  { color: var(--text-primary); }
 .inst-step.completed .ist-label  { color: var(--text-primary); }
 .inst-step.error     .ist-label  { color: var(--danger); }
+.inst-step.warning   .ist-label  { color: var(--text-primary); }
 .inst-step.running   .ist-status { color: var(--text-secondary); }
 .inst-step.completed .ist-status { color: rgba(52,211,153,0.7); }
 .inst-step.error     .ist-status { color: rgba(248,113,113,0.7); }
+.inst-step.warning   .ist-status { color: rgba(251,191,36,0.85); }
 
 .inst-left-footer {
     margin-top: auto;

@@ -711,10 +711,10 @@ function updateUI(s) {
             steps.forEach(step => {
                 const el = stepElements[step.id];
                 if (!el) return;
-                el.classList.remove('pending', 'running', 'completed', 'error');
+                el.classList.remove('pending', 'running', 'completed', 'error', 'warning');
                 el.classList.add(step.status);
                 const statusEl = el.querySelector('.ist-status');
-                const labels = { pending: 'Waiting…', running: 'In progress…', completed: 'Complete', error: 'Failed' };
+                const labels = { pending: 'Waiting…', running: 'In progress…', completed: 'Complete', error: 'Failed', warning: 'Incomplete' };
                 statusEl.textContent = labels[step.status] || '';
                 // Backend-aware step title (e.g. "Ollama Service" vs "Local Engine") —
                 // sent by installer.py's InstallState, previously ignored here.
@@ -724,7 +724,9 @@ function updateUI(s) {
                 }
             });
 
-            const done = steps.filter(s => s.status === 'completed').length;
+            // 'warning' steps count toward progress — the install really did
+            // finish; the step itself stays amber to show what didn't complete.
+            const done = steps.filter(s => s.status === 'completed' || s.status === 'warning').length;
             const pct = Math.round((done / steps.length) * 100);
             progressFill.style.width = pct + '%';
             progressText.textContent = pct + '%';

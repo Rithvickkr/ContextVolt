@@ -17,6 +17,8 @@ import logging
 import os
 import re
 import tempfile
+import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -36,9 +38,21 @@ MODEL_REGISTRY: dict[str, dict] = {
         "kind": "chat",
         "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
     },
+    "qwen3:4b": {
+        "repo": "bartowski/Qwen_Qwen3-4B-GGUF",
+        "filename": "Qwen_Qwen3-4B-Q4_K_M.gguf",
+        "kind": "chat",
+        "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+    },
     "qwen2.5:3b": {
         "repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+        "kind": "chat",
+        "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
+    },
+    "qwen2.5:1.5b": {
+        "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "kind": "chat",
         "n_ctx": int(os.getenv("OLLAMA_NUM_CTX", "32768")),
     },
@@ -49,25 +63,65 @@ MODEL_REGISTRY: dict[str, dict] = {
         "kind": "embed",
         "n_ctx": 32768,
     },
+    "mxbai-embed-large": {
+        "repo": "ChristianAzinn/mxbai-embed-large-v1-gguf",
+        "filename": "mxbai-embed-large-v1.Q4_K_M.gguf",
+        "kind": "embed",
+        "n_ctx": 512,
+    },
     "nomic-embed-text": {
         "repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
         "filename": "nomic-embed-text-v1.5.Q4_K_M.gguf",
         "kind": "embed",
         "n_ctx": 2048,
     },
+    "nomic-embed-text:v1.5": {
+        "repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
+        "filename": "nomic-embed-text-v1.5.Q4_K_M.gguf",
+        "kind": "embed",
+        "n_ctx": 2048,
+    },
+    "bge-m3": {
+        "repo": "gpustack/bge-m3-GGUF",
+        "filename": "bge-m3-Q4_K_M.gguf",
+        "kind": "embed",
+        "n_ctx": 8192,
+    },
 }
 
-# Models offered by installer.py's AVAILABLE_MODELS / AVAILABLE_EMBED_MODELS
-# that don't have a GGUF entry above yet — ensure_model() returns False for
-# these today (installer falls back to reporting the failure, doesn't crash).
-# TODO: qwen3:4b, qwen2.5:7b, qwen2.5:1.5b, mxbai-embed-large,
-#       nomic-embed-text:v1.5, bge-m3.
+# Models offered by installer.py's AVAILABLE_MODELS that don't have a GGUF
+# entry above yet — ensure_model() returns False for these today (installer
+# falls back to reporting the failure, doesn't crash).
+# TODO: qwen2.5:7b — its Q4_K_M quant ships as two split GGUF files
+# (-00001-of-00002 / -00002-of-00002); ensure_model() only fetches one file
+# per model today, needs multi-part download support first.
 
 _THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>\s*", re.IGNORECASE)
 
-# Loaded Llama instances, keyed by (model_path, n_gpu_layers) — reload is
-# expensive (seconds), so keep resident models across calls within one process.
-_loaded: dict[tuple[str, int], object] = {}
+# ── Loaded-model cache ────────────────────────────────────────────────
+# Reloading a multi-GB GGUF costs seconds, so instances stay resident. Two
+# invariants this cache has to hold, both of which bite hard if ignored:
+#
+#  1. THREAD SAFETY. A llama_cpp.Llama instance is NOT safe to call from two
+#     threads at once — it mutates one shared llama_context. ContextVolt
+#     absolutely does this: capture summarizes on a background thread while
+#     the user searches (embeds) from a request thread. Every inference call
+#     therefore runs under that instance's own lock.
+#  2. BOUNDED MEMORY. One chat model (~2 GB) + one embed model is fine;
+#     silently keeping every model the user has ever selected resident is
+#     not. Loading a new model of a kind evicts the previous one of that kind.
+#     Eviction only drops the dict reference — a call already in flight holds
+#     its own reference, so the instance stays alive until that call returns.
+_loaded: dict[str, object] = {}          # cache key -> Llama
+_model_locks: dict[str, threading.Lock] = {}   # cache key -> per-instance lock
+_cache_lock = threading.Lock()           # guards _loaded / _model_locks
+
+# Models with a download in flight. The setup screen polls readiness every 2s
+# and fires /api/setup/pull-model whenever the model is missing, so without
+# this guard a single missing model spawns a new thread — and a new full
+# multi-GB HTTP download — every couple of seconds until it finishes.
+_downloading: set[str] = set()
+_downloading_lock = threading.Lock()
 
 
 def _model_path(model: str) -> Path | None:
@@ -75,6 +129,27 @@ def _model_path(model: str) -> Path | None:
     filename = entry["filename"] if entry else f"{model}.gguf"
     path = native_models_dir() / filename
     return path if path.exists() else None
+
+
+# A .part older than this is from a download that died (crash, kill, network
+# drop) rather than one in flight, so it's safe to reclaim the disk.
+_STALE_PART_AGE_S = 6 * 60 * 60
+
+
+def _purge_stale_parts() -> None:
+    """Delete abandoned *.part temp files. Multi-GB each — without this a few
+    interrupted downloads quietly eat tens of gigabytes."""
+    try:
+        now = time.time()
+        for p in native_models_dir().glob("*.part"):
+            try:
+                if now - p.stat().st_mtime > _STALE_PART_AGE_S:
+                    p.unlink()
+                    _log.info("Removed stale partial download %s", p.name)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def _gpu_layers() -> int:
@@ -107,27 +182,110 @@ def _gpu_layers() -> int:
         return 0
 
 
-def _load(model: str, embedding: bool) -> object:
+def _model_n_ctx(model: str, embedding: bool) -> int:
+    entry = MODEL_REGISTRY.get(model)
+    if entry:
+        return int(entry["n_ctx"])
+    return 2048 if embedding else int(os.getenv("OLLAMA_NUM_CTX", "32768"))
+
+
+def _load(model: str, embedding: bool) -> tuple[object, threading.Lock, int]:
+    """Return (llama_instance, its_lock, n_ctx).
+
+    Callers MUST hold the returned lock for the duration of any inference
+    call on the instance — see the cache invariants above.
+    """
     entry = MODEL_REGISTRY.get(model)
     filename = entry["filename"] if entry else f"{model}.gguf"
-    n_ctx = entry["n_ctx"] if entry else (2048 if embedding else int(os.getenv("OLLAMA_NUM_CTX", "32768")))
+    n_ctx = _model_n_ctx(model, embedding)
     path = native_models_dir() / filename
     if not path.exists():
         raise FileNotFoundError(f"Model not downloaded: {model} (expected {path})")
 
     n_gpu_layers = 0 if embedding else _gpu_layers()
-    key = (str(path), n_gpu_layers)
-    if key not in _loaded:
+    kind = "embed" if embedding else "chat"
+    key = f"{kind}|{path}|{n_gpu_layers}"
+
+    with _cache_lock:
+        cached = _loaded.get(key)
+        if cached is not None:
+            return cached, _model_locks[key], n_ctx
+
         from llama_cpp import Llama
-        _log.info("Loading native model %s (gpu_layers=%d, n_ctx=%d, embedding=%s)", path.name, n_gpu_layers, n_ctx, embedding)
-        _loaded[key] = Llama(
-            model_path=str(path),
-            n_gpu_layers=n_gpu_layers,
-            n_ctx=n_ctx,
-            embedding=embedding,
-            verbose=False,
+        _log.info(
+            "Loading native model %s (kind=%s, gpu_layers=%d, n_ctx=%d)",
+            path.name, kind, n_gpu_layers, n_ctx,
         )
-    return _loaded[key]
+        kwargs: dict = {
+            "model_path": str(path),
+            "n_gpu_layers": n_gpu_layers,
+            "n_ctx": n_ctx,
+            "embedding": embedding,
+            "verbose": False,
+        }
+        if embedding:
+            # Embedding models pool over the whole sequence, so a batch smaller
+            # than the input silently drops tokens (or errors). Keep n_batch at
+            # the context size, but cap it — allocating a 32k-token batch for
+            # qwen3-embedding costs far more memory than the inputs we send.
+            kwargs["n_batch"] = min(n_ctx, 4096)
+        llm = Llama(**kwargs)
+
+        # Evict the previous model of this kind (bounded memory).
+        for stale in [k for k in _loaded if k.startswith(f"{kind}|") and k != key]:
+            _log.info("Evicting cached native model %s", stale.split("|")[1])
+            _loaded.pop(stale, None)
+            _model_locks.pop(stale, None)
+
+        _loaded[key] = llm
+        _model_locks[key] = threading.Lock()
+        return llm, _model_locks[key], n_ctx
+
+
+def _fit_to_context(llm, prompt: str, reserve_tokens: int, n_ctx: int) -> str:
+    """Shrink `prompt` so prompt + reserve_tokens fits inside n_ctx.
+
+    llama.cpp raises when a prompt exceeds the context window; the Ollama path
+    never had to care because _call_generate() retries down a ladder of smaller
+    contexts server-side. Here the exception would surface inside _synthesize's
+    broad `except`, which returns an EMPTY summary — a silent quality failure
+    rather than a visible error. So clamp proactively.
+
+    The middle is what gets dropped: our prompts carry the task instructions at
+    the top AND the required output format at the bottom, so trimming either end
+    breaks the response format.
+    """
+    budget = n_ctx - reserve_tokens - 16  # 16: BOS/EOS + template slack
+    if budget <= 64:
+        budget = max(64, n_ctx // 2)
+    try:
+        toks = llm.tokenize(prompt.encode("utf-8", "ignore"), special=True)
+    except Exception:
+        return prompt  # tokenizer unavailable — let the caller's guard handle it
+    if len(toks) <= budget:
+        return prompt
+
+    marker = "\n\n…[content truncated to fit the model's context window]…\n\n"
+    try:
+        marker_len = len(llm.tokenize(marker.encode("utf-8"), special=False))
+    except Exception:
+        marker_len = 16
+    keep = max(32, budget - marker_len)
+    head_n = keep // 2
+    tail_n = keep - head_n
+    try:
+        head = llm.detokenize(toks[:head_n]).decode("utf-8", "ignore")
+        tail = llm.detokenize(toks[-tail_n:]).decode("utf-8", "ignore")
+    except Exception:
+        # Fall back to a proportional character cut.
+        ratio = budget / max(1, len(toks))
+        cut = max(64, int(len(prompt) * ratio * 0.9))
+        head, tail = prompt[: cut // 2], prompt[-(cut // 2):]
+    _log.warning(
+        "Native prompt %d tokens > budget %d (n_ctx=%d) — truncated middle",
+        len(toks), budget, n_ctx,
+    )
+    return head + marker + tail
 
 
 class NativeEngine:
@@ -160,8 +318,12 @@ class NativeEngine:
         path = _model_path(model)
         if path is None:
             return False
-        for key in [k for k in _loaded if k[0] == str(path)]:
-            del _loaded[key]
+        with _cache_lock:
+            for key in [k for k in _loaded if k.split("|", 2)[1] == str(path)]:
+                _loaded.pop(key, None)
+                _model_locks.pop(key, None)
+        import gc
+        gc.collect()  # drop the mmap before unlink, or Windows refuses
         try:
             path.unlink()
             return True
@@ -188,6 +350,19 @@ class NativeEngine:
             _log.warning("No download source registered for native model %r", model)
             return False
 
+        with _downloading_lock:
+            if model in _downloading:
+                _log.debug("Download of %s already in progress — skipping duplicate", model)
+                return False
+            _downloading.add(model)
+        try:
+            return self._download(model, entry, _emit)
+        finally:
+            with _downloading_lock:
+                _downloading.discard(model)
+
+    def _download(self, model: str, entry: dict, _emit) -> bool:
+        _purge_stale_parts()
         native_models_dir().mkdir(parents=True, exist_ok=True)
         dest = native_models_dir() / entry["filename"]
         url = f"https://huggingface.co/{entry['repo']}/resolve/main/{entry['filename']}"
@@ -235,12 +410,23 @@ class NativeEngine:
             yield {"status": "error", "error": f"No download source registered for {model!r}"}
             return
 
+        # Same guard as ensure_model(): the setup screen's auto-pull and a user
+        # clicking Download in Settings can otherwise fetch the same multi-GB
+        # file twice at once, racing on os.replace at the end.
+        with _downloading_lock:
+            if model in _downloading:
+                yield {"status": "error", "error": f"{model} is already downloading"}
+                return
+            _downloading.add(model)
+
         import requests
+        _purge_stale_parts()
         native_models_dir().mkdir(parents=True, exist_ok=True)
         dest = native_models_dir() / entry["filename"]
         url = f"https://huggingface.co/{entry['repo']}/resolve/main/{entry['filename']}"
 
         tmp_fd, tmp_path = tempfile.mkstemp(dir=str(native_models_dir()), suffix=".part")
+        ok = False
         try:
             with os.fdopen(tmp_fd, "wb") as f:
                 resp = requests.get(url, stream=True, timeout=60)
@@ -254,22 +440,40 @@ class NativeEngine:
                     completed += len(chunk)
                     yield {"status": "downloading", "completed": completed, "total": total}
             os.replace(tmp_path, dest)
+            ok = True
             yield {"status": "success"}
         except Exception as e:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
             yield {"status": "error", "error": str(e)[:200]}
+        finally:
+            # `finally`, not just `except Exception`: if the HTTP client hangs up
+            # mid-download the consumer abandons this generator, which raises
+            # GeneratorExit at the yield — a BaseException that `except
+            # Exception` does NOT catch, orphaning a multi-GB .part file.
+            if not ok:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+            with _downloading_lock:
+                _downloading.discard(model)
 
     def generate(self, prompt: str, model: str, **kwargs) -> str:
-        llm = _load(model, embedding=False)
-        result = llm(
-            prompt,
-            max_tokens=kwargs.get("max_tokens", 2000),
-            temperature=kwargs.get("temperature", 0.2),
-            stop=kwargs.get("stop") or [],
-        )
+        """Single-shot completion.
+
+        `timeout` is accepted and ignored: inference runs in-process, so there
+        is no socket to time out. Callers share a signature with the Ollama
+        engine, which does use it.
+        """
+        llm, lock, n_ctx = _load(model, embedding=False)
+        max_tokens = kwargs.get("max_tokens", 2000)
+        with lock:
+            prompt = _fit_to_context(llm, prompt, max_tokens, n_ctx)
+            result = llm(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=kwargs.get("temperature", 0.2),
+                stop=kwargs.get("stop") or [],
+            )
         text = result["choices"][0]["text"]
         return _THINK_BLOCK_RE.sub("", text).strip()
 
@@ -281,56 +485,70 @@ class NativeEngine:
         chunk boundaries (a tag can straddle two chunks), buffering by holding
         back a short tail until each chunk is known not to end mid-tag.
         """
-        llm = _load(model, embedding=False)
-        stream = llm(
-            prompt,
-            max_tokens=kwargs.get("max_tokens", 2000),
-            temperature=kwargs.get("temperature", 0.2),
-            stop=kwargs.get("stop") or [],
-            stream=True,
-        )
+        llm, lock, n_ctx = _load(model, embedding=False)
+        max_tokens = kwargs.get("max_tokens", 2000)
         in_think = False
         pending = ""
-        for chunk in stream:
-            tok = chunk["choices"][0]["text"]
-            if not tok:
-                continue
-            buf = pending + tok
-            pending = ""
-            out = []
-            while buf:
-                if in_think:
-                    end = buf.find("</think>")
-                    if end == -1:
-                        pending = buf[-8:] if len(buf) > 8 else buf
-                        buf = ""
-                        break
-                    buf = buf[end + len("</think>"):]
-                    in_think = False
-                else:
-                    start = buf.find("<think>")
-                    if start == -1:
-                        if len(buf) > 7:
-                            out.append(buf[:-7])
-                            pending = buf[-7:]
-                        else:
-                            pending = buf
-                        buf = ""
-                        break
-                    out.append(buf[:start])
-                    buf = buf[start + len("<think>"):]
-                    in_think = True
-            if out:
-                yield "".join(out)
-        if pending and not in_think:
-            yield pending
+        # Held for the whole generator: the instance is single-threaded, so the
+        # lock can only be released once the last token has been pulled. try/
+        # finally (not `with`) so an abandoned generator still releases it —
+        # GeneratorExit would otherwise leave the model locked forever.
+        lock.acquire()
+        try:
+            prompt = _fit_to_context(llm, prompt, max_tokens, n_ctx)
+            stream = llm(
+                prompt,
+                max_tokens=max_tokens,
+                temperature=kwargs.get("temperature", 0.2),
+                stop=kwargs.get("stop") or [],
+                stream=True,
+            )
+            for chunk in stream:
+                tok = chunk["choices"][0]["text"]
+                if not tok:
+                    continue
+                buf = pending + tok
+                pending = ""
+                out = []
+                while buf:
+                    if in_think:
+                        end = buf.find("</think>")
+                        if end == -1:
+                            pending = buf[-8:] if len(buf) > 8 else buf
+                            buf = ""
+                            break
+                        buf = buf[end + len("</think>"):]
+                        in_think = False
+                    else:
+                        start = buf.find("<think>")
+                        if start == -1:
+                            if len(buf) > 7:
+                                out.append(buf[:-7])
+                                pending = buf[-7:]
+                            else:
+                                pending = buf
+                            buf = ""
+                            break
+                        out.append(buf[:start])
+                        buf = buf[start + len("<think>"):]
+                        in_think = True
+                if out:
+                    yield "".join(out)
+            if pending and not in_think:
+                yield pending
+        finally:
+            lock.release()
 
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
         if not texts:
             return []
-        llm = _load(model, embedding=True)
-        result = llm.embed(texts, normalize=True)
+        llm, lock, _n_ctx = _load(model, embedding=True)
+        with lock:
+            # truncate=True lets llama.cpp clamp anything still over the context
+            # window; callers already trim by _get_embed_max_chars, this is the
+            # backstop so one oversized chunk can't fail a whole batch.
+            result = llm.embed(texts, normalize=True, truncate=True)
         # llama-cpp-python returns a flat list[float] for single input, list[list[float]] for batches.
-        if texts and result and isinstance(result[0], float):
+        if result and isinstance(result[0], float):
             return [result]
         return result

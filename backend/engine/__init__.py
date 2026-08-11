@@ -2,10 +2,14 @@
 ContextVolt — pluggable local inference engine.
 
 get_engine() selects an InferenceEngine implementation via the
-INFERENCE_BACKEND setting (env var, default "ollama"). Nothing in the rest
-of the app calls this yet — ollama_client.py still talks to Ollama directly.
-Wiring callers to go through this factory is a later, separate change so
-each step stays independently verifiable.
+INFERENCE_BACKEND setting (env var, default "ollama"): "ollama" talks to a
+separate Ollama server over HTTP, "native" runs GGUF models in-process via
+llama-cpp-python.
+
+Route readiness checks through local_engine_ready()/local_engine_label()
+rather than calling ollama_client.check_ollama_running() directly — the
+latter is always False under the native backend, which would 503 every
+local-inference endpoint.
 """
 
 from __future__ import annotations
@@ -34,6 +38,10 @@ def get_inference_backend() -> str:
     return "ollama"
 
 
+def is_native_backend() -> bool:
+    return get_inference_backend() == "native"
+
+
 def get_engine(backend: str | None = None) -> InferenceEngine:
     """Return the InferenceEngine for `backend` (or the configured default)."""
     backend = backend or get_inference_backend()
@@ -42,3 +50,57 @@ def get_engine(backend: str | None = None) -> InferenceEngine:
         return NativeEngine()
     from backend.engine.ollama import OllamaEngine
     return OllamaEngine()
+
+
+def local_engine_ready() -> bool:
+    """Can the active LOCAL backend serve inference right now?
+
+    Use this instead of ollama_client.check_ollama_running() when gating an
+    endpoint — under the native backend Ollama is legitimately absent, so a
+    raw check_ollama_running() gate turns every local-inference route into a
+    503 even though inference works fine.
+    """
+    try:
+        return get_engine().is_ready()
+    except Exception:
+        return False
+
+
+def local_engine_label() -> str:
+    """Backend name for user-facing error messages."""
+    return "Local engine" if is_native_backend() else "Ollama"
+
+
+def local_model_available(model: str | None = None) -> bool:
+    """Is `model` (default: the configured chat model) installed locally?
+
+    Native uses exact registry-key matching; Ollama keeps its historical
+    fuzzy base-name match (so "qwen2.5:7b" still matches an installed
+    "qwen2.5:latest"), which is why this isn't a single shared code path.
+    """
+    from backend.ollama_client import _get_default_model
+    model = model or _get_default_model()
+    try:
+        if is_native_backend():
+            return model in get_engine().list_models()
+        from backend.ollama_client import check_model_available
+        return check_model_available(model)
+    except Exception:
+        return False
+
+
+def local_model_missing_detail(model: str) -> str:
+    """The 503 detail string to show when local_model_available() is False."""
+    if is_native_backend():
+        return f"Model '{model}' is not downloaded. Download it from Settings."
+    return f"Model '{model}' is not available. Pull it with 'ollama pull {model}'."
+
+
+def local_engine_unready_detail() -> str:
+    """The 503 detail string to show when local_engine_ready() is False."""
+    if is_native_backend():
+        return (
+            "Local engine is not ready — no model files found. "
+            "Download a model from Settings."
+        )
+    return "Ollama is not running. Please start it with 'ollama serve'."

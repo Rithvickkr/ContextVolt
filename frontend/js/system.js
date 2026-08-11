@@ -245,17 +245,23 @@ async function loadSystemHealth() {
         const d = await res.json();
 
         const isCloud = d.active_provider?.is_cloud;
+        // The backend's "ollama" block reports whichever local engine is active
+        // (built-in llama.cpp or Ollama); engine_label names it for display.
+        const engineLabel = d.engine_label || 'Ollama';
+        const isNativeEngine = d.inference_backend === 'native';
         const ollamaDot = d.ollama.running ? 'ok' : 'err';
         const modelReady = d.model.ready;
         const modelDot  = modelReady ? 'ok' : (d.ollama.running ? 'warn' : 'err');
-        const modelSub  = modelReady ? 'Ready' : (d.ollama.running ? 'Not downloaded' : 'Ollama offline');
+        const modelSub  = modelReady ? 'Ready' : (d.ollama.running ? 'Not downloaded' : `${engineLabel} offline`);
 
         // ── Overall verdict ──
         let state = 'ok', verdict = "Everything's running", pillText = 'All systems operational';
         if (isCloud) {
             state = 'ok'; verdict = 'Running on cloud provider'; pillText = 'All systems operational';
         } else if (!d.ollama.running) {
-            state = 'err'; verdict = 'Ollama is offline'; pillText = 'Service offline';
+            state = 'err';
+            verdict = isNativeEngine ? 'No local model installed' : 'Ollama is offline';
+            pillText = isNativeEngine ? 'Needs attention' : 'Service offline';
         } else if (!modelReady) {
             state = 'warn'; verdict = 'Model not downloaded'; pillText = 'Needs attention';
         }
@@ -264,7 +270,7 @@ async function loadSystemHealth() {
         const heroEl = $('#sys-health-hero');
         if (heroEl) {
             const bits = [`Backend up ${_fmtUptime(d.backend.uptime_s)}`];
-            bits.push(d.ollama.running ? 'Ollama connected' : 'Ollama offline');
+            bits.push(d.ollama.running ? `${engineLabel} ready` : `${engineLabel} offline`);
             bits.push(`${d.database.contexts} contexts indexed`);
             heroEl.hidden = false;
             heroEl.innerHTML = `
@@ -285,8 +291,8 @@ async function loadSystemHealth() {
         grid.innerHTML = `
             <div class="sys-grouplabel">Services</div>
             ${_sysCard({ icon: 'backend', label: 'Backend', dot: 'ok', value: 'Online', sub: `Uptime: ${_fmtUptime(d.backend.uptime_s)}` })}
-            ${_sysCard({ icon: 'ollama', label: 'Ollama', dot: ollamaDot,
-                         bodyHtml: `<div class="sys-card-header"><span class="sys-card-label">Ollama</span><span class="sys-dot ${ollamaDot}"></span></div>
+            ${_sysCard({ icon: 'ollama', label: engineLabel, dot: ollamaDot,
+                         bodyHtml: `<div class="sys-card-header"><span class="sys-card-label">${escapeHtml(engineLabel)}</span><span class="sys-dot ${ollamaDot}"></span></div>
                                     <div class="sys-card-value">${d.ollama.running ? 'Running' : 'Offline'}</div>
                                     <div class="sys-card-sub" style="font-family:var(--font-mono);font-size:11px;">${escapeHtml(d.ollama.url)}</div>` })}
 
@@ -302,7 +308,7 @@ async function loadSystemHealth() {
             <div class="sys-card wide">
                 <span class="sys-card-ic">${_SYS_ICONS.models}</span>
                 <div class="sys-card-body">
-                    <div class="sys-card-header"><span class="sys-card-label">Installed Ollama Models</span></div>
+                    <div class="sys-card-header"><span class="sys-card-label">Installed ${escapeHtml(engineLabel)} Models</span></div>
                     ${modelsHtml}
                 </div>
             </div>`;

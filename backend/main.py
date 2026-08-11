@@ -89,6 +89,16 @@ from backend.ollama_client import (
     OLLAMA_BASE,
     _USER_TURN,
 )
+from backend.engine import (
+    get_engine,
+    get_inference_backend,
+    is_native_backend,
+    local_engine_label,
+    local_engine_ready,
+    local_engine_unready_detail,
+    local_model_available,
+    local_model_missing_detail,
+)
 from backend.llm_router import (
     get_active_provider,
     is_cloud_active,
@@ -197,7 +207,11 @@ async def _lifespan(_app: "FastAPI"):
     def _startup_warm() -> None:
         # Auto-start Ollama if the user closed it, THEN warm the embed model
         # (warming needs Ollama up). Both are best-effort and never raise.
-        _ensure_ollama_running()
+        # Under the native backend there is no server to start, and calling
+        # ensure_ollama_running() there just burns time hunting for a binary
+        # that isn't installed and logs a misleading "cannot auto-start".
+        if not is_native_backend():
+            _ensure_ollama_running()
         _warm_embed_model()
 
     _threading.Thread(target=_startup_warm, daemon=True).start()
@@ -314,7 +328,6 @@ def health():
 def setup_status():
     """Report readiness of all services for the Setup Wizard UI."""
     from backend.ollama_client import _get_default_model
-    from backend.engine import get_inference_backend
     current_model = _get_default_model()
     inference_backend = get_inference_backend()
     if inference_backend == "native":
@@ -365,21 +378,26 @@ def gpu_prefer_nvidia():
 @app.post("/api/setup/pull-model")
 def pull_model():
     """Trigger a model download in the background (Ollama pull, or native GGUF fetch)."""
-    from backend.engine import get_inference_backend
-    if get_inference_backend() == "native":
+    # The live config value, NOT the import-time DEFAULT_MODEL: that constant is
+    # read once at startup, so after the user picks a different model in Settings
+    # this endpoint would keep downloading the old one — and the setup screen
+    # polls it every 2s while the model is missing, so it never converges.
+    from backend.ollama_client import _get_default_model
+    model = _get_default_model()
+    if is_native_backend():
         from backend.engine.native import NativeEngine
-        threading.Thread(target=NativeEngine().ensure_model, args=(DEFAULT_MODEL,), daemon=True).start()
-        return {"status": "pulling", "model": DEFAULT_MODEL}
+        threading.Thread(target=NativeEngine().ensure_model, args=(model,), daemon=True).start()
+        return {"status": "pulling", "model": model}
     if not check_ollama_running():
         raise HTTPException(status_code=503, detail="Ollama is not running")
     try:
         subprocess.Popen(
-            ["ollama", "pull", DEFAULT_MODEL],
+            ["ollama", "pull", model],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
-        return {"status": "pulling", "model": DEFAULT_MODEL}
+        return {"status": "pulling", "model": model}
     except FileNotFoundError:
         raise HTTPException(status_code=503, detail="Ollama CLI not found")
 
@@ -436,8 +454,8 @@ def embed_setup_status():
     """Return current embed model config and available model list."""
     cfg = _read_config()
     current = cfg.get("embed_model", "nomic-embed-text")
-    ollama_ok = check_ollama_running()
-    ready = check_model_available(current) if ollama_ok else False
+    ollama_ok = local_engine_ready()
+    ready = local_model_available(current) if ollama_ok else False
 
     # Mark the VRAM-appropriate embed model as recommended
     from backend.gpu_info import detect_gpu, recommend_models
@@ -494,7 +512,6 @@ def get_config():
     boolean so the frontend can show which models are already downloaded.
     Includes cloud provider info.
     """
-    from backend.engine import get_inference_backend
     cfg = _read_config()
     current_model = cfg.get("model", DEFAULT_MODEL)
     current_embed = cfg.get("embed_model", "nomic-embed-text")
@@ -647,7 +664,6 @@ def set_embed_on_cpu(body: dict):
 @app.post("/api/setup/pull-embed-model")
 def pull_embed_model():
     """Trigger a download for the configured embed model (Ollama pull, or native GGUF fetch)."""
-    from backend.engine import get_inference_backend
     cfg = _read_config()
     model = cfg.get("embed_model", "nomic-embed-text")
     if get_inference_backend() == "native":
@@ -675,7 +691,6 @@ def pull_model_stream(body: ModelSelect):
     Each line: {"status": "downloading", "completed": bytes, "total": bytes}
     Final line: {"status": "success"}
     """
-    from backend.engine import get_inference_backend
     if get_inference_backend() == "native":
         from backend.engine.native import NativeEngine
         import json as _json
@@ -721,7 +736,6 @@ def delete_ollama_model(model_id: str):
     config model ID (e.g. qwen2.5:3b) using the same fuzzy base-name match
     that _is_installed uses, so the delete never fails with 'model not found'.
     """
-    from backend.engine import get_inference_backend
     if get_inference_backend() == "native":
         from backend.engine.native import NativeEngine
         if NativeEngine().delete_model(model_id):
@@ -860,15 +874,18 @@ def list_providers():
     current_provider = cfg.get("provider", "ollama")
     cloud_keys = cfg.get("cloud_keys", {})
     cloud_models = cfg.get("cloud_models", {})
-    ollama_ok = check_ollama_running()
+    ollama_ok = local_engine_ready()
 
     providers = [
         {
+            # Historical id "ollama" == "the local backend", whichever one is
+            # configured — the frontend keys off this string, so renaming it
+            # would break provider selection for existing installs.
             "id": "ollama",
-            "label": "Local (Ollama)",
+            "label": "Local (Built-in)" if is_native_backend() else "Local (Ollama)",
             "is_local": True,
             "active": current_provider == "ollama",
-            "ready": ollama_ok and check_model_available(),
+            "ready": ollama_ok and local_model_available(),
             "model": cfg.get("model", DEFAULT_MODEL),
         },
     ]
@@ -902,16 +919,13 @@ def api_summarize(req: SummarizeRequest):
 
     active = get_active_provider()
     if not active["is_cloud"]:
-        # Ollama checks only needed for local provider
-        if not check_ollama_running():
+        # Local-backend checks only — cloud providers need neither.
+        if not local_engine_ready():
+            raise HTTPException(status_code=503, detail=local_engine_unready_detail())
+        if not local_model_available():
             raise HTTPException(
                 status_code=503,
-                detail="Ollama is not running. Please start it with 'ollama serve'.",
-            )
-        if not check_model_available():
-            raise HTTPException(
-                status_code=503,
-                detail=f"Model '{DEFAULT_MODEL}' is not available. Pull it with 'ollama pull {DEFAULT_MODEL}'.",
+                detail=local_model_missing_detail(active["model"]),
             )
 
     try:
@@ -933,10 +947,13 @@ def api_summarize_stream(req: SummarizeRequest):
 
     active = get_active_provider()
     if not active["is_cloud"]:
-        if not check_ollama_running():
-            raise HTTPException(status_code=503, detail="Ollama is not running")
-        if not check_model_available():
-            raise HTTPException(status_code=503, detail="Model not available")
+        if not local_engine_ready():
+            raise HTTPException(status_code=503, detail=local_engine_unready_detail())
+        if not local_model_available():
+            raise HTTPException(
+                status_code=503,
+                detail=local_model_missing_detail(active["model"]),
+            )
 
     import json as _json
 
@@ -1127,8 +1144,8 @@ def api_resummarize(context_id: int):
     if not ctx:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    if not check_ollama_running():
-        raise HTTPException(status_code=503, detail="Ollama is not running")
+    if not is_cloud_active() and not local_engine_ready():
+        raise HTTPException(status_code=503, detail=local_engine_unready_detail())
 
     update_context(context_id, status="summarizing")
 
@@ -2004,8 +2021,8 @@ def api_vault_ask(body: dict):
     # Check provider availability
     active = get_active_provider()
     if not active["is_cloud"]:
-        if not check_ollama_running():
-            raise HTTPException(status_code=503, detail="Ollama is not running")
+        if not local_engine_ready():
+            raise HTTPException(status_code=503, detail=local_engine_unready_detail())
 
     # 1. Rewrite follow-up questions into standalone queries (skipped on first turn).
     #    The rewrite is *additive*: we run retrieval with both the original question
@@ -2752,20 +2769,23 @@ def api_system_status():
         embed_model = "unknown"
 
     try:
-        ollama_running = check_ollama_running()
+        ollama_running = local_engine_ready()
     except Exception:
         ollama_running = False
 
     try:
-        model_ready = check_model_available(current_model) if ollama_running else False
+        model_ready = local_model_available(current_model) if ollama_running else False
     except Exception:
         model_ready = False
 
     installed_models: list[str] = []
     if ollama_running:
         try:
-            r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
-            installed_models = [m.get("name", "") for m in r.json().get("models", [])]
+            if is_native_backend():
+                installed_models = get_engine().list_models()
+            else:
+                r = _req.get(f"{OLLAMA_BASE}/api/tags", timeout=5)
+                installed_models = [m.get("name", "") for m in r.json().get("models", [])]
         except Exception:
             pass
 
@@ -2778,7 +2798,13 @@ def api_system_status():
 
     return {
         "backend":          {"status": "ok", "uptime_s": uptime_s},
-        "ollama":           {"running": ollama_running, "url": OLLAMA_BASE},
+        # "ollama" key kept for frontend/extension compatibility — it reports
+        # whichever local backend is active. inference_backend/engine_label say
+        # which one that actually is, so the UI can word it correctly.
+        "inference_backend": get_inference_backend(),
+        "engine_label":     local_engine_label(),
+        "ollama":           {"running": ollama_running,
+                             "url": "in-process" if is_native_backend() else OLLAMA_BASE},
         "model":            {"name": current_model, "ready": model_ready},
         "embed":            {"name": embed_model},
         "installed_models": installed_models,

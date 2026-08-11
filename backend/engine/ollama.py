@@ -48,11 +48,18 @@ class OllamaEngine:
         return _oc._strip_think_blocks(r.json().get("response", ""))
 
     def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        """Embed already-prepared texts.
+
+        Contract note: `texts` arrive with the retrieval task prefix already
+        applied and truncated to the model's limit (ollama_client does this,
+        because the query-vs-document prefix differs per call site and only
+        the caller knows which it is). Prefixing here as well would
+        double-prefix and silently degrade recall, so this method must stay a
+        thin passthrough — same as NativeEngine.embed().
+        """
         if not texts:
             return []
-        max_chars = _oc._get_embed_max_chars(model)
-        prefix = _oc._embed_prefix(model, is_query=False)
-        body: dict = {"model": model, "input": [prefix + t[:max_chars] for t in texts]}
+        body: dict = {"model": model, "input": texts}
         if _oc._embed_on_cpu():
             body["options"] = {"num_gpu": 0}
         r = _oc._ollama_post(f"{_oc.OLLAMA_BASE}/api/embed", json=body, timeout=60)

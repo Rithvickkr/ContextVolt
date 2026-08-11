@@ -164,6 +164,24 @@ def _get_embed_max_chars(model: str) -> int:
     """
     if model in _embed_ctx_cache:
         return _embed_ctx_cache[model]
+
+    # Native backend: read the context length from the model registry. Falling
+    # through to Ollama's /api/show here used to cost ~15s per cold call (three
+    # connection retries with exponential backoff against a server that isn't
+    # running) and then return the 1200-char default, silently truncating every
+    # embedding input to a fraction of what the model actually supports.
+    from backend.engine import is_native_backend
+    if is_native_backend():
+        from backend.engine.native import MODEL_REGISTRY
+        entry = MODEL_REGISTRY.get(model)
+        if entry:
+            limit = max(int(entry["n_ctx"] * 2.5), 256)
+            _embed_ctx_cache[model] = limit
+            _log.debug("Embed model %s n_ctx=%d (registry) -> char limit=%d", model, entry["n_ctx"], limit)
+            return limit
+        _embed_ctx_cache[model] = 1200
+        return 1200
+
     try:
         r = _ollama_post(f"{OLLAMA_BASE}/api/show", json={"name": model}, timeout=10)
         r.raise_for_status()

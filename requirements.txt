@@ -11,6 +11,12 @@ mcp>=1.0.0
 
 # Native inference engine (INFERENCE_BACKEND=native — see backend/engine/).
 # CPU wheels only come from abetlen's release index, not PyPI proper.
+#
+# CPU build on purpose: the CUDA build is ~900 MB and needs another ~630 MB of
+# NVIDIA runtime DLLs, which is dead weight for anyone without an NVIDIA GPU.
+# Users who have one enable it from Settings (or CONTEXTVOLT_ENABLE_GPU=1 at
+# install time) — backend/engine/cuda_setup.py swaps in the CUDA wheel plus the
+# nvidia-*-cu12 runtime packages. Measured ~10x: 10 -> 98 tok/s on an RTX 3050.
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
 llama-cpp-python>=0.3.0
 

@@ -1072,8 +1072,87 @@ function _syncEmbedCpuToggle() {
     });
 }
 
+// GPU acceleration (native engine only). The CUDA build is a ~1.5 GB download
+// and is therefore not part of the base install — this is where a user with an
+// NVIDIA card opts into it. Polls while pip runs, since that takes minutes.
+let _gpuAccelWired = false;
+let _gpuAccelPoll = null;
+
+async function _syncGpuAccelSection() {
+    const row = $('#settings-gpu-accel-row');
+    if (!row) return;
+    let d;
+    try {
+        const r = await fetch(`${API}/api/gpu/acceleration`);
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        d = await r.json();
+    } catch { row.hidden = true; return; }
+
+    if (!d.applicable) { row.hidden = true; return; }
+    row.hidden = false;
+
+    const stateEl = $('#settings-gpu-accel-state');
+    const hintEl  = $('#settings-gpu-accel-hint');
+    const btn     = $('#settings-gpu-accel-btn');
+
+    if (d.active) {
+        stateEl.textContent = 'Active';
+        stateEl.className = 'settings-gpu-accel-state on';
+        hintEl.textContent = 'Your NVIDIA GPU is being used for local inference.';
+        btn.hidden = true;
+    } else if (d.upgrade_available) {
+        stateEl.textContent = 'Available';
+        stateEl.className = 'settings-gpu-accel-state off';
+        hintEl.textContent = `An NVIDIA GPU was detected. Enabling GPU acceleration makes local `
+            + `summarizing roughly 10x faster. One-time download of about `
+            + `${Math.round((d.download_mb || 0) / 100) / 10} GB; ContextVolt must be restarted afterwards.`;
+        btn.hidden = false;
+    } else {
+        stateEl.textContent = 'Not available';
+        stateEl.className = 'settings-gpu-accel-state off';
+        hintEl.textContent = 'No compatible NVIDIA GPU detected — inference runs on the CPU.';
+        btn.hidden = true;
+    }
+
+    if (_gpuAccelWired) return;
+    _gpuAccelWired = true;
+    btn.addEventListener('click', async () => {
+        const logEl = $('#settings-gpu-accel-log');
+        btn.disabled = true;
+        btn.textContent = 'Installing…';
+        logEl.hidden = false;
+        logEl.textContent = 'Starting download…';
+        try {
+            const r = await fetch(`${API}/api/gpu/acceleration/install`, { method: 'POST' });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+        } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Enable GPU acceleration';
+            logEl.textContent = `Could not start: ${e.message}`;
+            return;
+        }
+        clearInterval(_gpuAccelPoll);
+        _gpuAccelPoll = setInterval(async () => {
+            try {
+                const s = await (await fetch(`${API}/api/gpu/acceleration/install`)).json();
+                if (s.log && s.log.length) logEl.textContent = s.log[s.log.length - 1];
+                if (s.done) {
+                    clearInterval(_gpuAccelPoll);
+                    btn.disabled = false;
+                    btn.textContent = 'Enable GPU acceleration';
+                    logEl.textContent = s.message || (s.ok ? 'Done.' : 'Failed.');
+                    showToast(s.ok ? 'GPU support installed — restart ContextVolt' : `GPU install failed: ${s.message}`,
+                              s.ok ? 'success' : 'error');
+                    if (s.ok) btn.hidden = true;
+                }
+            } catch { /* keep polling; pip can take minutes */ }
+        }, 2000);
+    });
+}
+
 function _renderSettingsCards() {
     if (!_settingsConfig) return;
+    _syncGpuAccelSection();
 
     // ── Profile fields ──
     const nameInput  = $('#profile-name-input');

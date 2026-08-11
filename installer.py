@@ -86,6 +86,13 @@ REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
 OLLAMA_MODEL = "qwen2.5:3b"  # Default; user selects during setup. Options: 1.5b/3b/7b
 EMBED_MODEL = "nomic-embed-text"  # Default; user selects during setup
 
+# Auto-install GPU acceleration during setup (native backend, NVIDIA only).
+# Off by default deliberately: it's a ~1.5 GB download on top of the model, and
+# silently spending that much of someone's bandwidth without asking isn't OK.
+# When it's off and an NVIDIA GPU is present, setup says so and points at
+# Settings, where the same install can be triggered on demand.
+ENABLE_GPU = os.getenv("CONTEXTVOLT_ENABLE_GPU", "").strip().lower() in ("1", "true", "yes")
+
 AVAILABLE_MODELS = [
     {
         "id": "llama3.2:3b",
@@ -730,12 +737,37 @@ def run_installation():
     def step_check_native_engine():
         state.log("Checking native inference engine...")
         try:
+            from backend.engine.native import _prepare_cuda_dll_path
+            _prepare_cuda_dll_path()
             import llama_cpp  # noqa: F401
         except Exception as e:
             state.log(f"  llama-cpp-python not available: {str(e)[:80]}")
             state.log("  Falling back — run: pip install -r requirements.txt")
             return False
         state.log("  Native engine ready (no external app needed)")
+
+        # GPU is ~10x faster (measured 10 -> 98 tok/s on an RTX 3050), but the
+        # CUDA build is a ~1.5 GB download and worthless without an NVIDIA card,
+        # so it is not in the base install. Offer it only where it pays off.
+        try:
+            from backend.engine.cuda_setup import (
+                gpu_upgrade_available, install_cuda_support, APPROX_DOWNLOAD_MB,
+            )
+            from backend.engine.native import gpu_available
+            if gpu_available():
+                state.log("  GPU acceleration active")
+            elif gpu_upgrade_available() and ENABLE_GPU:
+                state.log(f"  NVIDIA GPU detected — adding GPU acceleration (~{APPROX_DOWNLOAD_MB} MB)")
+                ok, msg = install_cuda_support(on_progress=state.log)
+                if not ok:
+                    # Non-fatal by design: the CPU engine still works, it's just
+                    # slower. Failing the install here would be a worse outcome.
+                    state.log(f"  {msg}")
+                    state.log("  Continuing with the CPU engine — you can retry from Settings.")
+            elif gpu_upgrade_available():
+                state.log("  NVIDIA GPU detected — enable GPU acceleration in Settings for ~10x speed")
+        except Exception as e:
+            state.log(f"  GPU check skipped: {str(e)[:80]}")
         return True
 
     # A failed model download is deliberately NOT fatal — the app still runs and

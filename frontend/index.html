@@ -1149,6 +1149,19 @@
                         <span>Embedding model changed. After saving, use <strong>Re-embed All (New Model)</strong> in the sidebar to re-index your contexts with the new model.</span>
                     </div>
 
+                    <!-- Built-in engine only; hidden on the Ollama backend, which manages its own GPU use. -->
+                    <div class="settings-embed-cpu-row" id="settings-gpu-accel-row" hidden>
+                        <div class="settings-gpu-accel-head">
+                            <span class="settings-gpu-accel-title">GPU acceleration</span>
+                            <span class="settings-gpu-accel-state" id="settings-gpu-accel-state"></span>
+                        </div>
+                        <p class="settings-section-hint" style="margin-top:4px;" id="settings-gpu-accel-hint"></p>
+                        <button class="settings-btn-secondary" id="settings-gpu-accel-btn" type="button" hidden>
+                            Enable GPU acceleration
+                        </button>
+                        <div class="settings-gpu-accel-log" id="settings-gpu-accel-log" hidden></div>
+                    </div>
+
                     <div class="settings-embed-cpu-row">
                         <label class="settings-mcp-checkbox">
                             <input type="checkbox" id="settings-embed-on-cpu">

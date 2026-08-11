@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -152,34 +153,110 @@ def _purge_stale_parts() -> None:
         pass
 
 
-def _gpu_layers() -> int:
-    """-1 offloads every layer to GPU; 0 keeps inference on CPU.
+_cuda_path_ready = False
 
-    Checks the *installed llama_cpp build*, not just whether an NVIDIA GPU
-    is present — today's packaged wheel is CPU-only (see requirements.txt),
-    so llama_supports_gpu_offload() is False even on a GPU machine. Asking
-    for GPU layers on a CPU-only build is harmless (llama.cpp ignores it and
-    runs on CPU), but claiming acceleration that isn't there is misleading —
-    this makes "no GPU wheel yet" explicit instead of silently no-op'ing.
-    A CUDA-enabled wheel needs no other code change here — but note the CUDA
-    wheel is NOT a drop-in "swap the index URL" fix (tested against
-    abetlen.github.io/llama-cpp-python/whl/cu121 on this machine's RTX 3050):
-    it installs but its llama.dll fails to load with a missing-dependency
-    error, because it links against CUDA runtime DLLs (cudart/cublas) that
-    the wheel does NOT bundle and this machine doesn't have installed
-    separately. Shipping GPU support means either (a) bundling those
-    redistributable DLLs alongside the wheel in the installer build, or
-    (b) requiring users to install the NVIDIA CUDA Toolkit themselves —
-    (a) is the only realistic option for a consumer installer.
+
+def _prepare_cuda_dll_path() -> None:
+    """Put the pip-installed CUDA runtime DLLs on the DLL search path.
+
+    MUST run before `import llama_cpp`. The CUDA build of llama-cpp-python
+    links against cudart/cublas/nvrtc, which its wheel does NOT bundle; we
+    install them as the `nvidia-*-cu12` wheels instead of making users install
+    the multi-GB CUDA Toolkit.
+
+    Why PATH and not os.add_dll_directory(): llama_cpp loads llama.dll with an
+    explicit `winmode=RTLD_GLOBAL`. Passing winmode makes CPython call
+    LoadLibraryExW with exactly those flags, dropping the
+    LOAD_LIBRARY_SEARCH_USER_DIRS flag that makes add_dll_directory() apply —
+    so directories registered that way are silently ignored and the load fails
+    with a bare "could not find module". The legacy PATH search order is still
+    honoured under those flags, so PATH is what actually works here. (Verified
+    both ways on an RTX 3050: add_dll_directory -> import fails; PATH -> import
+    succeeds and the GPU is detected.)
+
+    No-op on non-Windows and when the packages aren't installed (CPU build).
+    """
+    global _cuda_path_ready
+    if _cuda_path_ready or os.name != "nt":
+        return
+    _cuda_path_ready = True
+    try:
+        import glob
+        roots: list[str] = []
+        # Primary: ask the installed `nvidia` namespace package where it lives.
+        # Works under the embedded Python used by the packaged build, where
+        # site.getsitepackages() is unreliable (and absent in some embeds).
+        try:
+            import nvidia  # type: ignore
+            for base in list(getattr(nvidia, "__path__", [])):
+                roots.extend(glob.glob(os.path.join(base, "*", "bin")))
+        except Exception:
+            pass
+        if not roots:
+            import site
+            bases = []
+            try:
+                bases.extend(site.getsitepackages())
+            except Exception:
+                pass
+            try:
+                bases.append(site.getusersitepackages())
+            except Exception:
+                pass
+            bases.append(os.path.join(sys.prefix, "Lib", "site-packages"))
+            for base in set(bases):
+                roots.extend(glob.glob(os.path.join(base, "nvidia", "*", "bin")))
+        if not roots:
+            return
+        existing = os.environ.get("PATH", "")
+        missing = [d for d in roots if d not in existing]
+        if missing:
+            os.environ["PATH"] = os.pathsep.join(missing) + os.pathsep + existing
+            _log.info("Added %d CUDA runtime dir(s) to PATH for llama.cpp", len(missing))
+    except Exception as e:
+        _log.debug("CUDA DLL path setup skipped: %s", e)
+
+
+def gpu_available() -> bool:
+    """True when the installed llama_cpp build can actually offload to a GPU.
+
+    Checks the *build*, not just whether an NVIDIA card exists: the default
+    packaged wheel is CPU-only, so a GPU machine still reports False until the
+    CUDA variant is installed. Claiming acceleration that isn't there would be
+    misleading, and asking a CPU-only build for GPU layers silently no-ops.
     """
     try:
+        _prepare_cuda_dll_path()
         import llama_cpp
         if not llama_cpp.llama_supports_gpu_offload():
-            return 0
+            return False
         from backend.gpu_info import has_nvidia
-        return -1 if has_nvidia() else 0
+        return bool(has_nvidia())
     except Exception:
-        return 0
+        return False
+
+
+def _gpu_layer_ladder() -> list[int]:
+    """GPU offload attempts, most-accelerated first, always ending at CPU.
+
+    -1 means "every layer on the GPU". That's ideal but not always possible:
+    this laptop's RTX 3050 has 4 GB, which holds a 3B Q4 model fine but not a
+    7B one, and llama.cpp errors out rather than degrading when the weights
+    don't fit. So fall back to partial offload, then to pure CPU, instead of
+    failing the request — the same shape as the Ollama path's context ladder.
+    """
+    if not gpu_available():
+        return [0]
+    try:
+        from backend.gpu_info import detect_gpu
+        vram_mb = detect_gpu().get("vram_mb") or 0
+    except Exception:
+        vram_mb = 0
+    if vram_mb and vram_mb < 6000:
+        # Small card: don't even try full offload for larger models — start
+        # partial so the common case doesn't pay a failed load first.
+        return [-1, 20, 10, 0]
+    return [-1, 20, 0]
 
 
 def _model_n_ctx(model: str, embedding: bool) -> int:
@@ -202,38 +279,56 @@ def _load(model: str, embedding: bool) -> tuple[object, threading.Lock, int]:
     if not path.exists():
         raise FileNotFoundError(f"Model not downloaded: {model} (expected {path})")
 
-    n_gpu_layers = 0 if embedding else _gpu_layers()
     kind = "embed" if embedding else "chat"
-    key = f"{kind}|{path}|{n_gpu_layers}"
+    # Embeddings stay on CPU: they're small and fast there, and on a 4 GB card
+    # co-loading them would evict the chat model's weights. This also matches
+    # the existing "Run embeddings on CPU" setting the Ollama path honours.
+    ladder = [0] if embedding else _gpu_layer_ladder()
+    key = f"{kind}|{path}"
 
     with _cache_lock:
         cached = _loaded.get(key)
         if cached is not None:
             return cached, _model_locks[key], n_ctx
 
+        _prepare_cuda_dll_path()
         from llama_cpp import Llama
-        _log.info(
-            "Loading native model %s (kind=%s, gpu_layers=%d, n_ctx=%d)",
-            path.name, kind, n_gpu_layers, n_ctx,
-        )
-        kwargs: dict = {
-            "model_path": str(path),
-            "n_gpu_layers": n_gpu_layers,
-            "n_ctx": n_ctx,
-            "embedding": embedding,
-            "verbose": False,
-        }
-        if embedding:
-            # Embedding models pool over the whole sequence, so a batch smaller
-            # than the input silently drops tokens (or errors). Keep n_batch at
-            # the context size, but cap it — allocating a 32k-token batch for
-            # qwen3-embedding costs far more memory than the inputs we send.
-            kwargs["n_batch"] = min(n_ctx, 4096)
-        llm = Llama(**kwargs)
+
+        llm = None
+        last_err: Exception | None = None
+        for n_gpu_layers in ladder:
+            kwargs: dict = {
+                "model_path": str(path),
+                "n_gpu_layers": n_gpu_layers,
+                "n_ctx": n_ctx,
+                "embedding": embedding,
+                "verbose": False,
+            }
+            if embedding:
+                # Embedding models pool over the whole sequence, so a batch
+                # smaller than the input silently drops tokens (or errors).
+                # Keep n_batch at the context size, but cap it — a 32k-token
+                # batch for qwen3-embedding costs far more memory than we need.
+                kwargs["n_batch"] = min(n_ctx, 4096)
+            try:
+                _log.info(
+                    "Loading native model %s (kind=%s, gpu_layers=%d, n_ctx=%d)",
+                    path.name, kind, n_gpu_layers, n_ctx,
+                )
+                llm = Llama(**kwargs)
+                break
+            except Exception as e:
+                last_err = e
+                _log.warning(
+                    "Load failed at gpu_layers=%d (%s) — trying next tier",
+                    n_gpu_layers, str(e)[:120],
+                )
+        if llm is None:
+            raise RuntimeError(f"Could not load model {model}: {last_err}")
 
         # Evict the previous model of this kind (bounded memory).
         for stale in [k for k in _loaded if k.startswith(f"{kind}|") and k != key]:
-            _log.info("Evicting cached native model %s", stale.split("|")[1])
+            _log.info("Evicting cached native model %s", stale.split("|", 1)[1])
             _loaded.pop(stale, None)
             _model_locks.pop(stale, None)
 
@@ -319,7 +414,7 @@ class NativeEngine:
         if path is None:
             return False
         with _cache_lock:
-            for key in [k for k in _loaded if k.split("|", 2)[1] == str(path)]:
+            for key in [k for k in _loaded if k.split("|", 1)[1] == str(path)]:
                 _loaded.pop(key, None)
                 _model_locks.pop(key, None)
         import gc

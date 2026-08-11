@@ -4920,6 +4920,51 @@ body {
     border-top: 1px solid var(--border-subtle);
 }
 
+/* ── GPU acceleration (built-in engine) ─────────────────────────── */
+.settings-gpu-accel-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.settings-gpu-accel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.settings-gpu-accel-state {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+}
+.settings-gpu-accel-state.on {
+    color: var(--success);
+    background: rgba(52, 211, 153, 0.12);
+}
+.settings-gpu-accel-state.off {
+    color: var(--text-secondary);
+    background: var(--bg-subtle, rgba(255, 255, 255, 0.05));
+}
+#settings-gpu-accel-btn {
+    margin-top: 10px;
+}
+#settings-gpu-accel-btn[disabled] {
+    opacity: 0.6;
+    cursor: default;
+}
+.settings-gpu-accel-log {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-subtle, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
 .settings-embed-warning svg {
     flex-shrink: 0;
     margin-top: 1px;

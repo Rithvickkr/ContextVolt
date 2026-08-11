@@ -349,6 +349,61 @@ def setup_status():
     }
 
 
+@app.get("/api/gpu/acceleration")
+def gpu_acceleration_status():
+    """Whether the native engine is GPU-accelerated, and whether it could be.
+
+    Only meaningful for the native backend — Ollama manages its own GPU usage,
+    so `applicable` is False there and the UI should hide the control.
+    """
+    if not is_native_backend():
+        return {"applicable": False, "active": False, "upgrade_available": False}
+    from backend.engine.cuda_setup import APPROX_DOWNLOAD_MB, gpu_upgrade_available
+    from backend.engine.native import gpu_available
+    return {
+        "applicable": True,
+        "active": gpu_available(),
+        "upgrade_available": gpu_upgrade_available(),
+        "download_mb": APPROX_DOWNLOAD_MB,
+    }
+
+
+_gpu_install_state: dict = {"running": False, "log": [], "done": False, "ok": None, "message": ""}
+
+
+@app.post("/api/gpu/acceleration/install")
+def gpu_acceleration_install():
+    """Kick off the CUDA install in the background (it's a ~1.5 GB download).
+
+    Poll /api/gpu/acceleration/install for progress — pip is invoked as a
+    subprocess, so this can't be awaited inside the request without holding a
+    worker for several minutes.
+    """
+    if not is_native_backend():
+        raise HTTPException(status_code=400, detail="GPU acceleration applies to the built-in engine only")
+    if _gpu_install_state["running"]:
+        return {"status": "already_running"}
+
+    from backend.engine.cuda_setup import install_cuda_support
+
+    _gpu_install_state.update({"running": True, "log": [], "done": False, "ok": None, "message": ""})
+
+    def _run() -> None:
+        try:
+            ok, msg = install_cuda_support(on_progress=lambda m: _gpu_install_state["log"].append(m))
+        except Exception as e:                      # never leave the flag stuck
+            ok, msg = False, str(e)[:200]
+        _gpu_install_state.update({"running": False, "done": True, "ok": ok, "message": msg})
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/gpu/acceleration/install")
+def gpu_acceleration_install_status():
+    return dict(_gpu_install_state)
+
+
 @app.get("/api/gpu/diagnostic")
 def gpu_diagnostic():
     """Report whether a loaded model is actually running on the NVIDIA GPU.

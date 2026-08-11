@@ -7,25 +7,27 @@
 title ContextVolt
 cd /d "%~dp0"
 
-:: ─── Check Python ────────────────────────────────────────────────
-python --version >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo  ContextVolt requires Python 3.10 or higher.
-    echo.
-    echo  Please install Python from: https://www.python.org/downloads/
-    echo  Make sure to check "Add Python to PATH" during installation.
-    echo.
-    pause
-    exit /b 1
-)
-
-:: ─── Bootstrap virtual environment with pywebview ───────────────
-:: We need pywebview to show the GUI installer
+:: ─── Locate Python ───────────────────────────────────────────────
+:: Only a MISSING venv needs a system Python (to create one). Checking for
+:: `python` on PATH first meant an install with a perfectly good venv still
+:: refused to start when PATH lacked Python — and because ContextVolt.vbs
+:: runs this window hidden, the error and its `pause` were invisible: the
+:: double-click just silently did nothing.
 set "VENV_PYTHON=%~dp0venv\Scripts\python.exe"
 set "VENV_PIP=%~dp0venv\Scripts\pip.exe"
 
 if not exist "%VENV_PYTHON%" (
+    python --version >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        echo.
+        echo  ContextVolt requires Python 3.10 or higher to set up for the first time.
+        echo.
+        echo  Please install Python from: https://www.python.org/downloads/
+        echo  Make sure to check "Add Python to PATH" during installation.
+        echo.
+        pause
+        exit /b 1
+    )
     echo  Initializing ContextVolt...
     python -m venv venv >nul 2>&1
     if %ERRORLEVEL% NEQ 0 (

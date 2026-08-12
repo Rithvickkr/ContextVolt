@@ -161,7 +161,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 });
                 if (!res.ok) throw new Error("Server error " + res.status);
                 const data = await res.json();
-                sendResponse({ success: true, prompt: data.prompt, mode: data.mode });
+                // `prompt` is the whole thing (inline delivery). The three
+                // split fields are the same content redistributed for
+                // attachment delivery — forward them or the content script
+                // silently falls back to inline for every context.
+                sendResponse({
+                    success: true,
+                    prompt: data.prompt,
+                    mode: data.mode,
+                    prompt_inline: data.prompt_inline || null,
+                    prompt_attachment: data.prompt_attachment || null,
+                    attachment_filename: data.attachment_filename || null,
+                });
             } catch (err) {
                 console.error("ContextVolt — fetch prompt error:", err);
                 sendResponse({ success: false, error: err.message || String(err) });

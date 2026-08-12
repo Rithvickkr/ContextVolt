@@ -431,6 +431,36 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.6);
 }
 
+/* ─── Delivery toggle (inline vs attached file) ─────────────────── */
+.cv-deliver-btn {
+    height: 26px;
+    padding: 0 10px;
+    margin-left: 8px;
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 600;
+    border: 1px solid var(--glass-border);
+    border-radius: 7px;
+    background: transparent;
+    color: #52525b;
+    cursor: pointer;
+    transition: all 0.18s var(--ease);
+    font-family: var(--font-display);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.cv-deliver-btn:hover { color: #e4e4e7; background: var(--glass-hover); }
+
+.cv-deliver-btn.cv-deliver-on {
+    background: linear-gradient(180deg, #ffffff, #e4e4e7);
+    border-color: transparent;
+    color: #0a0a0c;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
 /* ─── Query Input ───────────────────────────────────────────────── */
 .cv-query-section {
     padding: 0 12px 10px;

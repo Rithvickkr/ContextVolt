@@ -2511,6 +2511,33 @@ def api_cross_search(body: PromptRequest):
 _KNOWN_SOURCES = _KNOWN_SOURCES_SET  # alias for backward compat
 
 
+def _prompt_response(prompt: str, context_id: int, title: str, mode: str) -> dict:
+    """Standard prompt payload, plus the split needed for attachment delivery.
+
+    `prompt` is unchanged — inline delivery stays byte-for-byte what it always
+    was, so switching delivery modes can't quietly alter the inline path.
+    `prompt_inline` + `prompt_attachment` are the SAME content redistributed:
+    the directive and header stay in the visible message, the verbatim bulk
+    moves into a file the model reads in full. Nothing is summarized or
+    dropped — the point is only where the bytes land, so that a 35k-char
+    context arrives as a chip instead of a wall of text in the composer.
+
+    Both are empty when there's no bulk worth attaching; the extension falls
+    back to inline in that case.
+    """
+    from backend.ollama_client import ATTACHMENT_FILENAME, split_prompt_for_attachment
+    inline, attachment = split_prompt_for_attachment(prompt or "")
+    return {
+        "prompt": prompt,
+        "context_id": context_id,
+        "title": title,
+        "mode": mode,
+        "prompt_inline": inline,
+        "prompt_attachment": attachment,
+        "attachment_filename": ATTACHMENT_FILENAME,
+    }
+
+
 @app.post("/api/contexts/{context_id}/prompt")
 def api_generate_prompt(
     context_id: int,
@@ -2620,12 +2647,7 @@ def api_generate_prompt(
                     important_snippets=important_notes,
                 )
                 mode = "retrieval"
-            return {
-                "prompt": prompt,
-                "context_id": context_id,
-                "title": ctx["title"],
-                "mode": mode,
-            }
+            return _prompt_response(prompt, context_id, ctx["title"], mode)
 
     # ── No-query path: full context prompt ──
     summary = ctx["summary"]
@@ -2643,16 +2665,11 @@ def api_generate_prompt(
             lattice=lattice_entries,
         )
         mode = "context" if all_chunks_static else "static"
-        return {
-            "prompt": prompt,
-            "context_id": context_id,
-            "title": ctx["title"],
-            "mode": mode,
-        }
+        return _prompt_response(prompt, context_id, ctx["title"], mode)
 
     # Fallback for legacy string summaries
     prompt = f"Context:\n{summary}\n\nContinue the discussion from this point."
-    return {"prompt": prompt, "context_id": context_id, "title": ctx["title"], "mode": "static"}
+    return _prompt_response(prompt, context_id, ctx["title"], "static")
 
 
 # ---------------------------------------------------------------------------

@@ -1953,6 +1953,69 @@ def _build_cold_start_brief(
     return " ".join(parts)
 
 
+# Sections that carry the bulk verbatim context. These are what make a
+# continuation prompt a wall of text in the composer, and they're also the part
+# a model can read perfectly well from an attachment.
+_BULK_SECTIONS = (
+    "key_facts", "conversation_replay", "retrieved_context",
+    "code_artifacts", "important_context",
+)
+ATTACHMENT_FILENAME = "contextvolt-context.md"
+
+
+def split_prompt_for_attachment(prompt: str) -> tuple[str, str]:
+    """Split a continuation prompt into (inline_message, attachment_body).
+
+    Same bytes, delivered in two places — nothing is summarized or dropped.
+    The point is where each part lands:
+
+      inline      meta / overview / query / instructions. Small, and crucially
+                  the DIRECTIVE stays here, because a model follows an
+                  instruction in the message far more reliably than one buried
+                  in an attached document.
+      attachment  the verbatim bulk, which the model reads in full but the
+                  user sees as a single chip instead of a screenful.
+
+    Returns ("", "") when there is no bulk worth attaching, so callers can fall
+    back to sending the prompt as-is rather than attaching an almost-empty file.
+    """
+    if not prompt:
+        return "", ""
+    bulk: list[str] = []
+    inline = prompt
+    for name in _BULK_SECTIONS:
+        pat = re.compile(rf"\n?<{name}>\n?(.*?)\n?</{name}>\n?", re.DOTALL)
+        m = pat.search(inline)
+        if not m:
+            continue
+        bulk.append(f"## {name.replace('_', ' ').title()}\n\n{m.group(1).strip()}")
+        inline = pat.sub("\n", inline, count=1)
+
+    if not bulk:
+        return "", ""
+
+    body = (
+        f"# Prior conversation context\n\n"
+        f"Verbatim excerpts from the earlier conversation, carried over by "
+        f"ContextVolt. Treat this as the conversation you are continuing.\n\n"
+        + "\n\n".join(bulk) + "\n"
+    )
+
+    # Point the instructions at the file. Without this the model is told to use
+    # context that is no longer in the message it can see.
+    pointer = (
+        f"The full prior context is in the attached file "
+        f"`{ATTACHMENT_FILENAME}` — read it before answering."
+    )
+    if "<instructions>" in inline:
+        inline = inline.replace("<instructions>\n", f"<instructions>\n{pointer} ", 1)
+    else:
+        inline = inline.rstrip() + f"\n\n{pointer}\n"
+
+    inline = re.sub(r"\n{3,}", "\n\n", inline).strip()
+    return inline, body
+
+
 def generate_continuation_prompt(
     summary: dict,
     original_chat: str,

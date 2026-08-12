@@ -85,6 +85,25 @@ function _detectChatTitle(source) {
     }
 }
 
+// ─── Delivery mode ──────────────────────────────────────────────────────
+// "inline"     — the whole prompt goes into the composer (original behaviour)
+// "attachment" — directive inline, verbatim bulk as a file chip
+// Identical content either way; this only changes where it lands. Kept as an
+// explicit toggle rather than a silent default because whether a model follows
+// instructions as well from an attachment is worth A/B-ing on real
+// conversations, not assuming.
+const DELIVERY_KEY = "cv_delivery_mode";
+
+function _deliveryMode() {
+    try {
+        return localStorage.getItem(DELIVERY_KEY) === "attachment" ? "attachment" : "inline";
+    } catch (_) { return "inline"; }
+}
+
+function _setDeliveryMode(mode) {
+    try { localStorage.setItem(DELIVERY_KEY, mode); } catch (_) {}
+}
+
 function _readImportMarker() {
     try {
         const raw = sessionStorage.getItem(IMPORT_MARKER_KEY);
@@ -553,7 +572,55 @@ function _injectIntoElement(input, text) {
     return true;
 }
 
-function pasteIntoInput(text) {
+// ─── Attachment delivery ────────────────────────────────────────────────
+// The continuation prompt is intentionally large — that verbatim context is
+// the product. Shrinking it to keep the composer tidy would trade away the
+// thing it exists for, so instead the bulk is delivered as a file: the model
+// still reads every byte, the user sees one chip instead of a screenful.
+//
+// The directive stays in the visible message (see split_prompt_for_attachment)
+// because models follow an instruction in the message far more reliably than
+// one buried inside an attached document.
+//
+// Chat composers accept files via a synthetic drop or paste carrying
+// DataTransfer.files. Editors that check isTrusted will ignore it, which is
+// why every caller must handle `false` and fall back to inline.
+function _attachFile(input, filename, body) {
+    try {
+        const dt = new DataTransfer();
+        dt.items.add(new File([body], filename, { type: "text/markdown" }));
+        if (!dt.files.length) return false;
+
+        // Prefer a real file input when the page exposes one — the most
+        // reliable path, since it's the site's own upload channel.
+        const fileInput = document.querySelector(
+            'input[type="file"]:not([disabled])'
+        );
+        if (fileInput) {
+            fileInput.files = dt.files;
+            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+        }
+
+        const target = input || document.body;
+        target.focus?.();
+        const paste = new ClipboardEvent("paste", {
+            bubbles: true, cancelable: true, clipboardData: dt,
+        });
+        target.dispatchEvent(paste);
+        const drop = new DragEvent("drop", {
+            bubbles: true, cancelable: true, dataTransfer: dt,
+        });
+        target.dispatchEvent(drop);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// Resolve the site's composer element. Split out of pasteIntoInput so
+// attachment delivery can target the same element.
+function _findComposer() {
     const domain = window.location.hostname;
     let input = null;
 
@@ -573,8 +640,38 @@ function pasteIntoInput(text) {
         input = document.querySelector('textarea, #searchbox');
     }
 
+    return input;
+}
+
+function pasteIntoInput(text) {
+    const input = _findComposer();
     if (!input) return false;
     return _injectIntoElement(input, text);
+}
+
+// Deliver a prompt as a short visible message plus an attached context file.
+// Falls back to plain inline injection whenever the split isn't available or
+// the host editor refuses the synthetic file event — never silently sends a
+// message whose context went missing.
+// Set by deliverWithAttachment() so the toast can tell the truth: attachment
+// delivery falls back to inline in several places (backend didn't split, host
+// editor rejected the synthetic file event), and claiming "attached" when the
+// text actually went inline would hide exactly the failure worth knowing about.
+let _lastDeliveryWasAttachment = false;
+
+function deliverWithAttachment(res) {
+    _lastDeliveryWasAttachment = false;
+    const inline = res.prompt_inline;
+    const body = res.prompt_attachment;
+    const name = res.attachment_filename || "contextvolt-context.md";
+    if (!inline || !body) return pasteIntoInput(res.prompt);
+
+    const input = _findComposer();
+    if (!input) return false;
+    if (!_attachFile(input, name, body)) return pasteIntoInput(res.prompt);
+    const ok = _injectIntoElement(input, inline);
+    _lastDeliveryWasAttachment = ok;
+    return ok;
 }
 
 // ─── Floating Ball launcher ──────────────────────────────────────
@@ -892,6 +989,10 @@ function toggleImportPanel() {
                 <button class="cv-size-btn cv-size-active" data-size="standard" title="Standard context">M</button>
                 <button class="cv-size-btn" data-size="full" title="Full context">L</button>
             </div>
+            <button class="cv-deliver-btn" id="cv-deliver-toggle" type="button"
+                    title="Where the context goes: inline in the message, or attached as a file (same content either way)">
+                <span id="cv-deliver-label">Inline</span>
+            </button>
         </div>
         <div class="cv-query-section">
             <div class="cv-query-label">↳ Narrow retrieval <span class="cv-query-label-hint">optional</span></div>
@@ -921,6 +1022,22 @@ function toggleImportPanel() {
             btn.classList.add("cv-size-active");
         });
     });
+
+    // Delivery toggle — inline vs attached file (same content, different place)
+    const deliverBtn = document.getElementById("cv-deliver-toggle");
+    if (deliverBtn) {
+        const paint = () => {
+            const mode = _deliveryMode();
+            const label = document.getElementById("cv-deliver-label");
+            if (label) label.textContent = mode === "attachment" ? "Attached" : "Inline";
+            deliverBtn.classList.toggle("cv-deliver-on", mode === "attachment");
+        };
+        paint();
+        deliverBtn.addEventListener("click", () => {
+            _setDeliveryMode(_deliveryMode() === "attachment" ? "inline" : "attachment");
+            paint();
+        });
+    }
 
     // Query input — highlight border when active
     document.getElementById("cv-query-input").addEventListener("input", (e) => {
@@ -1146,13 +1263,16 @@ function loadContexts(query = "") {
                         if (panel) { panel.classList.remove("cv-panel-open"); panelOpen = false; }
 
                         setTimeout(() => {
-                            const pasted = pasteIntoInput(res.prompt);
+                            const pasted = _deliveryMode() === "attachment"
+                                ? deliverWithAttachment(res)
+                                : pasteIntoInput(res.prompt);
                             if (!pasted) {
                                 // Fallback: copy to clipboard and briefly reopen panel to show status
                                 navigator.clipboard.writeText(res.prompt).catch(() => {});
                                 showBriefToast(`📋 ${mode} — copied to clipboard`);
                             } else {
-                                showBriefToast(`✅ ${mode} — pasted`);
+                                const how = _lastDeliveryWasAttachment ? "attached" : "pasted";
+                                showBriefToast(`✅ ${mode} — ${how}`);
                             }
                         }, 120);
                     } else {

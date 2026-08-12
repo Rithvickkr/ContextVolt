@@ -431,8 +431,9 @@ function _showSettingsSkeletons() {
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');
     const skels = n => Array.from({length: n}, () => '<div class="settings-skeleton-card"></div>').join('');
-    llmGrid.innerHTML   = skels(3);
-    embedGrid.innerHTML = skels(4);
+    // llmGrid is absent when local_llm is off — features.js removes it.
+    if (llmGrid) llmGrid.innerHTML = skels(3);
+    if (embedGrid) embedGrid.innerHTML = skels(4);
 }
 
 // ─── Profile avatar (initial letter + chosen color) ─────────────────────
@@ -1228,9 +1229,9 @@ function _renderSettingsCards() {
     _updateAvatarFace();
     _syncEmbedCpuToggle();
 
-    const llmGrid   = $('#settings-llm-grid');
+    const llmGrid   = $('#settings-llm-grid');   // null when local_llm is off
     const embedGrid = $('#settings-embed-grid');
-    llmGrid.innerHTML = '';
+    if (llmGrid) llmGrid.innerHTML = '';
     embedGrid.innerHTML = '';
 
     // ── Provider grid ──
@@ -1257,13 +1258,15 @@ function _renderSettingsCards() {
     let selectedEmbed = _settingsConfig.embed_model;
     const originalEmbed = _settingsConfig.embed_model;
 
-    (_settingsConfig.available_models || []).forEach(m => {
-        llmGrid.appendChild(_makeSettingsCard(m, selectedLlm, 'settings-llm-grid', id => {
-            selectedLlm = id;
-            llmGrid.dataset.selected = id;
-        }));
-    });
-    llmGrid.dataset.selected = selectedLlm;
+    if (llmGrid) {
+        (_settingsConfig.available_models || []).forEach(m => {
+            llmGrid.appendChild(_makeSettingsCard(m, selectedLlm, 'settings-llm-grid', id => {
+                selectedLlm = id;
+                llmGrid.dataset.selected = id;
+            }));
+        });
+        llmGrid.dataset.selected = selectedLlm;
+    }
 
     (_settingsConfig.available_embed_models || []).forEach(m => {
         embedGrid.appendChild(_makeSettingsCard(m, selectedEmbed, 'settings-embed-grid', id => {
@@ -1445,7 +1448,9 @@ async function saveSettings() {
     const llmGrid   = $('#settings-llm-grid');
     const embedGrid = $('#settings-embed-grid');
     const cloudGrid = $('#settings-cloud-model-grid');
-    const newModel  = llmGrid.dataset.selected;
+    // With local_llm off there is no chat-model picker; keep whatever the
+    // config already holds rather than writing an empty model name.
+    const newModel  = llmGrid ? llmGrid.dataset.selected : (_settingsConfig.model || '');
     const newEmbed  = embedGrid.dataset.selected;
     const newCloudModel = cloudGrid ? cloudGrid.dataset.selected : '';
 

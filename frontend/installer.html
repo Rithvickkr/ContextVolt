@@ -259,6 +259,11 @@
                         <!-- Local section -->
                         <div class="isp-local-section" id="isp-local-section" style="display:none;">
                             <div class="isp-model-grid" id="model-cards" role="radiogroup" aria-label="Local AI model"></div>
+                            <p class="isp-section-sub" id="isp-local-note" style="display:none;">
+                                Nothing to configure — summaries, titles and continuation prompts are
+                                built on your device without an AI model, so there's no chat model to
+                                download. Only the embedding model below is installed.
+                            </p>
                         </div>
 
                         <!-- GPU detection banner — VRAM-aware recommendation -->
@@ -425,6 +430,7 @@
             });
             document.getElementById('isp-cloud-section').style.display = mode === 'cloud' ? '' : 'none';
             document.getElementById('isp-local-section').style.display = mode === 'local' ? '' : 'none';
+            _applyLocalLlmFlag();
             _checkCanStart();
         });
 
@@ -619,7 +625,8 @@
             let ready = !!selectedEmbedModel;
             if (selectedMode === 'cloud') {
                 ready = ready && cloudKeyValid && !!selectedCloudModel;
-            } else {
+            } else if (localLlmEnabled) {
+                // Only gate on a chat model when one is actually installable.
                 ready = ready && !!selectedModel;
             }
             startInstBtn.disabled = !ready;
@@ -708,6 +715,16 @@ function updateUI(s) {
             const { steps, newLogs, hasError, installationComplete: isComplete } = s;
             if (newLogs && newLogs.length) newLogs.forEach(appendLog);
 
+            // The backend decides which steps exist — a build with no local
+            // chat model omits 'model' entirely. Hide any row it didn't send,
+            // otherwise that row sits at "Waiting…" forever while the bar
+            // reaches 100%.
+            const activeIds = new Set(steps.map(s => s.id));
+            stepIds.forEach(id => {
+                const el = stepElements[id];
+                if (el) el.style.display = activeIds.has(id) ? '' : 'none';
+            });
+
             steps.forEach(step => {
                 const el = stepElements[step.id];
                 if (!el) return;
@@ -790,6 +807,24 @@ function updateUI(s) {
             { id: 'bge-m3',                name: 'BGE-M3',            size: '~1.2 GB', description: 'Multilingual — best for non-English content', recommended: false },
         ];
 
+        // Whether this build ships local generative inference. Default off:
+        // with no local LLM there is no chat model to choose, so the local
+        // section only offers the embedding model. Resolved from the backend in
+        // initialize(); until then we assume off, which never blocks Start.
+        let localLlmEnabled = false;
+
+        function _applyLocalLlmFlag() {
+            const localSec = document.getElementById('isp-local-section');
+            const grid = document.getElementById('model-cards');
+            const note = document.getElementById('isp-local-note');
+            if (grid) grid.style.display = localLlmEnabled ? '' : 'none';
+            // With the picker gone the tab would be an empty box — explain why
+            // instead, so "Local" doesn't look broken.
+            if (note) note.style.display = localLlmEnabled ? 'none' : '';
+            if (localSec && selectedMode !== 'local') localSec.style.display = 'none';
+            _checkCanStart();
+        }
+
         // Render defaults immediately
         renderModelCards(DEFAULT_MODELS);
         renderEmbedModelCards(DEFAULT_EMBED_MODELS);
@@ -829,6 +864,14 @@ function updateUI(s) {
                     }
                 }
             } catch (e) { /* banner stays hidden */ }
+
+            try {
+                if (window.pywebview.api.get_features) {
+                    const feats = await window.pywebview.api.get_features();
+                    localLlmEnabled = !!(feats && feats.local_llm);
+                }
+            } catch (e) { /* stays off */ }
+            _applyLocalLlmFlag();
 
             try {
                 const models = await window.pywebview.api.get_available_models();

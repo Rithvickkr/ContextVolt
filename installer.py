@@ -234,16 +234,36 @@ def _is_native_backend() -> bool:
         return False
 
 
+def _local_llm_enabled() -> bool:
+    """Whether this build ships local generative inference.
+
+    Off by default (see backend/features.py): nothing on the free path calls a
+    generative model any more, so there is no chat model to install. Same
+    defensive contract as _is_native_backend() — this is evaluated at import
+    time and must never raise.
+    """
+    try:
+        from backend.features import is_enabled
+        return is_enabled("local_llm")
+    except Exception:
+        return False
+
+
 class InstallState:
     """Holds installation state."""
     def __init__(self):
         is_native = _is_native_backend()
+        wants_chat_model = (not is_native) or _local_llm_enabled()
         self.steps = [
             {"id": "python", "label": "Python Environment", "status": "pending"},
             {"id": "venv", "label": "Virtual Environment", "status": "pending"},
             {"id": "deps", "label": "Dependencies", "status": "pending"},
             {"id": "ollama", "label": "Local Engine" if is_native else "Ollama Service", "status": "pending"},
-            {"id": "model", "label": "AI Model", "status": "pending"},
+            # Chat model: only the Ollama path still installs one. The native
+            # path has no local generative features left — summaries, titles
+            # and continuation prompts are all deterministic — so downloading a
+            # multi-GB chat model would be pure waste. Embeddings still ship.
+            *([{"id": "model", "label": "AI Model", "status": "pending"}] if wants_chat_model else []),
             {"id": "embed", "label": "Embed Model", "status": "pending"},
             {"id": "extension", "label": "Browser Extension", "status": "pending"},
         ]
@@ -849,7 +869,10 @@ def run_installation():
         return True
 
     if _is_native_backend():
-        steps = [step_check_python, step_create_venv, step_install_deps, step_check_native_engine, step_pull_native_model, step_pull_native_embed_model, step_install_extension]
+        steps = [step_check_python, step_create_venv, step_install_deps, step_check_native_engine]
+        if _local_llm_enabled():
+            steps.append(step_pull_native_model)
+        steps += [step_pull_native_embed_model, step_install_extension]
     else:
         steps = [step_check_python, step_create_venv, step_install_deps, step_check_ollama, step_pull_model, step_pull_embed_model, step_install_extension]
     
@@ -919,6 +942,19 @@ class Api:
         """Detect the GPU/VRAM and return a hardware-aware model recommendation."""
         gpu, rec = _gpu_recommendation()
         return {"gpu": gpu, "recommendation": rec}
+
+    def get_features(self):
+        """Feature flags for the setup UI — mirrors backend/features.py.
+
+        The setup window needs these to decide whether to offer a local chat
+        model at all: with local_llm off there is nothing to pick, and asking
+        the user to choose one would gate Start on a meaningless answer.
+        """
+        try:
+            from backend.features import all_features
+            return all_features()
+        except Exception:
+            return {"ask_vault": False, "local_llm": False}
 
     def get_available_models(self):
         """Available LLM options, with `recommended` flagged for this GPU."""

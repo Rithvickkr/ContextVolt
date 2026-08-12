@@ -2,6 +2,15 @@
    ContextVolt — Premium Monochrome Theme
    ================================================================ */
 
+/* Feature gating — see frontend/js/features.js.
+   Anything carrying [data-feature] is hidden from the first paint, before the
+   flags have been fetched, so a capability this build doesn't ship never
+   flashes on screen. features.js then removes the attribute (enabled) or the
+   element itself (disabled). */
+[data-feature] {
+    display: none !important;
+}
+
 /* Screen-reader only utility */
 .sr-only {
     position: absolute;

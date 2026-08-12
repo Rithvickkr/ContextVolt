@@ -1241,127 +1241,6 @@ def _build_lattice_entries(text: str) -> tuple[list[dict], str]:
     return entries, "\n\n".join(merged_parts)
 
 
-# No worked example in this prompt, deliberately. An earlier version
-# illustrated the rule with a concrete title, and a 1.5B model simply echoed
-# that example back as the answer for an unrelated conversation — a confidently
-# wrong title, which is worse than a plain one. The rules are phrased
-# abstractly so there is nothing copyable.
-_TITLE_PROMPT = """Write a short title for the conversation below.
-
-Rules:
-- 4 to 9 words
-- Name the subject the conversation is actually about
-- Do not begin with "The user" and do not describe what the user wanted
-- No quotes, no trailing period
-- Reply with the title only
-
-CONVERSATION:
-{opening}
-
-TITLE:"""
-
-# Enough of the opening to identify the subject. Deliberately small: this is
-# what keeps the call fast, and the topic is established in the first exchange
-# — feeding the whole conversation is what made the old summarizer slow.
-_TITLE_INPUT_CHARS = 1200
-_TITLE_MAX_TOKENS = 24
-
-
-def _llm_title(text: str, model: str | None = None) -> str:
-    """Generate just the title with the local model. Returns "" on any problem.
-
-    This is the one part of capture where generation genuinely beats selection:
-    a good title needs abstraction ("Artemis architecture for Mars"), which no
-    amount of picking sentences produces. Everything else in the summary stays
-    extractive.
-
-    It is affordable now only because it is scoped to a title: ~12 output
-    tokens against a 1.2k-char opening, instead of 2000 tokens against the
-    whole conversation. The caller keeps the extractive title if this returns
-    "", so a missing model, a cold load, or a slow machine degrades the title
-    rather than failing or stalling the capture.
-    """
-    model = model or _get_default_model()
-    try:
-        from backend.engine import get_engine, is_native_backend
-        if is_native_backend():
-            # Cheap existence check — never trigger a multi-GB download from
-            # inside a capture.
-            from backend.engine.native import _model_path
-            if _model_path(model) is None:
-                return ""
-        elif not check_ollama_running():
-            return ""
-
-        messages = _parse_messages(text)
-        opening = "\n".join(_strip_capture_noise(m) for m in messages[:4])[:_TITLE_INPUT_CHARS]
-        if not opening.strip():
-            return ""
-
-        raw = get_engine().generate(
-            _TITLE_PROMPT.format(opening=opening), model,
-            temperature=0.1, max_tokens=_TITLE_MAX_TOKENS, timeout=60,
-            stop=["\n", "TITLE:", "CONVERSATION:"],
-        )
-        title = _clean_llm_title(raw)
-        # Groundedness check: a title whose every content word is absent from
-        # the conversation was invented, not derived. Small models do this —
-        # they echo the prompt's own wording, or drift onto a nearby topic.
-        # Falling back to the extractive title is strictly better than
-        # confidently mislabelling a saved conversation.
-        if title and not _title_is_grounded(title, text):
-            _log.debug("Discarding ungrounded LLM title %r", title[:60])
-            return ""
-        return title
-    except Exception as e:
-        _log.debug("LLM title failed (keeping extractive title): %s", e)
-        return ""
-
-
-# Words too common to prove a title came from the conversation.
-_TITLE_COMMON = frozenset({
-    "about", "with", "from", "that", "this", "what", "when", "where", "which",
-    "how", "why", "the", "and", "for", "into", "using", "your", "user", "chat",
-    "conversation", "discussion", "question", "help", "guide", "overview",
-})
-
-
-def _title_is_grounded(title: str, text: str) -> bool:
-    """True if any distinctive word in `title` also appears in the conversation."""
-    body = (text or "").lower()
-    words = [w for w in re.findall(r"[a-z0-9]{4,}", title.lower())
-             if w not in _TITLE_COMMON]
-    if not words:
-        return True   # nothing distinctive to check — don't reject on no evidence
-    return any(w in body for w in words)
-
-
-def _clean_llm_title(raw: str) -> str:
-    """Strip the wrappers small models add, and reject non-answers."""
-    t = _strip_think_blocks(raw or "").strip()
-    t = t.split("\n")[0].strip()
-    t = re.sub(r'^\s*(?:title|topic)\s*:\s*', '', t, flags=re.IGNORECASE)
-    t = t.strip().strip('"“”\'`*').strip()
-    t = t.rstrip('.').strip()
-    if not (3 <= len(t) <= 110):
-        return ""
-    # A model that ignored the instruction and started explaining is not a title.
-    if len(t.split()) > 16:
-        return ""
-    return _polish_title(t)
-
-
-def _llm_titles_enabled() -> bool:
-    """Config flag `llm_titles` (default on). Read at call time so toggling it
-    in Settings takes effect without a restart."""
-    try:
-        with open(_CFG_PATH, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        if isinstance(cfg, dict) and "llm_titles" in cfg:
-            return bool(cfg["llm_titles"])
-    except Exception:
-        pass
-    return True
 
 
 def summarize_with_lattice(
@@ -1382,9 +1261,19 @@ def summarize_with_lattice(
     that actually gets pasted into another AI, while costing 26s on GPU and
     224s on CPU per capture, requiring a multi-GB chat model, and being the
     one place that could invent a value the conversation never contained.
-    Local models are still used for Ask Your Vault, which is real Q&A and
-    can't be done by selection. Paid cloud providers keep the generated
-    summary — see llm_router.summarize_with_lattice.
+
+    Titles used to be the one exception — a short generative call, because a
+    good title needs abstraction. That's gone too: the extension now reports
+    the host AI's own chat title (see content.js _detectChatTitle), which is
+    both better and free, and build_summary() picks an extractive title when
+    no host title exists. Nothing on the local path calls a generative model
+    any more, so no chat model needs to be installed at all.
+
+    Paid cloud providers keep the generated summary — see
+    llm_router.summarize_with_lattice.
+
+    `model` is accepted and ignored; it stays in the signature because callers
+    and the cloud-routed sibling share it.
 
     Returns: {"summary": dict, "lattice": [entry, ...]}.
 
@@ -1394,13 +1283,6 @@ def summarize_with_lattice(
     from backend.extractive_summary import build_summary
     lattice, _merged = _build_lattice_entries(text)
     summary = build_summary(text, important_snippets)
-    # Title-only generation: the one field where abstraction beats selection.
-    # Everything else stays extractive, and a failure here just leaves the
-    # extractive title in place.
-    if _llm_titles_enabled():
-        title = _llm_title(text, model)
-        if title:
-            summary["main_topic"] = title
     return {"summary": summary, "lattice": lattice}
 
 

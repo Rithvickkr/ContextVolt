@@ -309,6 +309,17 @@ def serve_frontend():
 
 _server_token: dict = {"started_at": time.time()}  # mutable — run.py updates this on each launch
 
+@app.get("/api/features")
+def api_features():
+    """Which capabilities this build exposes — the UI hides the rest.
+
+    Served rather than hardcoded in JS so a premium build only has to flip a
+    config value; the frontend reads the same source of truth as the backend.
+    """
+    from backend.features import all_features
+    return all_features()
+
+
 @app.get("/api/health")
 def health():
     from backend.updater import APP_VERSION
@@ -1204,10 +1215,19 @@ def api_capture(req: CaptureRequest):
                     update_kwargs["conversation_url"] = req.conversation_url
 
             update_context(context_id, **update_kwargs)
-            # All Ollama work (chunk, embed, summarize) happens in the background
+            # Keep the existing title on re-capture when it came from the host
+            # AI's own chat title, or the user renamed it. Titles are extractive
+            # now (no title model), so letting the summary overwrite a real
+            # title would replace it with a raw opening sentence.
+            incoming_title = (req.title or "").strip()
+            if incoming_title and incoming_title != (existing.get("title") or ""):
+                update_kwargs["title"] = incoming_title
+                update_context(context_id, title=incoming_title)
+            keep_title = bool(incoming_title or (existing.get("title") or "").strip())
+            # All local work (chunk, embed, summarize) happens in the background
             threading.Thread(
                 target=_bg_summarize,
-                args=(context_id, full_chat, update_kwargs["important_notes"]),
+                args=(context_id, full_chat, update_kwargs["important_notes"], keep_title),
                 daemon=True,
             ).start()
             return {"success": True, "id": context_id, "updated": True}
@@ -2091,6 +2111,16 @@ def api_vault_ask(body: dict):
                       in the final 'done' line as session_id (+ session_title for new ones)
     }
     """
+    # Gated, not deleted. Ask Vault needs a generative model, which the free
+    # tier no longer has locally — see backend/features.py. A premium build
+    # flips the flag and this route works unchanged.
+    from backend.features import is_enabled
+    if not is_enabled("ask_vault"):
+        raise HTTPException(
+            status_code=404,
+            detail="Ask Your Vault is not available in this build.",
+        )
+
     question = (body.get("question") or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")

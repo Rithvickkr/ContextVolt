@@ -3,6 +3,7 @@ import { _askCloseHistoryPanel, _initAskVault, askVault } from './ask.js';
 import { confirmDeleteCollection, filterByCollection, openCollectionCreate, startRenameCollection, toggleCollectionsDropdown } from './collections.js';
 import { initChatInput, summarizeAndSave } from './composer.js';
 import { $, $$, API, state } from './core.js';
+import { featureEnabled, loadFeatures } from './features.js';
 import { closeConfirmDeleteModal, closeEditModal, copyCodeSnippet, deleteCurrentContext, exportContext, generatePrompt, handleDetailCollectionChange, openEditModal, resummarizeContext, retrySummarize, saveEdit, showDetail, toggleOriginalChat } from './detail.js';
 import { closeShortcutsModal, openShortcutsModal, showToast } from './dialogs.js';
 import { bulkDelete, deleteFromLibrary, initSearch, loadContexts, loadMoreContexts, selectAllCards, toggleDeepSearch, toggleSelectCard, toggleSelectMode, toggleStar, toggleStarDetail } from './library.js';
@@ -25,12 +26,18 @@ window.addEventListener('unhandledrejection', e => {
 });
 // â”€â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('DOMContentLoaded', () => {
+    // Feature flags first: this removes the DOM for capabilities this build
+    // doesn't ship, so nothing below wires handlers to elements that are about
+    // to disappear. Fire-and-forget — the markup is hidden by CSS until it
+    // resolves, so there's no flash either way.
+    loadFeatures();
+
     // Setup wizard
     startSetupPolling();
     checkSetup(); // Immediate first check
     _initSettingsHint(); // Show active models in sidebar hint
     _initSidebarTooltips(); // Sidebar hover tooltips
-    _initAskVault(); // Ask Your Vault chat
+    if (featureEnabled('ask_vault')) _initAskVault(); // Ask Your Vault chat
     _initMcpServerPanelHandlers(); // ConVX-as-MCP-server settings panel
     _initTunnelPanelHandlers();    // Cloudflare tunnel card
     _initUpdatePanel();            // Auto-update
@@ -51,7 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Chat input
     initChatInput();
 
-    // Dashboard ask bar — Enter jumps to Ask Vault with the question submitted
+    // Dashboard ask bar — Enter jumps to Ask Vault with the question submitted.
+    // Absent when ask_vault is off; features.js has already removed it.
     const dashAsk = $('#dash-ask-input');
     const _dashAskSubmit = () => {
         const q = dashAsk.value.trim();
@@ -428,8 +436,8 @@ document.addEventListener('DOMContentLoaded', () => {
             navigateTo('library');
         }
 
-        // A — go to Ask Vault
-        if (e.key === 'a' || e.key === 'A') {
+        // A — go to Ask Vault (no-op when the feature isn't in this build)
+        if ((e.key === 'a' || e.key === 'A') && featureEnabled('ask_vault')) {
             navigateTo('ask');
         }
     });

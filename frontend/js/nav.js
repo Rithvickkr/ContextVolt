@@ -1,10 +1,20 @@
 // ContextVolt — View navigation.
 import { $, $$, state } from './core.js';
+import { featureEnabled } from './features.js';
 import { loadDashboard } from './dashboard.js';
 import { loadContexts } from './library.js';
 import { startWorkerPolling } from './polling.js';
 // â”€â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Views that only exist when a feature flag is on. navigateTo() is the single
+// choke point every entry route goes through (nav click, keyboard shortcut,
+// dashboard ask bar, onboarding), so guarding here means a gated view can't be
+// reached even if some caller is missed.
+const _VIEW_FEATURES = { ask: 'ask_vault' };
+
 function navigateTo(view) {
+    const needs = _VIEW_FEATURES[view];
+    if (needs && !featureEnabled(needs)) return;
+
     state.view = view;
     document.body.dataset.view = view; // lets CSS adapt per view (e.g. lights backdrop)
 

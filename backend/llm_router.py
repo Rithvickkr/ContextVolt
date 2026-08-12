@@ -89,6 +89,32 @@ def is_cloud_active() -> bool:
 # Unified generation
 # ─────────────────────────────────────────────────────────────────────
 
+class LocalGenerationDisabled(RuntimeError):
+    """Raised when a local generative call is attempted in a build without it."""
+
+
+def _guard_local_generation(active: dict) -> None:
+    """Refuse local generative inference unless the `local_llm` flag is on.
+
+    Nothing on the free path should reach this — capture, summaries, titles and
+    continuation prompts are all deterministic, and Ask Your Vault (the only
+    remaining consumer) is gated at its route. This is the backstop: it makes a
+    reintroduced local generative call fail loudly here rather than quietly
+    loading a multi-GB chat model the installer no longer ships.
+
+    Embeddings are unaffected — they don't come through this function.
+    """
+    if active.get("is_cloud"):
+        return
+    from backend.features import is_enabled
+    if not is_enabled("local_llm"):
+        raise LocalGenerationDisabled(
+            "Local text generation is disabled in this build. "
+            "Configure a cloud provider in Settings, or enable the `local_llm` "
+            "feature flag."
+        )
+
+
 def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
              timeout: int = 180, system: str | None = None) -> dict:
     """Generate a completion using the active provider.
@@ -107,6 +133,7 @@ def generate(prompt: str, temperature: float = 0.2, max_tokens: int = 2000,
         }
     """
     active = get_active_provider()
+    _guard_local_generation(active)
 
     if active["is_cloud"]:
         from backend.cloud_client import cloud_generate
@@ -172,6 +199,7 @@ def generate_stream(prompt: str, temperature: float = 0.2, max_tokens: int = 200
         {"done": True, "usage": {...}, "cost": float, "provider": str, "model": str} at the end
     """
     active = get_active_provider()
+    _guard_local_generation(active)
 
     if active["is_cloud"]:
         from backend.cloud_client import cloud_generate_stream

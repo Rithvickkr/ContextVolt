@@ -1159,87 +1159,6 @@ def _empty_summary() -> dict:
     }
 
 
-def _generate_text(model: str, prompt: str, temperature: float, max_tokens: int, timeout: int) -> str:
-    """Backend-agnostic single-shot generation for the summarization pipeline.
-
-    Routes to the native in-process engine when INFERENCE_BACKEND=native,
-    otherwise to Ollama's HTTP API via the existing GPU->CPU fallback ladder
-    in _call_generate(). Both paths already strip <think> blocks; this
-    normalizes them to a single "-> plain text" contract so _extract_chunk /
-    _synthesize don't need to know which backend served the call.
-    """
-    from backend.engine import get_inference_backend, get_engine
-    if get_inference_backend() == "native":
-        return get_engine().generate(prompt, model, temperature=temperature, max_tokens=max_tokens, timeout=timeout)
-    r = _call_generate(
-        model, prompt,
-        {"temperature": temperature, "num_predict": max_tokens, "num_ctx": _NUM_CTX},
-        timeout=timeout,
-    )
-    r.raise_for_status()
-    body = r.json()
-    if "error" in body:
-        raise RuntimeError(body["error"])
-    return _strip_think_blocks(body.get("response", ""))
-
-
-def _extract_chunk(text: str, model: str | None = None, label: str = "") -> str:
-    """Run constrained fact-extraction on a single chunk. Returns raw extraction text.
-
-    Asks the model only to LIST — no synthesis, no compression. This is reliable
-    even on small models because it's constrained extraction, not open-ended generation.
-    Returns an empty string on failure so callers can skip silently.
-    """
-    model = model or _get_default_model()
-    prompt = EXTRACT_PROMPT.format(conversation=text[:_CHUNK_LIMIT])  # type: ignore[index]
-    try:
-        result = _generate_text(model, prompt, temperature=0.1, max_tokens=800, timeout=120)
-        _log.debug("Extract result (first 300): %r", result[:300])  # type: ignore[index]
-        return result
-    except Exception as e:
-        _log.warning("_extract_chunk exception (label=%r): %s", label, e)
-        return ""
-
-
-def _synthesize(
-    merged_facts: str,
-    model: str | None = None,
-    label: str = "",
-    first_user: str = "",
-    last_asst: str = "",
-) -> dict:
-    """Synthesize a 6-field summary dict from merged extracted facts (or raw conversation).
-
-    This is the single compression step in the map-reduce pipeline. The model works
-    from structured extracted facts, not raw noisy conversation text.
-    first_user / last_asst pin TOPIC and DECIDED to the actual conversation boundaries.
-
-    Starred content is intentionally excluded — it's stored separately in important_notes
-    and displayed verbatim in the continuation prompt. The summary must reflect the full
-    conversation without priority overrides.
-    """
-    model = model or _get_default_model()
-    prompt = SYNTHESIZE_PROMPT.format(
-        first_user=first_user[:800] or "(not available)",   # type: ignore[index]
-        last_asst=last_asst[:800] or "(not available)",     # type: ignore[index]
-        merged_facts=merged_facts[:_CHAR_LIMIT],            # type: ignore[index]
-    )
-    try:
-        response_text = _generate_text(model, prompt, temperature=0.2, max_tokens=2000, timeout=180)
-        _log.debug("Synthesize response (first 400): %r", response_text[:400])  # type: ignore[index]
-        if not response_text.strip():
-            _log.warning("Empty synthesize response (label=%r)", label)
-            return _empty_summary()
-        return _parse_text_summary(response_text)
-    except requests.ConnectionError:
-        raise ConnectionError("Cannot connect to Ollama. Is it running? (ollama serve)")
-    except requests.Timeout:
-        raise TimeoutError("Ollama took too long to respond. The model may still be loading.")
-    except Exception as e:
-        _log.warning("_synthesize exception (label=%r): %s", label, e)
-        return _empty_summary()
-
-
 def _build_lattice_entries(text: str) -> tuple[list[dict], str]:
     """Build Layer-1 lattice entries from verbatim per-region chunks of text.
 
@@ -1330,34 +1249,28 @@ def summarize_with_lattice(
     """Summarize a conversation and return both the 6-field summary AND the
     per-chunk lattice entries that fed it.
 
-    Pipeline (Phase 1 of the Memory Lattice):
-      EXTRACT (map) — Always chunk by message boundary. Each chunk is run through
-        _extract_chunk which produces a verbatim fact list. The per-chunk
-        outputs are the Layer-1 lattice entries.
+    Fully deterministic — no model call, on either local backend:
+      LATTICE  — verbatim message-bounded regions (already LLM-free).
+      SUMMARY  — extractive_summary.build_summary() selects the 6 fields
+                 from the conversation instead of generating them.
 
-      MERGE — concatenate extractions in order. No LLM call.
-
-      SYNTHESIZE (reduce) — one final call from merged facts produces the
-        6-field summary. Same as before.
+    The local path stopped generating summaries because the model was buying
+    almost nothing: the generated text made up ~1% of the continuation prompt
+    that actually gets pasted into another AI, while costing 26s on GPU and
+    224s on CPU per capture, requiring a multi-GB chat model, and being the
+    one place that could invent a value the conversation never contained.
+    Local models are still used for Ask Your Vault, which is real Q&A and
+    can't be done by selection. Paid cloud providers keep the generated
+    summary — see llm_router.summarize_with_lattice.
 
     Returns: {"summary": dict, "lattice": [entry, ...]}.
 
     Starred snippets are still ignored here — they're stored verbatim in
     important_notes and displayed by the continuation builder directly.
     """
-    model = model or _get_default_model()
-    first_user, last_asst = _conversation_anchors(text)
-
-    lattice, merged_facts = _build_lattice_entries(text)
-
-    # If extraction returned nothing (e.g. extreme model failure), fall back to
-    # synthesizing on the raw text so we still produce a usable summary.
-    source = merged_facts if merged_facts else text[:_CHAR_LIMIT]  # type: ignore[index]
-    summary = _synthesize(
-        source, model=model, label="Final",
-        first_user=first_user, last_asst=last_asst,
-    )
-    return {"summary": summary, "lattice": lattice}
+    from backend.extractive_summary import build_summary
+    lattice, _merged = _build_lattice_entries(text)
+    return {"summary": build_summary(text, important_snippets), "lattice": lattice}
 
 
 def summarize_conversation(
@@ -1383,57 +1296,17 @@ def summarize_conversation_streaming(
 
     Each yield is a dict: {"step": str, "done": int, "total": int}
     The final yield includes "result": <summary dict>.
+
+    This used to be the expensive path: one model call per conversation
+    section (map) plus a final synthesis (reduce), which is where a long
+    capture spent minutes. It is now the same deterministic selection as
+    summarize_with_lattice, so the progress events exist only to keep the
+    streaming contract its callers expect — the work itself is instant.
     """
-    import json as _json
-    model = model or _get_default_model()
-    first_user, last_asst = _conversation_anchors(text)
-
-    if len(text) <= _CHAR_LIMIT:
-        yield {"step": "Synthesizing summary…", "done": 0, "total": 1}
-        result = _synthesize(text, model=model, label="Single",
-                             first_user=first_user, last_asst=last_asst)
-        yield {"step": "Done", "done": 1, "total": 1, "result": result}
-        return
-
-    messages = _parse_messages(text)
-    anchor_count = 2
-    opening, closing = _anchor_text(messages, anchor_count)
-    middle_messages = messages[anchor_count:-anchor_count] if len(messages) > anchor_count * 2 else []
-    middle_text = '\n\n'.join(middle_messages)
-    middle_chunks = _split_by_messages(middle_text, chunk_char_limit=_CHUNK_LIMIT, overlap=1) if middle_text else []
-
-    total_steps = 1 + len(middle_chunks) + (1 if closing else 0) + 1  # opening + middles + closing + synthesize
-    done = 0
-
-    all_extractions: list[str] = []
-
-    yield {"step": "Extracting from opening…", "done": done, "total": total_steps}
-    opening_facts = _extract_chunk(opening, model, label="Opening")
-    if opening_facts:
-        all_extractions.append(f"[OPENING]\n{opening_facts}")
-    done += 1
-
-    for idx, chunk in enumerate(middle_chunks):
-        yield {"step": f"Extracting section {idx+1}/{len(middle_chunks)}…", "done": done, "total": total_steps}
-        facts = _extract_chunk(chunk, model, label=f"Middle {idx+1}/{len(middle_chunks)}")
-        if facts:
-            all_extractions.append(f"[SECTION {idx+1}]\n{facts}")
-        done += 1
-
-    if closing:
-        yield {"step": "Extracting from closing…", "done": done, "total": total_steps}
-        closing_facts = _extract_chunk(closing, model, label="Closing")
-        if closing_facts:
-            all_extractions.append(f"[CLOSING — most recent, highest priority]\n{closing_facts}")
-        done += 1
-
-    merged_facts = "\n\n".join(all_extractions) if all_extractions else text[:_CHAR_LIMIT]
-
-    yield {"step": "Synthesizing final summary…", "done": done, "total": total_steps}
-    result = _synthesize(merged_facts, model=model, label="Final",
-                         first_user=first_user, last_asst=last_asst)
-    done += 1
-    yield {"step": "Done", "done": done, "total": total_steps, "result": result}
+    yield {"step": "Reading conversation…", "done": 0, "total": 2}
+    from backend.extractive_summary import build_summary
+    result = build_summary(text, important_snippets)
+    yield {"step": "Done", "done": 2, "total": 2, "result": result}
 
 
 # EMBED_MODEL kept for backward compatibility — runtime resolution via _get_embed_model()

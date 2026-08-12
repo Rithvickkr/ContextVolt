@@ -97,7 +97,6 @@ from backend.engine import (
     local_engine_ready,
     local_engine_unready_detail,
     local_model_available,
-    local_model_missing_detail,
 )
 from backend.llm_router import (
     get_active_provider,
@@ -1046,16 +1045,10 @@ def api_summarize(req: SummarizeRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    active = get_active_provider()
-    if not active["is_cloud"]:
-        # Local-backend checks only — cloud providers need neither.
-        if not local_engine_ready():
-            raise HTTPException(status_code=503, detail=local_engine_unready_detail())
-        if not local_model_available():
-            raise HTTPException(
-                status_code=503,
-                detail=local_model_missing_detail(active["model"]),
-            )
+    # No local readiness gate: local summarization is deterministic now
+    # (backend/extractive_summary.py) and needs no chat model or engine at
+    # all. Gating on one here would 503 a request that would have succeeded.
+    # Cloud providers validate their own key/model inside the router.
 
     try:
         summary = summarize_conversation(req.text)
@@ -1074,15 +1067,7 @@ def api_summarize_stream(req: SummarizeRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    active = get_active_provider()
-    if not active["is_cloud"]:
-        if not local_engine_ready():
-            raise HTTPException(status_code=503, detail=local_engine_unready_detail())
-        if not local_model_available():
-            raise HTTPException(
-                status_code=503,
-                detail=local_model_missing_detail(active["model"]),
-            )
+    # See /api/summarize: the local path no longer requires a model.
 
     import json as _json
 
@@ -1273,8 +1258,9 @@ def api_resummarize(context_id: int):
     if not ctx:
         raise HTTPException(status_code=404, detail="Context not found")
 
-    if not is_cloud_active() and not local_engine_ready():
-        raise HTTPException(status_code=503, detail=local_engine_unready_detail())
+    # Local resummarize is deterministic and model-free (see /api/summarize);
+    # only a cloud provider can be "unavailable" here, and the router reports
+    # that itself.
 
     update_context(context_id, status="summarizing")
 

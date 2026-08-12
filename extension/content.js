@@ -51,6 +51,40 @@ function requestInterceptorTranscript() {
 // survives SPA navigation and reloads.
 const IMPORT_MARKER_KEY = "cv_imported_ctx";
 
+// ─── Chat title from the host AI ────────────────────────────────────────
+// ChatGPT/Claude/Gemini/etc. already name every conversation, and that name is
+// (a) free, (b) written by a frontier model, and (c) the exact string the user
+// recognises from their own sidebar. Sending it beats anything ContextVolt can
+// derive locally, so it takes priority; the backend keeps a supplied title and
+// won't overwrite it with a generated one.
+//
+// The page title carries the product name too ("Foo - Claude", "Gemini - Foo"),
+// so strip that, and reject the placeholder titles that mean "not named yet" —
+// an empty return just falls back to the normal title path.
+const _TITLE_SITE_NOISE = [
+    /\s*[-–|]\s*(?:ChatGPT|Claude|Gemini|Grok|DeepSeek|Perplexity|Copilot|Google\s*AI\s*Studio)\s*$/i,
+    /^\s*(?:ChatGPT|Claude|Gemini|Grok|DeepSeek|Perplexity|Copilot)\s*[-–|]\s*/i,
+];
+const _TITLE_PLACEHOLDERS = new Set([
+    "", "new chat", "new conversation", "untitled", "chatgpt", "claude",
+    "gemini", "grok", "deepseek", "perplexity", "copilot", "chat",
+    "google gemini", "claude.ai", "ai chat",
+]);
+
+function _detectChatTitle(source) {
+    try {
+        let t = (document.title || "").trim();
+        for (const re of _TITLE_SITE_NOISE) t = t.replace(re, "").trim();
+        // Some sites prefix an unread badge, e.g. "(3) Some chat".
+        t = t.replace(/^\(\d+\)\s*/, "").trim();
+        if (_TITLE_PLACEHOLDERS.has(t.toLowerCase())) return "";
+        if (t.length < 3 || t.length > 200) return "";
+        return t;
+    } catch (e) {
+        return "";
+    }
+}
+
 function _readImportMarker() {
     try {
         const raw = sessionStorage.getItem(IMPORT_MARKER_KEY);
@@ -768,6 +802,7 @@ function runSendToVault(row) {
         let source = "Unknown";
         const h = window.location.hostname;
         if (h.includes("chatgpt.com")) source = "ChatGPT";
+        // NOTE: keep this list in sync with _detectChatTitle's site suffixes.
         else if (h.includes("claude.ai")) source = "Claude";
         else if (h.includes("gemini.google.com")) source = "Gemini";
         else if (h.includes("grok.com") || h.includes("x.com") || h.includes("x.ai")) source = "Grok";
@@ -784,6 +819,7 @@ function runSendToVault(row) {
             payload: {
                 text: chatText,
                 source: source,
+                title: _detectChatTitle(source),
                 important_snippets: Array.from(_markedSnippets.values()),
                 conversation_url: window.location.href,
                 imported_context_id: importedContextId,

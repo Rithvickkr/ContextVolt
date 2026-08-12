@@ -82,6 +82,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const payload = {
             source: request.payload.source,
             text: request.payload.text,
+            // The conversation's name from the host AI, when it has one. The
+            // backend treats a supplied title as authoritative and skips
+            // generating one; "" means "no usable title, decide it yourself".
+            title: request.payload.title || null,
             important_snippets: request.payload.important_snippets || [],
             conversation_url: request.payload.conversation_url || "",
             imported_context_id: request.payload.imported_context_id ?? null,

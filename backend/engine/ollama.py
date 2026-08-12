@@ -42,6 +42,12 @@ class OllamaEngine:
             "num_predict": kwargs.get("max_tokens", 2000),
             "num_ctx": kwargs.get("num_ctx", _oc._NUM_CTX),
         }
+        # Ollama's equivalent of llama.cpp's `stop`. Without forwarding it, a
+        # caller that relies on stop sequences to bound the output (the title
+        # generator does) silently gets a rambling answer on this backend only.
+        stop = kwargs.get("stop")
+        if stop:
+            options["stop"] = list(stop)
         timeout = kwargs.get("timeout", 180)
         r = _oc._call_generate(model, prompt, options, timeout=timeout)
         r.raise_for_status()

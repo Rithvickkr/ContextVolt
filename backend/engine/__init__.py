@@ -2,9 +2,9 @@
 ContextVolt — pluggable local inference engine.
 
 get_engine() selects an InferenceEngine implementation via the
-INFERENCE_BACKEND setting (env var, default "ollama"): "ollama" talks to a
-separate Ollama server over HTTP, "native" runs GGUF models in-process via
-llama-cpp-python.
+INFERENCE_BACKEND setting (env var, default "native"): "native" runs GGUF
+models in-process via llama-cpp-python, "ollama" talks to a separate Ollama
+server over HTTP.
 
 Route readiness checks through local_engine_ready()/local_engine_label()
 rather than calling ollama_client.check_ollama_running() directly — the
@@ -23,8 +23,18 @@ from backend.paths import config_path as _config_path
 _VALID_BACKENDS = ("ollama", "native")
 
 
+DEFAULT_BACKEND = "native"
+
+
 def get_inference_backend() -> str:
-    """Priority: INFERENCE_BACKEND env var -> config.json -> default 'ollama'."""
+    """Priority: INFERENCE_BACKEND env var -> config.json -> DEFAULT_BACKEND.
+
+    The default is "native": a fresh install runs GGUF models in-process
+    instead of downloading and shelling out to a separate Ollama app. Existing
+    installs are unaffected — they have an explicit `inference_backend` in
+    config.json, which wins over this default. "ollama" stays selectable from
+    Settings as a fallback for platforms where the native wheel misbehaves.
+    """
     env = os.getenv("INFERENCE_BACKEND")
     if env in _VALID_BACKENDS:
         return env
@@ -35,7 +45,7 @@ def get_inference_backend() -> str:
                 return cfg["inference_backend"]
     except Exception:
         pass
-    return "ollama"
+    return DEFAULT_BACKEND
 
 
 def is_native_backend() -> bool:

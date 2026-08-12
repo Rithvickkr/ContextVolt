@@ -105,6 +105,22 @@ foreach ($item in $include) {
     }
 }
 
+# Copy-Item -Recurse ignores .gitignore, so it happily sweeps up local state
+# that lives next to the source. Prune it explicitly: a stray context_volt.db
+# under backend/ would ship someone's vault inside the installer, and stale
+# __pycache__ is dead weight compiled against a different interpreter.
+$prune = @("*.db", "*.db-shm", "*.db-wal", "*.log", ".env", "config.json")
+foreach ($pat in $prune) {
+    Get-ChildItem -Path $AppDir -Filter $pat -Recurse -File -Force -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Write-Host "         Pruned: $($_.FullName.Substring($AppDir.Length + 1))" -ForegroundColor DarkGray
+            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+}
+Get-ChildItem -Path $AppDir -Filter "__pycache__" -Recurse -Directory -Force -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+Write-Host "         Pruned local state (databases, logs, __pycache__)" -ForegroundColor DarkGray
+
 # ─── Step 6: Create launchers ────────────────────────────────────
 Write-Host "  [6/6] Creating launcher..." -ForegroundColor Yellow
 
